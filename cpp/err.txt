@@ -1,0 +1,2 @@
+10000 molecules, mean 19.9 heavy atoms
+wrote values.txt

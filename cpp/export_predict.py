@@ -24,6 +24,7 @@ from pathlib import Path
 
 import numpy as np
 from rdkit import Chem, RDLogger
+from rdkit.Chem import rdMolDescriptors, rdPartialCharges
 
 RDLogger.DisableLog("rdApp.*")
 ROOT = Path(__file__).resolve().parents[1]
@@ -40,16 +41,37 @@ def main(n_want: int = 10_000) -> None:
         m = Chem.MolFromSmiles(s)
         if m is None or m.GetNumAtoms() < 3:
             continue
+        # The four BCUT2D atom properties come from RDKit rather than being reimplemented.
+        # That is a deliberate split of the work: Crippen (0.85 us) and Gasteiger (9.41 us) are
+        # already cheap C++, while the EIGENVALUE step is the 300 us. Porting the cheap half
+        # would buy nothing and would put two SMARTS/PEOE implementations in the world.
+        # Molecules RDKit cannot charge (no Gasteiger parameters -- selenium here) are marked
+        # with a flag rather than dropped, so the verifier compares like with like.
+        try:
+            rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
+            chg = [float(a.GetDoubleProp("_GasteigerCharge")) for a in m.GetAtoms()]
+            ok = all(np.isfinite(c) for c in chg)
+            # A non-finite charge must NOT reach the file: C++ istream fails on
+            # "nan"/"inf" and every subsequent field desyncs, which showed up as the
+            # loader reporting a 19.9-atom mean for a 30.6-atom corpus. The chg_ok
+            # flag records that the molecule was uncharged rather than hiding it.
+            chg = [c if np.isfinite(c) else 0.0 for c in chg]
+        except Exception:
+            chg = [0.0] * m.GetNumAtoms()
+            ok = False
+        crip = rdMolDescriptors._CalcCrippenContribs(m)
         rows = []
-        for a in m.GetAtoms():
+        for i, a in enumerate(m.GetAtoms()):
             rows.append(f"{a.GetAtomicNum()} {a.GetDegree()} {a.GetTotalNumHs()} "
                         f"{a.GetFormalCharge()} {int(a.GetHybridization())} "
-                        f"{int(a.GetIsAromatic())} {int(a.IsInRing())}")
+                        f"{int(a.GetIsAromatic())} {int(a.IsInRing())} "
+                        f"{a.GetMass():.10g} {chg[i]:.10g} "
+                        f"{crip[i][0]:.10g} {crip[i][1]:.10g}")
         bonds = []
         for b in m.GetBonds():
             bonds.append(f"{b.GetBeginAtomIdx()} {b.GetEndAtomIdx()} "
-                         f"{int(b.GetBondType())}")
-        out.append(f"{m.GetNumAtoms()} {len(bonds)}\n" + "\n".join(rows) +
+                         f"{b.GetBondTypeAsDouble():.10g}")
+        out.append(f"{m.GetNumAtoms()} {len(bonds)} {int(ok)}\n" + "\n".join(rows) +
                    ("\n" + "\n".join(bonds) if bonds else ""))
         kept.append(Chem.MolToSmiles(m))
         if len(kept) >= n_want:

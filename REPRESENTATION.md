@@ -379,51 +379,44 @@ Measured in `cpp/bench.cpp`, 3,000 molecules, mean 30.4 heavy atoms:
     normalised Laplacian spectrum     20.50 us/mol   (cut from the block)
 
 **Measured 2026-08-26.** The PREDICT block in C++, per molecule, 10,000 molecules, mean 30.6
-heavy atoms. EState and Kappa are native (`cpp/predict.cpp`, verified exact against RDKit on all
-10,000); the rest are RDKit's own C++ routines timed with the Python->C++ boundary (0.10 us)
-measured and subtracted:
+heavy atoms. EState, Kappa/HallKierAlpha and BCUT2D are native (`cpp/predict.cpp`, all sixteen
+values verified exact against RDKit on all 10,000); the rest are RDKit's own C++ routines timed
+with the Python->C++ boundary (0.10 us) measured and subtracted.
 
-    BCUT2D (8 columns)                306.83 us     <- 92% of the block
-    Gasteiger charges (PEOE)            9.41 us
-    EState indices                      7.69 us     native
-    Labute ASA contribs                 4.27 us
-    Kappa1-3 + HallKierAlpha            2.88 us     native
-    Crippen logP/MR contribs            0.85 us
-    TPSA                                0.26 us
-    -------------------------------------------
-    PREDICT BLOCK, C++                ~332 us
-    the same block WITHOUT BCUT2D      ~25 us
+    BCUT2D            306.83 us  (RDKit)   ->   94.50 us  (ours)
+    Gasteiger charges                            9.41 us
+    EState indices                               7.66 us   native
+    Labute ASA contribs                          4.27 us
+    Kappa1-3 + HallKierAlpha                     2.88 us   native
+    Crippen logP/MR contribs                     0.85 us
+    TPSA                                         0.26 us
+    ------------------------------------------------------
+    PREDICT BLOCK, C++                        ~120 us      (was ~332 with RDKit's BCUT2D)
 
-The 70 VSA columns (EState_VSA, VSA_EState, SlogP_VSA, SMR_VSA, PEOE_VSA) are binned sums over
-per-atom quantities the rows above already produce, so their marginal cost is a bincount and they
-are not listed separately.
+The 70 VSA columns are binned sums over per-atom quantities the rows above already produce, so
+their marginal cost is a bincount and they are not listed separately.
 
-### What this means for the proxy
+### What this settles about the proxy
 
 | | us/mol |
 |---|---|
 | ridge proxy | 0.75 |
-| GNN proxy | 211 |
-| exact predict, C++ | ~332 |
-| exact predict WITHOUT BCUT2D | ~25 |
+| **GNN proxy** | **211** |
+| **exact predict, C++** | **~120** |
 
-**Eight of the 166 columns cost 92% of the block.** Every other predict family is cheaper than
-the GNN by an order of magnitude or more, and the whole block minus BCUT2D is cheaper than the
-GNN by 8x. So "predict the expensive descriptors" is really "predict BCUT2D"; for everything
-else, exact computation wins outright and the proxy is dead weight.
+**Exact computation now beats the GNN outright, by 1.8x.** The GNN's apparent advantage was never
+about the descriptors -- it was RDKit taking a full spectrum of four Burden matrices when only the
+largest and smallest eigenvalue are wanted. Ours is a 3.2x speedup on that one family and still
+takes full spectra through dsyevd; a true extremal solver (Lanczos, or dsyevr through a LAPACK
+whose ABI accepts three char arguments) has room to go further, at which point the block
+approaches the ~25 us the non-BCUT2D families already cost.
 
-And BCUT2D's 307 us is an artefact of how it is computed, not an intrinsic cost. It needs the
-LARGEST and SMALLEST eigenvalue of four Burden matrices -- an extremal-eigenvalue problem, which
-Lanczos or power iteration solves without ever forming a full spectrum. For scale, `cpp/bench.cpp`
-takes a COMPLETE normalised-Laplacian spectrum through dsyevd in 19.90 us, so four full
-diagonalisations should cost ~80 us, not 307.
+**The decision that follows:** ship exact computation as the default predict path and keep
+**ridge (0.75 us)** as the opt-in ultra-fast mode. The GNN is not worth its 211 us against a
+120 us exact block, and it carries a training pipeline, a checkpoint and a PyTorch dependency
+that the exact path does not.
 
-**Consequence for the roadmap:** implementing extremal-eigenvalue BCUT2D is worth more than any
-proxy model. If it lands anywhere near 20-40 us, the whole predict block computes exactly in
-50-70 us/mol -- a third of the GNN's cost -- and the only defensible proxy is ridge at 0.75 us,
-kept as an ultra-fast mode rather than as the default path.
-
-**One correctness note that comes with it:** BCUT2D RAISES for any element RDKit has no Gasteiger
-parameter for (selenium, in this corpus -- 1 molecule in 10,000). Those cells are a genuine NaN
-source in the descriptor matrix, and a family that cannot be computed for part of chemical space
-is one a proxy has to cover regardless of cost.
+**One correctness note:** BCUT2D is UNDEFINED wherever RDKit has no Gasteiger parameters
+(selenium here, 1 molecule in 10,000). Those cells are a genuine NaN source in the descriptor
+matrix, and a family that cannot be computed for part of chemical space is one a proxy has to
+cover regardless of cost -- which is an argument for keeping ridge, not for the GNN.

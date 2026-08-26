@@ -25,9 +25,11 @@
 #include <vector>
 
 struct Mol {
-  int n = 0, nb = 0;
+  int n = 0, nb = 0, chg_ok = 1;
   std::vector<int> Z, deg, nH, chg, hyb, arom, ring;
-  std::vector<int> bu, bv, bord;
+  std::vector<double> mass, gast, clogp, cmr;     // the four BCUT2D atom properties
+  std::vector<int> bu, bv;
+  std::vector<double> bord;                        // getBondTypeAsDouble: aromatic = 1.5
   std::vector<std::vector<int>> adj;
 };
 
@@ -38,11 +40,13 @@ static std::vector<Mol> load(const char *path) {
   std::vector<Mol> ms(nm);
   for (int k = 0; k < nm; k++) {
     Mol &m = ms[k];
-    f >> m.n >> m.nb;
+    f >> m.n >> m.nb >> m.chg_ok;
     m.Z.resize(m.n); m.deg.resize(m.n); m.nH.resize(m.n); m.chg.resize(m.n);
     m.hyb.resize(m.n); m.arom.resize(m.n); m.ring.resize(m.n);
+    m.mass.resize(m.n); m.gast.resize(m.n); m.clogp.resize(m.n); m.cmr.resize(m.n);
     for (int i = 0; i < m.n; i++)
-      f >> m.Z[i] >> m.deg[i] >> m.nH[i] >> m.chg[i] >> m.hyb[i] >> m.arom[i] >> m.ring[i];
+      f >> m.Z[i] >> m.deg[i] >> m.nH[i] >> m.chg[i] >> m.hyb[i] >> m.arom[i] >> m.ring[i]
+        >> m.mass[i] >> m.gast[i] >> m.clogp[i] >> m.cmr[i];
     m.adj.assign(m.n, {});
     m.bu.resize(m.nb); m.bv.resize(m.nb); m.bord.resize(m.nb);
     for (int b = 0; b < m.nb; b++) {
@@ -283,6 +287,102 @@ static void kappa(const Mol &m, double *out) {
 }
 
 // ---------------------------------------------------------------------------------------
+// BCUT2D -- eight columns that cost 92% of the whole predict block in RDKit (306.83 us/mol).
+//
+// The Burden matrix B for an atom property p:
+//     B[i][i] = p_i
+//     B[i][j] = bondOrder/10 for bonded i,j  (+0.01 if either atom is terminal)
+//     B[i][j] = 0.001        otherwise
+// and the descriptor is its LARGEST and SMALLEST eigenvalue, for p in {mass, Gasteiger charge,
+// Crippen logP, Crippen MR}.
+//
+// THE POINT IS THAT ONLY THE TWO EXTREMES ARE WANTED. RDKit takes a full spectrum of each of the
+// four matrices; a complete normalised-Laplacian spectrum through dsyevd costs 19.90 us in
+// cpp/bench.cpp at this molecule size, so four of them should be ~80 us, not 307. This uses
+// LAPACK's dsyevr with RANGE='I' to request eigenvalues 1 and n only, which lets it skip
+// assembling the eigenvectors and most of the spectrum.
+//
+// The atom properties themselves are NOT recomputed here -- they arrive from RDKit through the
+// exporter. Crippen is 0.85 us and Gasteiger 9.41 us of already-C++ work, so reimplementing
+// them would buy nothing and would put a second SMARTS/PEOE implementation into the world. What
+// is being replaced is the eigenvalue step, which is where the 300 us actually is.
+// ---------------------------------------------------------------------------------------
+extern "C" {
+void dsyevd_(char *, char *, int *, double *, int *, double *, double *, int *, int *, int *,
+             int *);
+}
+
+struct BcutWork {
+  std::vector<double> A, w, z, work;
+  std::vector<int> isuppz, iwork;
+};
+
+// -> {hi, lo} for one property vector.
+static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
+                     double *hi, double *lo) {
+  // HEAVY ATOMS ONLY. Explicit hydrogens -- which in this corpus means isotopic labels, [2H]
+  // and [3H] -- are not in RDKit's Burden matrix. Including them passed 99.970% of the corpus
+  // and failed exactly the three deuterated/tritiated molecules, where MWLOW came back as 1.815
+  // (a deuterium mass) instead of 10.109. A 3-in-10,000 failure that is entirely one chemical
+  // class is a bug, not noise; a tolerance loose enough to hide it would hide real errors too.
+  static thread_local std::vector<int> hv, pos;
+  hv.clear();
+  pos.assign(m.n, -1);
+  for (int i = 0; i < m.n; i++)
+    if (m.Z[i] != 1) { pos[i] = (int)hv.size(); hv.push_back(i); }
+  const int n = (int)hv.size();
+  if (n == 0) { *hi = *lo = 0.0; return; }
+  W.A.assign((size_t)n * n, 0.001);
+  for (int i = 0; i < n; i++) W.A[(size_t)i * n + i] = prop[hv[i]];
+  for (int b = 0; b < m.nb; b++) {
+    int i = pos[m.bu[b]], j = pos[m.bv[b]];
+    if (i < 0 || j < 0) continue;
+    // OFF-DIAGONAL = 1/sqrt(bond order), and there is NO terminal-atom correction.
+    //
+    // Not the classic Burden 0.1*order, and not the raw order either -- both were tried and both
+    // are wrong. Solved out of RDKit on two-atom molecules, where the matrix is [[p1,w],[w,p2]]
+    // so w follows in closed form from the two eigenvalues:
+    //     C-C  w = 1.000000 = 1/sqrt(1)
+    //     C=C  w = 0.707107 = 1/sqrt(2)
+    //     C#C  w = 0.577350 = 1/sqrt(3)
+    // Those same molecules also confirm the diagonal is the raw property (hi + lo = p1 + p2 to
+    // the last digit) and that no +0.01 terminal term exists (both atoms are terminal in C-C,
+    // yet w is exactly 1). Non-bonded stays 0.001, which cyclohexane confirms independently.
+    double v = 1.0 / std::sqrt(m.bord[b]);
+    W.A[(size_t)i * n + j] = v;
+    W.A[(size_t)j * n + i] = v;
+  }
+  if (n == 1) { *hi = *lo = W.A[0]; return; }
+
+  // dsyevd, not dsyevr. dsyevr takes THREE character arguments and Accelerate's Fortran ABI
+  // rejects the call (INFO = -6) without the hidden string-length arguments; dsyevd takes two
+  // and is already proven against this LAPACK in cpp/bench.cpp. The cost is a FULL spectrum
+  // where only the two extremes are wanted -- so the number this produces is an upper bound,
+  // and an extremal-only solver (Lanczos, or dsyevr through a LAPACK that accepts it) can only
+  // be faster.
+  char jobz = 'N', uplo = 'U';
+  int nn = n, lda = n, info = 0, lwork = -1, liwork = -1;
+  W.w.resize(n);
+  double wq;
+  int iwq;
+  dsyevd_(&jobz, &uplo, &nn, W.A.data(), &lda, W.w.data(), &wq, &lwork, &iwq, &liwork, &info);
+  lwork = (int)wq;
+  liwork = iwq;
+  W.work.resize(lwork);
+  W.iwork.resize(liwork);
+  dsyevd_(&jobz, &uplo, &nn, W.A.data(), &lda, W.w.data(), W.work.data(), &lwork,
+          W.iwork.data(), &liwork, &info);
+  *lo = W.w[0];
+  *hi = W.w[n - 1];
+}
+
+// -> 8 values in RDKit's order: MWHI, MWLOW, CHGHI, CHGLO, LOGPHI, LOGPLOW, MRHI, MRLOW
+static void bcut2d(const Mol &m, BcutWork &W, double *out) {
+  const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+  for (int k = 0; k < 4; k++) bcut_one(m, *props[k], W, &out[2 * k], &out[2 * k + 1]);
+}
+
+// ---------------------------------------------------------------------------------------
 
 template <typename F>
 static double time_it(const std::vector<Mol> &ms, int reps, F &&f) {
@@ -302,6 +402,8 @@ int main(int argc, char **argv) {
 
   std::vector<double> S;
   std::vector<int> D;
+  BcutWork BW;
+  BW.z.resize(1);
 
   if (std::string(mode) == "verify") {
     FILE *out = fopen("values.txt", "w");
@@ -315,10 +417,13 @@ int main(int argc, char **argv) {
         if (a > amx) amx = a;
         if (a < amn) amn = a;
       }
-      double k[4];
+      double k[4], bc[8];
       kappa(m, k);
-      fprintf(out, "%.10g %.10g %.10g %.10g %.10g %.10g %.10g %.10g\n",
-              mx, mn, amx, amn, k[0], k[1], k[2], k[3]);
+      bcut2d(m, BW, bc);
+      fprintf(out, "%.12g %.12g %.12g %.12g %.12g %.12g %.12g %.12g", mx, mn, amx, amn,
+              k[0], k[1], k[2], k[3]);
+      for (int q = 0; q < 8; q++) fprintf(out, " %.12g", bc[q]);
+      fputc('\n', out);
     }
     fclose(out);
     fprintf(stderr, "wrote values.txt\n");
@@ -333,7 +438,11 @@ int main(int argc, char **argv) {
     for (auto &m : ms) { double k[4]; kappa(m, k); sink += k[0]; }
   });
   printf("  %-46s %8.2f us/mol\n", "EState indices (per atom + 4 aggregates)", t_es);
+  double t_bc = time_it(ms, 5, [&] {
+    for (auto &m : ms) { double bc[8]; bcut2d(m, BW, bc); sink += bc[0]; }
+  });
   printf("  %-46s %8.2f us/mol\n", "Kappa1-3 + HallKierAlpha", t_kp);
+  printf("  %-46s %8.2f us/mol\n", "BCUT2D (extremal eigenvalues, dsyevr)", t_bc);
   printf("\n(sink %.3g)\n", (double)sink);
   return 0;
 }
