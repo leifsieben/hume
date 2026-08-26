@@ -57,12 +57,16 @@ SHADES = {
     # headline claim, so two dark browns a shade apart is not a colour scheme, it is a hazard.
     # Morgan r=3 takes the LIGHT end of the same family instead: same amber, maximal lightness
     # separation, and the pair still reads as one family. ECFP4 keeps CLIMB's hex exactly.
+    # THE THREE HUME DRAWS IN FIGURE A -- [0] ECFP4, [1] Morgan r=3, [5] descriptors alone --
+    # take the three WIDEST-SPACED lightness steps, because those three sit adjacent in all
+    # thirteen panels. The +descriptor combinations at [2]-[4] only ever appear in Figure B,
+    # where the fingerprint-only arms are not drawn beside them.
     "anchor": ["#8A5F1B",   # [0] ECFP4          (CLIMB's ECFP4 hex, kept)
-               "#E8B86A",   # [1] Morgan r=3     (light end -- see note above)
-               "#C8912F",   # [2] ECFP + all descriptors  (CLIMB's ECFP4+desc hex, kept)
+               "#E8B86A",   # [1] Morgan r=3     (light end)
+               "#4E340B",   # [2] ECFP + all descriptors
                "#A87A22",   # [3] ECFP + RDKit only
                "#E0BC80",   # [4] ECFP + Mordred only
-               "#4E340B"],  # [5] descriptors alone, no fingerprint
+               "#C8912F"],  # [5] descriptors alone (mid, saturated -- CLIMB's ECFP4+desc hex)
     "hume":   ["#A3455E",   # [0] hume_core_custom -- the headline arm
                "#CB8C9C",   # [1] hume_core
                "#6E2437",   # [2] spare (dark)
