@@ -366,14 +366,27 @@ no single defensible default across all chemistry. The decision rule adopted:
 
 ### Cost note that shapes the flags
 
-Measured on this machine, per molecule, in the CURRENT Python pipeline:
+**Only C++ numbers belong here.** Python/Mordred timings measure the interpreter, not the
+descriptor, and the two differ by ~1,500x on the one family measured both ways (Chi: 10,328 us
+in Mordred, 7.36 us in C++). A cost argument built on a Python number can invert entirely under
+the real one, so it is not an argument.
 
-    core block, exact       52,091 us     <- three times the predict block
-    predict block, exact    17,241 us
-    gnn proxy                  211 us     (139 graph build + 72 forward)
-    ridge proxy                  0.75 us
+Measured in `cpp/bench.cpp`, 3,000 molecules, mean 30.4 heavy atoms:
 
-The CORE/PREDICT split was drawn on **C++** cost estimates, not Python ones. In Python today the
-"cheap" half is the expensive half, by 3x. The split only earns its name once `core` is in the
-C++ core -- which is exactly what `cpp/` is for, and it is now on the critical path rather than
-being an optimisation.
+    Chi paths k<=7                     7.36 us/mol
+    cycle enumeration k<=8             2.33 us/mol
+    resistance L+ (dposv)              5.76 us/mol
+    normalised Laplacian spectrum     20.50 us/mol   (cut from the block)
+
+**The number that decides the proxy choice does not exist yet.** `cpp/bench.cpp` covers our five
+custom blocks ONLY. There is no C++ implementation of the CORE or PREDICT descriptor families --
+BCUT2D, EState, Crippen, Kappa/Ipc, MoeType and the rest -- so there is no legitimate figure for
+what exact computation of the predict block costs. Until those families are in `cpp/`:
+
+* ridge (0.75 us) and the GNN (211 us) can be compared to each other, because both are measured
+  in the shipped runtime;
+* neither can be compared to "just computing the descriptors", because that number is unmeasured.
+
+Porting two or three PREDICT families to `cpp/` and timing them is therefore the gate on the
+proxy decision, not an optimisation task. If exact predict lands anywhere near 211 us/mol, the
+GNN cannot justify itself and ridge is the only proxy worth shipping.
