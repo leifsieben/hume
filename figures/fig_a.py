@@ -90,29 +90,47 @@ INK = STYLE["ink"]
 # heavy-atom graph untouched or nearly so -- stereochemistry, isotope, charge, one halogen for
 # another -- i.e. exactly the properties a graph invariant has to carry explicitly. Row 2 is
 # edits to the graph itself. Row 3 is the calibration row: the unit, then the two controls.
+# FOURTEEN PANELS ON A 2x7 GRID, NO SPARE CELL, and each row ENDS on a tinted panel
+# (Leif 2026-08-26). The rows are semantic, not arbitrary:
+#
+#   Row 1  the skeleton is untouched and something else changed -- stereochemistry, isotope,
+#          charge, element, bond order. These are the properties a graph invariant has to carry
+#          explicitly, and they are where the arms disagree most.
+#   Row 2  the skeleton itself changed, then the reference that defines the unit.
+#
+# Each row closes on a panel whose reading rule is different from its neighbours', so the eye
+# meets the tint at a row boundary rather than mid-scan.
 MODES = [
     ("stereo_flip",    "A",   "Inverted\nstereocentre"),
     ("ez_flip",        "A",   "Flipped E/Z\ndouble bond"),
     ("isotope_13c",    "A",   "$^{12}$C→$^{13}$C,\ngraph unchanged"),
     ("protonate",      "A",   "Protonation\nstate changed"),
     ("halogen_swap",   "A",   "Halogen\nswapped"),
+    ("saturate",       "A",   "C=C reduced\nto C–C"),
+    ("null_enumerate", "B",   "Re-written\nSMILES"),
     ("h_to_methyl",    "A",   "One methyl\nadded"),
     ("n_methylation",  "A",   "Amide N–H →\nN–methyl"),
     ("scaffold_hop",   "A",   "Aromatic C→N\n(benzene→pyridine)"),
     ("ring_contract",  "A",   "Cyclohexyl →\ncyclopentyl"),
     ("regioisomer",    "A",   "Substituent moved\n(ortho ↔ meta)"),
     ("matched_mw",     "REF", "Different molecules,\nsame MW"),
-    ("null_enumerate", "B",   "Re-written\nSMILES"),
     ("null_kekulize",  "B",   "Kekulé\nform"),
 ]
-# TWO PANEL ROWS PLUS A LEGEND ROW (Leif 2026-08-26), matching CLIMB fig_G's plate rather than
-# the 3x5 this started as. Thirteen panels over two rows needs seven columns, which leaves ONE
-# cell free -- placed at the END of row 2 rather than mid-grid, so the reading order runs
-# unbroken: ten chemical edits, the reference that defines the unit, then the two notation
-# controls. The free cell is declared with mark_empty(); check_no_empty_panels() would otherwise
-# refuse to save, which is the behaviour we want everywhere else.
 NROW, NCOL = 2, 7
 TINT = {"A": None, "REF": TINT_REF, "B": TINT_CONTROL}
+
+# What counts as "0" on the plate. NOT `== 0.0`, which was the first rule and it drew an
+# inconsistent figure: the fingerprints and CheMeleon are bitwise invariant to a re-written
+# SMILES and label as zero, while MiniMol and untrained Chemprop land at 1e-6 -- float32
+# residue from a message-passing forward pass over the same graph reached in a different atom
+# order -- and silently got no label at all, which reads as "no bar was drawn" rather than "this
+# model does not respond".
+#
+# 1e-3 is three orders above that residue and 700x below the smallest genuine response anywhere
+# on the plate (Chemprop's 0.061 on regioisomer), so nothing real can be swallowed by it. The
+# label therefore means "zero to within floating-point reproducibility", not "bitwise identical";
+# the CSV carries the unrounded value for anyone who needs the distinction.
+ZERO_TOL = 1e-3
 
 
 # --------------------------------------------------------------------------------------------
@@ -199,7 +217,7 @@ def _panel(ax, armlist, cells, mode, klass, title, ymax):
                 capsize=1.3, capthick=0.55, zorder=4)
     ax.axhline(1.0, color=INK, ls=(0, (3, 2)), lw=0.7, zorder=4)
     for xi, v in zip(x, med):
-        if np.isfinite(v) and v == 0.0:
+        if np.isfinite(v) and v < ZERO_TOL:
             ax.text(xi, ymax * 0.022, "0", ha="center", va="bottom",
                     fontsize=FS["annot"] - 2.5, color=INK, zorder=5)
 
@@ -236,7 +254,7 @@ def main():
     fig = plt.figure(figsize=(STYLE["col2"], 3.30))
     gs = fig.add_gridspec(NROW, NCOL, left=0.062, right=0.995, top=0.885, bottom=0.215,
                           wspace=0.42, hspace=0.72)
-    tags = "abcdefghijklm"
+    tags = "abcdefghijklmnopqrstuvwxyz"[:len(MODES)]
     for i, (mode, klass, title) in enumerate(MODES):
         ax = fig.add_subplot(gs[i // NCOL, i % NCOL])
         assert any(mode in cells[a] for a in armlist), f"fig_a: no data for {mode}"
@@ -246,11 +264,9 @@ def main():
         if i % NCOL == 0:
             ax.set_ylabel("response relative to a\ndifferent molecule", fontsize=FS["annot"])
 
-    # The one spare cell, at the end of row 2. Declared rather than left to trip the save check.
-    if len(MODES) % NCOL:
-        blank = fig.add_subplot(gs[NROW - 1, len(MODES) % NCOL:NCOL])
-        blank.axis("off")
-        mark_empty(blank, "spare cell: 13 panels on a 2x7 grid")
+    assert len(MODES) == NROW * NCOL, (
+        f"fig_a: {len(MODES)} panels on a {NROW}x{NCOL} grid. The plate is designed to fill "
+        f"exactly -- adding or removing a mode means re-choosing the grid, not leaving a hole.")
 
     # THE LEGEND LIVES IN THE GRID, in its own short row, not floating below the axes. A legend
     # anchored outside the canvas grows the plate under savefig("tight") and LaTeX then scales the

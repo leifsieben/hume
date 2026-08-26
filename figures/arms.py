@@ -39,14 +39,31 @@ from __future__ import annotations
 # colour families
 # --------------------------------------------------------------------------------------------
 FAMILY_COLORS = {
-    "anchor":  "#8A5F1B",   # amber   -- FINGERPRINTS, and fingerprint+descriptor combinations
-    "desc":    "#3D8073",   # teal    -- the DESCRIPTOR block on its own
-    "hume":    "#A3455E",   # crimson -- this paper
-    "clm":     "#5C4A85",   # violet  -- external chemical language models
-    "graph":   "#2E8BC0",   # blue    -- external graph foundation models
-    "proxy":   "#6B6494",   # indigo  -- the descriptor proxy ladder (figures C/D only)
+    "anchor":  "#8A5F1B",   # gold    -- FINGERPRINTS, and fingerprint+descriptor combinations
+    "desc":    "#2E6FAF",   # blue    -- the DESCRIPTOR block on its own
+    "clm":     "#8F2D3B",   # red     -- external chemical language models
+    "graph":   "#5B3D8F",   # purple  -- external graph foundation models
+    "hume":    "#2A7F62",   # teal    -- this paper
+    "proxy":   "#4E6273",   # slate   -- the descriptor proxy ladder (figures C/D only)
     "control": "#8A8A8A",   # grey
 }
+
+# ASSIGNMENT FIXED BY LEIF 2026-08-26: "a colour scheme for CLMs (red) and then one for GNNs
+# (purple), then descriptors are blue and fingerprints are gold as they are now."
+#
+# HUME MOVED TO TEAL AS A CONSEQUENCE, not as a preference. It held crimson, which under the new
+# scheme is the CLM family's hue -- and the two do co-occur (the final benchmark figure puts HUME
+# against every external baseline), so leaving it would have put this paper's own arm in the
+# colour of the models it is being compared against.
+#
+# Teal rather than a pure green: HUME sits beside the red CLM family, and red/green is precisely
+# the pairing a deuteranope cannot separate. A bluish green keeps the "distinct new thing"
+# reading while staying separable, and it is far enough from the descriptor blue at #2E6FAF to
+# hold up in the figures where both appear.
+#
+# The proxy ladder went indigo -> slate for the same reason: indigo beside the new purple GNN
+# family was two purples. Slate is desaturated, and the proxies are only ever drawn against each
+# other in figures C/D, where no arm shares the axes.
 
 # WHY DESCRIPTORS-ALONE LEFT THE AMBER FAMILY (Leif 2026-08-26: "give descriptors a different
 # colour, they should only look similar to fingerprints if it's fp+desc, on their own they should
@@ -79,17 +96,14 @@ SHADES = {
                "#A87A22",   # [3] ECFP + RDKit only
                "#E0BC80",   # [4] ECFP + Mordred only
                "#C8912F"],  # [5] descriptors alone (mid, saturated -- CLIMB's ECFP4+desc hex)
-    "hume":   ["#A3455E",   # [0] hume_core_custom -- the headline arm
-               "#CB8C9C",   # [1] hume_core
-               "#6E2437",   # [2] spare (dark)
-               "#DBAEB9"],  # [3] spare (light)
-    "desc":   ["#3D8073", "#5E9C90", "#84B7AD"],
-    "clm":    ["#5C4A85", "#8B7BB5", "#B9AED5"],
-    # Saturated blues, not the pale end of one: the graph family sits directly beside the violet
-    # CLM family in Figure A's legend and a pale blue against a pale violet is the one pair a
-    # reader would have to check the legend for twice.
-    "graph":  ["#0F5C8C", "#2E8BC0", "#8FC4E3"],
-    "proxy":  ["#2E2A4A", "#4A4370", "#6B6494", "#8F89B2", "#B7B3CE"],
+    "hume":   ["#2A7F62",   # [0] hume_core_custom -- the headline arm
+               "#63B097",   # [1] hume_core
+               "#164A38",   # [2] spare (dark)
+               "#9ED3C0"],  # [3] spare (light)
+    "desc":   ["#2E6FAF", "#6396CA", "#A3C3E2"],
+    "clm":    ["#8F2D3B", "#C04A55", "#E08A92"],
+    "graph":  ["#5B3D8F", "#8464B5", "#B9A5D6"],
+    "proxy":  ["#26303A", "#4E6273", "#7B8FA1", "#A8B7C4", "#D0D9E1"],
     "control": ["#8A8A8A", "#B4B4B4", "#2B2B2B"],
 }
 

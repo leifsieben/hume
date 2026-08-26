@@ -34,9 +34,25 @@ light end of the same amber family instead. Same family, maximal lightness separ
 
 ## Colour semantics — slots, not tastes
 
-amber = classical featurisations (fingerprints, descriptor block) · crimson = **HUME** ·
-violet = external chemical language models · teal = external graph foundation models ·
-blue = the descriptor **proxy** ladder (ridge → GNN) · grey = controls
+Fixed by Leif 2026-08-26: *"a colour scheme for CLMs (red) and then one for GNNs (purple), then
+descriptors are blue and fingerprints are gold as they are now."*
+
+| family | hue | arms |
+|---|---|---|
+| `anchor` | **gold** | fingerprints, and fingerprint+descriptor combinations |
+| `desc` | **blue** | the descriptor block on its own |
+| `clm` | **red** | external chemical language models |
+| `graph` | **purple** | external graph foundation models |
+| `hume` | **teal** | this paper |
+| `proxy` | slate | the descriptor proxy ladder (figures C/D only) |
+| `control` | grey | controls |
+
+HUME moved to teal as a *consequence* of that instruction, not a preference: it held crimson,
+which is now the CLM hue, and the two co-occur in the final benchmark figure — leaving it would
+have drawn this paper's own arm in the colour of the models it is compared against. Teal rather
+than a pure green because HUME sits beside the red CLM family and red/green is exactly the pair
+a deuteranope cannot separate. The proxy ladder went indigo → slate for the same class of
+reason: indigo beside the new purple was two purples.
 
 Shades within a family run dark → light and each family spans a distinct lightness band, so the
 figures also survive greyscale printing. The hues are CLIMB's CVD-nudged set: plain

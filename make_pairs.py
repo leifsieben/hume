@@ -253,7 +253,38 @@ def protonate(m):
     return None
 
 
+def saturate(m):
+    """Reduce one non-aromatic C=C to C-C. BOND ORDER changes; the connectivity does not.
+
+    The one axis nothing else on the plate tests. Every other edit moves atoms, elements,
+    charges or positions; this one leaves the skeleton exactly where it was and changes only how
+    two atoms are bonded. ECFP reaches it only through the bond types folded into an environment
+    hash, the descriptor block through its unsaturation counts, and a string model through a
+    single character -- three quite different routes to the same fact, which is why it earns a
+    panel.
+
+    Ring alkenes are allowed (they are not rare enough to skip) but aromatic bonds are not: a
+    Kekule-form aromatic bond IS a double bond to RDKit, and "reducing" one would dearomatise the
+    ring -- a far larger edit than advertised, and one the null_kekulize control would then be
+    entangled with. Double-bond stereo is cleared explicitly, since a saturated bond carrying a
+    stale E/Z tag does not survive sanitisation.
+    """
+    cand = [b for b in m.GetBonds()
+            if b.GetBondType() == Chem.BondType.DOUBLE and not b.GetIsAromatic()
+            and not b.GetBeginAtom().GetIsAromatic() and not b.GetEndAtom().GetIsAromatic()
+            and b.GetBeginAtom().GetAtomicNum() == 6 and b.GetEndAtom().GetAtomicNum() == 6]
+    if not cand:
+        return None
+    e = Chem.RWMol(m)
+    pick = random.choice(cand)
+    nb = e.GetBondBetweenAtoms(pick.GetBeginAtomIdx(), pick.GetEndAtomIdx())
+    nb.SetStereo(Chem.BondStereo.STEREONONE)
+    nb.SetBondType(Chem.BondType.SINGLE)
+    return e.GetMol()
+
+
 EDITS = {"stereo_flip": stereo_flip, "ez_flip": ez_flip, "halogen_swap": halogen_swap,
+         "saturate": saturate,
          "h_to_methyl": h_to_methyl, "n_methylation": n_methylation, "isotope_13c": isotope_13c,
          "scaffold_hop": scaffold_hop, "ring_contract": ring_contract,
          "protonate": protonate, "regioisomer": regioisomer}
