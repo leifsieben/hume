@@ -1,0 +1,41 @@
+# Data and artefacts — regenerable, and far too large for git.
+# The 1M corpus alone is 5.6 GB; checkpoints and job tarballs add hundreds of MB.
+data/
+gpu/devsets/
+gpu/payload/
+gpu/*.tar.gz
+gpu/.instance_*
+gpu/.cpu_instance_*
+gpu/PROXY
+gpu/grid_out/
+gpu/graphs.txt
+cpp/graphs.txt
+cpp/bench
+models_hf/
+backups/
+logs/
+__pycache__/
+*.pyc
+.venv/
+
+# Credentials and keys — never.
+*.pem
+*.key
+.env
+
+# Copies made for shipping to remote boxes; the originals are tracked at the repo root.
+gpu/models.py
+gpu/blocks.py
+gpu/chi.py
+gpu/cycles.py
+gpu/conjugation.py
+gpu/resistance.py
+gpu/stereo.py
+gpu/prep_*.npz
+gpu/ckpt_*.pt
+gpu/data/
+
+# Results: keep the small JSON reports, drop the big arrays.
+results/**/*.npz
+results/**/embeddings/
+.DS_Store
