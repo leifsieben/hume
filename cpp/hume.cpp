@@ -31,9 +31,6 @@ extern "C" {
 void dsyevd_(char *, char *, int *, double *, int *, double *, double *, int *, int *, int *,
              int *);
 void dposv_(char *, int *, int *, double *, int *, double *, int *, int *);
-// dsterf takes NO character arguments, so unlike dsyevr it is safe against Accelerate's
-// Fortran ABI. Eigenvalues of a symmetric tridiagonal, which is all Lanczos needs.
-void dsterf_(int *, double *, double *, int *);
 }
 
 // ---------------------------------------------------------------------------------- data
@@ -723,101 +720,23 @@ struct BcutWork {
 };
 
 // -> {hi, lo} for one property vector.
-// Extremal eigenvalues of the Burden matrix by LANCZOS, never forming the dense matrix.
+// BCUT2D IS A DENSE FACTORISATION, and a Lanczos attempt is deliberately NOT kept here.
 //
-// B = 0.001*(J - I) + diag(p) + sum_bonds (w_b - 0.001)(e_i e_j' + e_j e_i'), so
-//     (Bv)_i = 0.001*(S - v_i) + p_i v_i + sum_{j~i} (w_ij - 0.001) v_j,   S = sum(v)
-// is O(n + m) -- the all-ones part is a single scalar, not an n^2 sweep. RDKit takes four FULL
-// spectra for eight numbers; this takes the two ends of each.
+// The idea was sound on paper: only the largest and smallest eigenvalue of each Burden matrix
+// are wanted, and B = 0.001*J + sparse, so a matrix-vector product is O(n + m) and an iterative
+// solver never forms the dense matrix. Measured, it lost -- 201 us against dsyevd's 94, and
+// 514 us in a first form that called dsterf after every iteration. At n ~ 30 heavy atoms
+// LAPACK's tuned dense kernel beats scalar Lanczos with full reorthogonalisation, and the
+// asymptotic advantage never gets a chance to appear.
 //
-// FALLS BACK TO dsyevd IF LANCZOS HAS NOT CONVERGED, so exactness cannot be traded for speed by
-// accident. Convergence is declared only when both extremal Ritz values are stable to 1e-14
-// relative across an iteration; anything else takes the dense path.
-static inline void bmatvec(const Mol &m, const std::vector<int> &hv, const std::vector<int> &pos,
-                           const std::vector<double> &prop, const double *v, double *out) {
-  const int n = (int)hv.size();
-  double S = 0.0;
-  for (int i = 0; i < n; i++) S += v[i];
-  for (int i = 0; i < n; i++) out[i] = 0.001 * (S - v[i]) + prop[hv[i]] * v[i];
-  for (int b = 0; b < m.nb; b++) {
-    int i = pos[m.bu[b]], j = pos[m.bv[b]];
-    if (i < 0 || j < 0) continue;
-    double w = 1.0 / std::sqrt(m.bord[b]) - 0.001;
-    out[i] += w * v[j];
-    out[j] += w * v[i];
-  }
-}
-
-// Effectively OFF. Set below any realistic molecule size only if a future corpus makes the
-// asymptotic case real; at every size measured here the dense path wins.
-static const int BCUT_LANCZOS_MIN = 100000;
-
-static bool bcut_lanczos(const Mol &m, const std::vector<int> &hv, const std::vector<int> &pos,
-                         const std::vector<double> &prop, double *hi, double *lo) {
-  const int n = (int)hv.size();
-  if (n < 3) return false;
-  const int kmax = std::min(n, 48);
-  static thread_local std::vector<double> V, av, w, alpha, beta, d, e;
-  V.assign((size_t)kmax * n, 0.0);
-  av.assign(n, 0.0); w.assign(n, 0.0);
-  alpha.clear(); beta.clear();
-  for (int i = 0; i < n; i++) V[i] = 1.0 / std::sqrt((double)n);
-  double prev_lo = 0, prev_hi = 0;
-  int stable = 0;
-  for (int k = 0; k < kmax; k++) {
-    bmatvec(m, hv, pos, prop, &V[(size_t)k * n], av.data());
-    double a = 0.0;
-    for (int i = 0; i < n; i++) a += av[i] * V[(size_t)k * n + i];
-    alpha.push_back(a);
-    for (int i = 0; i < n; i++) w[i] = av[i] - a * V[(size_t)k * n + i];
-    if (k > 0)
-      for (int i = 0; i < n; i++) w[i] -= beta[k - 1] * V[(size_t)(k - 1) * n + i];
-    // full reorthogonalisation -- n is small and losing orthogonality loses the eigenvalue
-    for (int r = 0; r <= k; r++) {
-      double dp = 0.0;
-      for (int i = 0; i < n; i++) dp += w[i] * V[(size_t)r * n + i];
-      for (int i = 0; i < n; i++) w[i] -= dp * V[(size_t)r * n + i];
-    }
-    double nb2 = 0.0;
-    for (int i = 0; i < n; i++) nb2 += w[i] * w[i];
-    double bk = std::sqrt(nb2);
-    // CONVERGENCE IS CHECKED EVERY FOURTH STEP, NOT EVERY STEP. dsterf is a LAPACK call; running
-    // it after each of up to 48 iterations, for each of four properties, is 192 calls per
-    // molecule and cost more than the dense factorisation it was meant to replace (514 us
-    // against 94). Extremal Ritz values converge in ~10-20 steps here, so checking on a stride
-    // finds them almost as early for a quarter of the calls.
-    bool check = (k >= 7 && (k % 4 == 3)) || k + 1 >= kmax;
-    if (!check) {
-      if (bk < 1e-12) { /* invariant subspace: fall through and solve */ }
-      else {
-        beta.push_back(bk);
-        for (int i = 0; i < n; i++) V[(size_t)(k + 1) * n + i] = w[i] / bk;
-        continue;
-      }
-    }
-    d = alpha;
-    e = beta;
-    e.resize(std::max((size_t)1, d.size()));
-    int nn = (int)d.size(), info = 0;
-    dsterf_(&nn, d.data(), e.data(), &info);
-    if (info != 0) return false;
-    double cl = d.front(), ch = d.back();
-    // 1e-12 relative, once. The RDKit comparison runs at 1e-9, so three spare orders; demanding
-    // 1e-14 twice in a row never fired at all, because the last digits of a Ritz value keep
-    // wobbling at machine precision long after the value itself has settled.
-    if (k > 7 && std::fabs(cl - prev_lo) <= 1e-12 * (std::fabs(cl) + 1e-30) &&
-        std::fabs(ch - prev_hi) <= 1e-12 * (std::fabs(ch) + 1e-30)) {
-      *lo = cl; *hi = ch; return true;
-    }
-    (void)stable;
-    prev_lo = cl; prev_hi = ch;
-    if (bk < 1e-12) { *lo = cl; *hi = ch; return true; }   // invariant subspace: exact
-    if (k + 1 >= kmax) break;
-    beta.push_back(bk);
-    for (int i = 0; i < n; i++) V[(size_t)(k + 1) * n + i] = w[i] / bk;
-  }
-  return false;
-}
+// It was briefly kept behind a size gate and that was worse than useless: with the threshold
+// above every real molecule the path became dead code no test reached, and a threshold means
+// one descriptor computed two ways with results differing in the last digits across the
+// boundary -- a reproducibility wart on a number that goes in a paper. The claim "it wins for
+// large molecules" was never measured, only assumed.
+//
+// If the adversarial corpus shows a large-molecule tail where this block is genuinely expensive,
+// the way back in is a MEASUREMENT on that tail, not a guessed threshold.
 
 static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
                      double *hi, double *lo) {
@@ -833,14 +752,6 @@ static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
     if (m.Z[i] != 1) { pos[i] = (int)hv.size(); hv.push_back(i); }
   const int n = (int)hv.size();
   if (n == 0) { *hi = *lo = 0.0; return; }
-  // SIZE-GATED, and the gate is the honest result of the experiment. Lanczos was expected to
-  // beat the dense factorisation 2-3x; at drug-like sizes it LOSES badly -- 201 us against 94 --
-  // because n is ~30, where LAPACK's tuned dense kernel outruns scalar Lanczos with full
-  // reorthogonalisation, and the O(n+m) matvec advantage never gets a chance to matter. It only
-  // wins asymptotically, so it runs only where the asymptotics apply. Molecules that large are
-  // rare in drug-like sets and common in the adversarial corpus, which is exactly why the
-  // threshold exists rather than the code being deleted.
-  if (n > BCUT_LANCZOS_MIN && bcut_lanczos(m, hv, pos, prop, hi, lo)) return;
   W.A.assign((size_t)n * n, 0.001);
   for (int i = 0; i < n; i++) W.A[(size_t)i * n + i] = prop[hv[i]];
   for (int b = 0; b < m.nb; b++) {
@@ -1006,7 +917,7 @@ int main(int argc, char **argv) {
   double t_b = time_it(ms, 10, [&] { for (auto &m : ms) { bcut2d(m, BW, bc); sink += bc[0]; } });
   printf("  %-44s %8.2f us/mol\n", "EState (incl. distances)", t_e);
   printf("  %-44s %8.2f us/mol\n", "Kappa1-3 + HallKierAlpha", t_k);
-  printf("  %-44s %8.2f us/mol\n", "BCUT2D (Lanczos, dsyevd fallback)", t_b);
+  printf("  %-44s %8.2f us/mol\n", "BCUT2D (dsyevd, 4 dense spectra)", t_b);
   printf("\n(sink %.3g)\n", (double)sink);
   return 0;
 }
