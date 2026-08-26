@@ -27,6 +27,20 @@ r3cfp,Morgan r=3,ring_contract,A,0.521948,0.345234,0.671054,1000,1.176050
 r3cfp,Morgan r=3,regioisomer,A,0.633875,0.553900,0.699571,1000,1.176050
 r3cfp,Morgan r=3,matched_mw,REF,1.000000,0.910915,1.074118,1000,1.176050
 r3cfp,Morgan r=3,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.176050
+desc,RDKit + Mordred,stereo_flip,A,0.000000,0.000000,0.000000,1000,1.274434
+desc,RDKit + Mordred,ez_flip,A,0.000000,0.000000,0.000000,1000,1.274434
+desc,RDKit + Mordred,isotope_13c,A,0.003513,0.000944,0.007443,1000,1.274434
+desc,RDKit + Mordred,protonate,A,0.979297,0.904956,1.024099,1000,1.274434
+desc,RDKit + Mordred,halogen_swap,A,0.810291,0.588674,0.850840,1000,1.274434
+desc,RDKit + Mordred,saturate,A,0.206774,0.180690,0.230581,1000,1.274434
+desc,RDKit + Mordred,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.274434
+desc,RDKit + Mordred,h_to_methyl,A,0.167916,0.135633,0.230240,1000,1.274434
+desc,RDKit + Mordred,n_methylation,A,0.273349,0.242365,0.307437,1000,1.274434
+desc,RDKit + Mordred,scaffold_hop,A,0.350892,0.147213,0.381060,1000,1.274434
+desc,RDKit + Mordred,ring_contract,A,0.131854,0.114462,0.184012,1000,1.274434
+desc,RDKit + Mordred,regioisomer,A,0.164078,0.124478,0.213647,1000,1.274434
+desc,RDKit + Mordred,matched_mw,REF,1.000000,0.799305,1.197187,1000,1.274434
+desc,RDKit + Mordred,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.274434
 chemberta,ChemBERTa-2,stereo_flip,A,0.000000,0.000000,0.000000,1000,1.410356
 chemberta,ChemBERTa-2,ez_flip,A,0.026515,0.020243,0.033733,1000,1.410356
 chemberta,ChemBERTa-2,isotope_13c,A,0.408659,0.330186,0.501452,1000,1.410356
