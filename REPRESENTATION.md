@@ -383,6 +383,53 @@ timing appears in this table.**
 | PREDICT, ridge proxy | 0.75 | |
 | PREDICT, GNN proxy | 211 | |
 
+### Where CORE's cost actually goes (and why it is recoverable)
+
+"CORE is 686 us" is not actionable; this is. Per-descriptor, RDKit's 108 CORE columns:
+
+| descriptor | us/mol | |
+|---|---|---|
+| Chi4v | 88.28 | |
+| Chi3n / Chi3v | 56.83 / 56.81 | |
+| BalabanJ | 50.16 | |
+| Chi2v / Chi2n | 35.78 / 35.54 | |
+| Phi | 35.48 | Kier flexibility = Kappa1*Kappa2/A |
+| NumRotatableBonds | 34.88 | SMARTS |
+| NumHAcceptors | 17.25 | SMARTS |
+| remaining 99 columns | ~193 | |
+
+**Six Chi columns cost 273 us -- 45% of the block -- and `cpp/bench.cpp` already computes
+FOURTEEN Chi descriptors (k<=7, both n and v variants) in 7.27 us.** That is a 37x speedup on
+the single largest line item, using code that exists today and is already verified exact against
+RDKit over the 1M corpus.
+
+`Phi` is Kappa1*Kappa2/A, and `cpp/predict.cpp` computes all three kappas in 2.88 us -- so Phi is
+free from something already being computed. `BalabanJ` needs distance-matrix row sums, and the
+BFS distance matrix is already built for the EState indices.
+
+Chi + Phi + BalabanJ is 358 us, **59% of CORE's RDKit half, all of it replaceable by C++ that is
+written or nearly free from what is written.**
+
+The 591 Mordred CORE columns tell the same story:
+
+| family | columns | |
+|---|---|---|
+| Autocorrelation | 419 | 71% of them. Weighted sums over the distance matrix |
+| RingCount | 49 | |
+| Chi | 40 | already in C++ |
+| TopologicalCharge | 21 | |
+| PathCount / WalkCount | 17 | matrix powers; machinery exists |
+| everything else | 45 | |
+
+Autocorrelations are weighted sums over the distance matrix crossed with atom-property vectors --
+precisely the "shared graph primitives" the project is built on, and O(n^2) each once the distance
+matrix exists (which EState already builds). They are not cheap by accident of implementation;
+they are cheap by construction, and Mordred is slow at them because Mordred is Python.
+
+**This matters beyond cost.** Gate 1's cherry-pick found the top-30 most valuable descriptors were
+autocorrelations, chi-path clusters and walk counts. Those are exactly the families above. The
+descriptors that carry the signal and the descriptors that are C++-tractable are the same set.
+
 ### Three things this table says
 
 **1. The predict block was never the problem.** At 120 us it is a sixth of CORE's RDKit half
