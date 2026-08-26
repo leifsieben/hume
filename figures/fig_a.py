@@ -100,7 +100,7 @@ MODES = [
     ("n_methylation",  "A",   "Amide N–H →\nN–methyl"),
     ("scaffold_hop",   "A",   "Aromatic C→N\n(benzene→pyridine)"),
     ("ring_contract",  "A",   "Cyclohexyl →\ncyclopentyl"),
-    ("ring_fusion",    "A",   "Linear → angular\nring fusion"),
+    ("regioisomer",    "A",   "Substituent moved\n(ortho ↔ meta)"),
     ("matched_mw",     "REF", "Different molecules,\nsame MW"),
     ("null_enumerate", "B",   "Re-written\nSMILES"),
     ("null_kekulize",  "B",   "Kekulé\nform"),
