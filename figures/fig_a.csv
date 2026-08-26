@@ -64,3 +64,55 @@ molformer,MoLFormer,regioisomer,A,0.362211,0.325960,0.409800,1000,1.398530
 molformer,MoLFormer,matched_mw,REF,1.000000,0.913411,1.089828,1000,1.398530
 molformer,MoLFormer,null_enumerate,B,0.785164,0.689316,0.884479,1000,1.398530
 molformer,MoLFormer,null_kekulize,B,0.854462,0.739562,0.945689,1000,1.398530
+selfies_ted,SELFIES-TED,stereo_flip,A,0.070424,0.054445,0.088461,1000,1.272474
+selfies_ted,SELFIES-TED,ez_flip,A,0.205083,0.166333,0.250449,1000,1.272474
+selfies_ted,SELFIES-TED,isotope_13c,A,0.688000,0.576701,0.803852,1000,1.272474
+selfies_ted,SELFIES-TED,protonate,A,0.399034,0.337502,0.482620,1000,1.272474
+selfies_ted,SELFIES-TED,halogen_swap,A,0.120729,0.100973,0.147526,1000,1.272474
+selfies_ted,SELFIES-TED,h_to_methyl,A,0.475674,0.290878,0.677297,1000,1.272474
+selfies_ted,SELFIES-TED,n_methylation,A,0.314541,0.253046,0.533618,1000,1.272474
+selfies_ted,SELFIES-TED,scaffold_hop,A,0.136716,0.104192,0.196893,1000,1.272474
+selfies_ted,SELFIES-TED,ring_contract,A,0.220249,0.174835,0.280581,1000,1.272474
+selfies_ted,SELFIES-TED,regioisomer,A,0.282717,0.178358,0.401599,1000,1.272474
+selfies_ted,SELFIES-TED,matched_mw,REF,1.000000,0.861142,1.144189,1000,1.272474
+selfies_ted,SELFIES-TED,null_enumerate,B,0.726457,0.641194,0.853611,1000,1.272474
+selfies_ted,SELFIES-TED,null_kekulize,B,0.000000,0.000000,0.265720,1000,1.272474
+minimol,MiniMol,stereo_flip,A,0.000000,0.000000,0.000000,1000,1.155501
+minimol,MiniMol,ez_flip,A,0.280988,0.239610,0.324724,1000,1.155501
+minimol,MiniMol,isotope_13c,A,0.003345,0.001534,0.005291,1000,1.155501
+minimol,MiniMol,protonate,A,0.191960,0.153913,0.228607,1000,1.155501
+minimol,MiniMol,halogen_swap,A,0.315679,0.271337,0.363836,1000,1.155501
+minimol,MiniMol,h_to_methyl,A,0.311185,0.277751,0.350810,1000,1.155501
+minimol,MiniMol,n_methylation,A,0.449905,0.404341,0.531289,1000,1.155501
+minimol,MiniMol,scaffold_hop,A,0.488590,0.435640,0.545737,1000,1.155501
+minimol,MiniMol,ring_contract,A,0.286249,0.230295,0.369479,1000,1.155501
+minimol,MiniMol,regioisomer,A,0.331639,0.258253,0.419149,1000,1.155501
+minimol,MiniMol,matched_mw,REF,1.000000,0.877632,1.118128,1000,1.155501
+minimol,MiniMol,null_enumerate,B,0.000001,0.000001,0.000002,1000,1.155501
+minimol,MiniMol,null_kekulize,B,0.000000,0.000000,0.000001,1000,1.155501
+chemeleon,CheMeleon,stereo_flip,A,0.013532,0.009100,0.022395,1000,1.103686
+chemeleon,CheMeleon,ez_flip,A,0.045614,0.024079,0.077578,1000,1.103686
+chemeleon,CheMeleon,isotope_13c,A,0.001165,0.000760,0.001649,1000,1.103686
+chemeleon,CheMeleon,protonate,A,0.819573,0.566183,1.055772,1000,1.103686
+chemeleon,CheMeleon,halogen_swap,A,0.310394,0.258860,0.383531,1000,1.103686
+chemeleon,CheMeleon,h_to_methyl,A,0.231896,0.193432,0.283876,1000,1.103686
+chemeleon,CheMeleon,n_methylation,A,0.276059,0.232405,0.321747,1000,1.103686
+chemeleon,CheMeleon,scaffold_hop,A,0.227337,0.188870,0.275586,1000,1.103686
+chemeleon,CheMeleon,ring_contract,A,0.342029,0.247543,0.465832,1000,1.103686
+chemeleon,CheMeleon,regioisomer,A,0.288155,0.232864,0.363190,1000,1.103686
+chemeleon,CheMeleon,matched_mw,REF,1.000000,0.844253,1.215288,1000,1.103686
+chemeleon,CheMeleon,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.103686
+chemeleon,CheMeleon,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.103686
+chemprop,"Chemprop, untrained",stereo_flip,A,0.152044,0.125860,0.184284,1000,1.155937
+chemprop,"Chemprop, untrained",ez_flip,A,0.116935,0.100276,0.135552,1000,1.155937
+chemprop,"Chemprop, untrained",isotope_13c,A,0.001015,0.000812,0.001326,1000,1.155937
+chemprop,"Chemprop, untrained",protonate,A,0.251819,0.213213,0.290708,1000,1.155937
+chemprop,"Chemprop, untrained",halogen_swap,A,0.097402,0.083170,0.118886,1000,1.155937
+chemprop,"Chemprop, untrained",h_to_methyl,A,0.147770,0.128873,0.184113,1000,1.155937
+chemprop,"Chemprop, untrained",n_methylation,A,0.183381,0.162485,0.211562,1000,1.155937
+chemprop,"Chemprop, untrained",scaffold_hop,A,0.160194,0.138030,0.193129,1000,1.155937
+chemprop,"Chemprop, untrained",ring_contract,A,0.105324,0.074224,0.192486,1000,1.155937
+chemprop,"Chemprop, untrained",regioisomer,A,0.061246,0.046876,0.077966,1000,1.155937
+chemprop,"Chemprop, untrained",matched_mw,REF,1.000000,0.737560,1.327216,1000,1.155937
+chemprop,"Chemprop, untrained",null_enumerate,B,0.000001,0.000000,0.000001,1000,1.155937
+chemprop,"Chemprop, untrained",null_kekulize,B,0.000000,0.000000,0.000000,1000,1.155937

@@ -73,7 +73,7 @@ from matplotlib.patches import Patch                                        # no
 
 from figures import arms as A                                               # noqa: E402
 from figures.style import (FS, STYLE, TINT_CONTROL, TINT_REF, check_font,   # noqa: E402
-                           LEGEND_BOX, mark_empty, save)
+                           LEGEND_BOX, mark_empty, row_ncol, save)
 
 check_font()
 ROOT = Path(__file__).resolve().parents[1]
@@ -105,7 +105,13 @@ MODES = [
     ("null_enumerate", "B",   "Re-written\nSMILES"),
     ("null_kekulize",  "B",   "Kekulé\nform"),
 ]
-NROW, NCOL = 3, 5
+# TWO PANEL ROWS PLUS A LEGEND ROW (Leif 2026-08-26), matching CLIMB fig_G's plate rather than
+# the 3x5 this started as. Thirteen panels over two rows needs seven columns, which leaves ONE
+# cell free -- placed at the END of row 2 rather than mid-grid, so the reading order runs
+# unbroken: ten chemical edits, the reference that defines the unit, then the two notation
+# controls. The free cell is declared with mark_empty(); check_no_empty_panels() would otherwise
+# refuse to save, which is the behaviour we want everywhere else.
+NROW, NCOL = 2, 7
 TINT = {"A": None, "REF": TINT_REF, "B": TINT_CONTROL}
 
 
@@ -224,9 +230,12 @@ def main():
     ymax = max(1.5, np.ceil(q3max / 0.5) * 0.5)
     print(f"  tallest drawn q3 = {q3max:.3f}  ->  y-limit {ymax:g}")
 
-    fig = plt.figure(figsize=(STYLE["col2"], 4.35))
-    gs = fig.add_gridspec(NROW, NCOL, left=0.068, right=0.995, top=0.915, bottom=0.048,
-                          wspace=0.38, hspace=0.74)
+    # The legend row is NOT a gridspec row. hspace is uniform, so a short third row still gets a
+    # full row's gap above it and the plate rendered with a dead band taller than the legend
+    # itself. Panels get the gridspec; the legend gets its own axes underneath them.
+    fig = plt.figure(figsize=(STYLE["col2"], 3.30))
+    gs = fig.add_gridspec(NROW, NCOL, left=0.062, right=0.995, top=0.885, bottom=0.215,
+                          wspace=0.42, hspace=0.72)
     tags = "abcdefghijklm"
     for i, (mode, klass, title) in enumerate(MODES):
         ax = fig.add_subplot(gs[i // NCOL, i % NCOL])
@@ -237,18 +246,29 @@ def main():
         if i % NCOL == 0:
             ax.set_ylabel("response relative to a\ndifferent molecule", fontsize=FS["annot"])
 
-    # THE LEGEND LIVES IN THE GRID, not under it. Thirteen panels on a 5-wide grid leave two cells
-    # free in the last row, and a legend parked there costs no vertical space at all -- whereas one
-    # anchored below the axes grows the canvas under savefig("tight") and LaTeX then scales the
-    # whole plate, and every font on it, down to fit the text block.
-    lax = fig.add_subplot(gs[NROW - 1, len(MODES) % NCOL:])
+    # The one spare cell, at the end of row 2. Declared rather than left to trip the save check.
+    if len(MODES) % NCOL:
+        blank = fig.add_subplot(gs[NROW - 1, len(MODES) % NCOL:NCOL])
+        blank.axis("off")
+        mark_empty(blank, "spare cell: 13 panels on a 2x7 grid")
+
+    # THE LEGEND LIVES IN THE GRID, in its own short row, not floating below the axes. A legend
+    # anchored outside the canvas grows the plate under savefig("tight") and LaTeX then scales the
+    # whole figure -- and every font on it -- down to fit the text block. Inside the gridspec it
+    # cannot do that, and the rendered width stays pinned to the 6.69in text block.
+    lax = fig.add_axes([0.062, 0.008, 0.933, 0.172])
     lax.axis("off")
     mark_empty(lax, "holds the legend")
     handles = [Patch(facecolor=A.color(a), edgecolor=INK, lw=0.6, hatch=A.hatch(a),
                      label=A.label(a)) for a in armlist]
-    lax.legend(handles=handles, loc="center", ncol=1 if len(handles) <= 6 else 2,
-               fontsize=FS["legend"], handletextpad=0.5, columnspacing=1.0,
-               labelspacing=0.45, borderpad=0.55, **LEGEND_BOX)
+    # ONE ROW up to six arms, TWO beyond. Measured, not guessed: eight arms in one row rendered
+    # the plate at 7.15in against a 6.69in text block (+7%), because savefig("tight") grows the
+    # canvas to whatever hangs off the axes and the legend -- not the panels -- was setting the
+    # width. LaTeX would then scale the plate down and every font on it with it.
+    lax.legend(handles=handles, loc="center",
+               ncol=row_ncol(handles, rows=1 if len(handles) <= 6 else 2),
+               fontsize=FS["legend"], handletextpad=0.5, columnspacing=1.1,
+               labelspacing=0.35, borderpad=0.45, **LEGEND_BOX)
 
     save(fig, "fig_a")
     plt.close(fig)

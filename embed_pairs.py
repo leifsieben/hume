@@ -122,8 +122,114 @@ def arm_molformer(smiles):
     return _hf(smiles, ROOT / "models_hf" / "MolFormer")
 
 
+def arm_selfies_ted(smiles, batch=64):
+    """IBM SELFIES-TED: a BART encoder-decoder over SELFIES, not SMILES.
+
+    Only the ENCODER is used, mean-pooled, matching every other transformer arm here.
+
+    A molecule that fails SMILES->SELFIES conversion yields a zero row rather than being dropped,
+    so the row order stays aligned with `smiles` -- silently shortening the array would misalign
+    every pair after the failure. Conversion failures are counted and printed.
+    """
+    import selfies as sf
+    import torch
+    from transformers import AutoModel, AutoTokenizer
+    path = ROOT / "models_hf" / "SELFIES-TED"
+    tok = AutoTokenizer.from_pretrained(path)
+    mod = AutoModel.from_pretrained(path)
+    enc = mod.get_encoder() if hasattr(mod, "get_encoder") else mod
+    dev = "mps" if torch.backends.mps.is_available() else "cpu"
+    enc = enc.to(dev).eval()
+
+    sel, bad = [], 0
+    for s in smiles:
+        try:
+            sel.append(" ".join(sf.split_selfies(sf.encoder(s))))
+        except Exception:
+            sel.append("")
+            bad += 1
+    if bad:
+        print(f"    selfies_ted: {bad} of {len(smiles)} failed SMILES->SELFIES (zero rows)",
+              flush=True)
+
+    outs, t0 = [], time.time()
+    with torch.no_grad():
+        for i in range(0, len(sel), batch):
+            b = tok(sel[i:i + batch], return_tensors="pt", padding=True,
+                    truncation=True, max_length=256).to(dev)
+            h = enc(**b).last_hidden_state
+            mask = b["attention_mask"].unsqueeze(-1).float()
+            outs.append(((h * mask).sum(1) / mask.sum(1).clamp(min=1)).cpu().float().numpy())
+            if (i // batch) % 50 == 0:
+                print(f"    selfies_ted {i}/{len(sel)} ({time.time()-t0:.0f}s)", flush=True)
+    return np.concatenate(outs).astype(np.float32)
+
+
+def arm_minimol(smiles, batch=256):
+    """MiniMol: a pretrained GNN fingerprint, 512-d."""
+    from minimol import Minimol
+    m = Minimol(batch_size=batch)
+    out = []
+    for i in range(0, len(smiles), batch * 4):
+        chunk = list(smiles[i:i + batch * 4])
+        out.append(np.stack([np.asarray(v, np.float32) for v in m(chunk)]))
+        print(f"    minimol {min(i+batch*4, len(smiles))}/{len(smiles)}", flush=True)
+    return np.concatenate(out).astype(np.float32)
+
+
+def _chemprop_mpnn(pretrained: bool):
+    """A chemprop D-MPNN encoder. `pretrained` loads the CheMeleon foundation weights.
+
+    The two arms differ ONLY in this flag, so `chemprop` (random init) is a clean architectural
+    control for `chemeleon` (the same architecture, pretrained): whatever the untrained model
+    resolves is what the message-passing structure gives you for free, before any learning.
+    """
+    from pathlib import Path as _P
+
+    import torch
+    from chemprop import nn as cnn
+    from chemprop.models import MPNN
+    if pretrained:
+        ck = torch.load(_P.home() / ".chemprop" / "chemeleon_mp.pt", weights_only=True)
+        mp = cnn.BondMessagePassing(**ck["hyper_parameters"])
+        mp.load_state_dict(ck["state_dict"])
+    else:
+        mp = cnn.BondMessagePassing()
+    return MPNN(mp, cnn.MeanAggregation(), cnn.RegressionFFN(input_dim=mp.output_dim))
+
+
+def _chemprop_embed(smiles, pretrained, batch=256):
+    import torch
+    from chemprop import featurizers
+    from chemprop.data import BatchMolGraph
+    from rdkit import Chem, RDLogger
+    RDLogger.DisableLog("rdApp.*")
+    feat = featurizers.SimpleMoleculeMolGraphFeaturizer()
+    model = _chemprop_mpnn(pretrained).eval()
+    tag = "chemeleon" if pretrained else "chemprop"
+    outs, t0 = [], time.time()
+    with torch.no_grad():
+        for i in range(0, len(smiles), batch):
+            mols = [Chem.MolFromSmiles(s) for s in smiles[i:i + batch]]
+            gs = [feat(m if m is not None else Chem.MolFromSmiles("C")) for m in mols]
+            outs.append(model.fingerprint(BatchMolGraph(gs), None, None).numpy())
+            if (i // batch) % 20 == 0:
+                print(f"    {tag} {i}/{len(smiles)} ({time.time()-t0:.0f}s)", flush=True)
+    return np.concatenate(outs).astype(np.float32)
+
+
+def arm_chemeleon(smiles):
+    return _chemprop_embed(smiles, pretrained=True)
+
+
+def arm_chemprop(smiles):
+    return _chemprop_embed(smiles, pretrained=False)
+
+
 ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "desc": arm_desc,
-        "chemberta": arm_chemberta, "molformer": arm_molformer}
+        "chemberta": arm_chemberta, "molformer": arm_molformer,
+        "selfies_ted": arm_selfies_ted, "minimol": arm_minimol,
+        "chemeleon": arm_chemeleon, "chemprop": arm_chemprop}
 
 
 def main() -> None:

@@ -39,13 +39,25 @@ from __future__ import annotations
 # colour families
 # --------------------------------------------------------------------------------------------
 FAMILY_COLORS = {
-    "anchor":  "#8A5F1B",   # amber   -- classical featurisations
+    "anchor":  "#8A5F1B",   # amber   -- FINGERPRINTS, and fingerprint+descriptor combinations
+    "desc":    "#3D8073",   # teal    -- the DESCRIPTOR block on its own
     "hume":    "#A3455E",   # crimson -- this paper
     "clm":     "#5C4A85",   # violet  -- external chemical language models
-    "gnn":     "#3D8073",   # teal    -- external graph foundation models
-    "proxy":   "#3F6E9C",   # blue    -- the descriptor proxy ladder
+    "graph":   "#2E8BC0",   # blue    -- external graph foundation models
+    "proxy":   "#6B6494",   # indigo  -- the descriptor proxy ladder (figures C/D only)
     "control": "#8A8A8A",   # grey
 }
+
+# WHY DESCRIPTORS-ALONE LEFT THE AMBER FAMILY (Leif 2026-08-26: "give descriptors a different
+# colour, they should only look similar to fingerprints if it's fp+desc, on their own they should
+# be more distinct"). Amber now means "a fingerprint is in this arm". `desc` contains no
+# fingerprint at all, and Figure A shows it is not a paler version of one either -- it wins on
+# protonation (1.199 vs ECFP4's 0.811) and halogen swap (0.810 vs 0.353) while losing 2-3x on
+# every graph edit. Two arms that behave that differently must not share a hue.
+#
+# Teal was the graph-foundation-model family until this change; those move to blue, and the proxy
+# ladder moves from blue to indigo. The proxies appear only in figures C/D, where no arm is drawn,
+# so indigo there cannot collide with anything.
 
 SHADES = {
     # SIX ambers, not CLIMB's five: HUME's Figure B splits the descriptor block four ways
@@ -71,9 +83,13 @@ SHADES = {
                "#CB8C9C",   # [1] hume_core
                "#6E2437",   # [2] spare (dark)
                "#DBAEB9"],  # [3] spare (light)
+    "desc":   ["#3D8073", "#5E9C90", "#84B7AD"],
     "clm":    ["#5C4A85", "#8B7BB5", "#B9AED5"],
-    "gnn":    ["#2A5C50", "#3D8073", "#5E9C90", "#84B7AD"],
-    "proxy":  ["#2A4E73", "#3F6E9C", "#6B93B8", "#9AB6D0", "#C3D5E4"],
+    # Saturated blues, not the pale end of one: the graph family sits directly beside the violet
+    # CLM family in Figure A's legend and a pale blue against a pale violet is the one pair a
+    # reader would have to check the legend for twice.
+    "graph":  ["#0F5C8C", "#2E8BC0", "#8FC4E3"],
+    "proxy":  ["#2E2A4A", "#4A4370", "#6B6494", "#8F89B2", "#B7B3CE"],
     "control": ["#8A8A8A", "#B4B4B4", "#2B2B2B"],
 }
 
@@ -104,7 +120,8 @@ ARMS = {
     "ecfp_rdkit_desc": dict(label="ECFP4 + RDKit", family="anchor", color=SHADES["anchor"][3]),
     "ecfp_mordred_desc": dict(label="ECFP4 + Mordred", family="anchor",
                               color=SHADES["anchor"][4]),
-    "desc": dict(label="RDKit + Mordred", family="anchor", color=SHADES["anchor"][5]),
+    # Its OWN family -- no fingerprint in this arm. See the note above FAMILY_COLORS.
+    "desc": dict(label="RDKit + Mordred", family="desc", color=SHADES["desc"][0]),
 
     # ---- HUME (crimson) ---------------------------------------------------------------------
     # The `_predict` arms share their exact counterpart's colour and add a hatch. See module head.
@@ -123,13 +140,23 @@ ARMS = {
                       hf="DeepChem/ChemBERTa-77M-MTR"),
     "molformer": dict(label="MoLFormer", family="clm", color=SHADES["clm"][1],
                       hf="ibm-research/MoLFormer-XL-both-10pct"),
-    "smi_ted": dict(label="SMI-TED", family="clm", color=SHADES["clm"][2],
-                    hf="ibm/materials.smi-ted"),
+    # SELFIES-TED, not SMI-TED (Leif 2026-08-26: "more interesting model"). Both are IBM
+    # encoder-decoders; SELFIES-TED reads SELFIES rather than SMILES, which makes it the only arm
+    # on the plate whose input grammar cannot express an invalid molecule. That is exactly the
+    # property Figure A's two notation controls are built to test, so it is the more informative
+    # of the pair here. SMI-TED's weights stay on disk but no figure draws it.
+    "selfies_ted": dict(label="SELFIES-TED", family="clm", color=SHADES["clm"][2],
+                        hf="ibm-research/materials.selfies-ted"),
 
-    # ---- external graph foundation models (teal) --------------------------------------------
-    "minimol": dict(label="MiniMol", family="gnn", color=SHADES["gnn"][0]),
-    "chemprop": dict(label="Chemprop", family="gnn", color=SHADES["gnn"][1]),
-    "chemeleon": dict(label="CheMeleon", family="gnn", color=SHADES["gnn"][2]),
+    # ---- external graph foundation models (blue) --------------------------------------------
+    # `chemprop` is a randomly-initialised D-MPNN -- the architecture with NO pretraining. It is
+    # a CONTROL, not a pretrained comparator, and its label says so: an untrained encoder that
+    # still responds to chemistry tells you how much of a graph model's sensitivity is
+    # architectural rather than learned. CheMeleon is the same architecture pretrained, so the
+    # two form a matched pair and must keep adjacent shades.
+    "minimol": dict(label="MiniMol", family="graph", color=SHADES["graph"][0]),
+    "chemeleon": dict(label="CheMeleon", family="graph", color=SHADES["graph"][1]),
+    "chemprop": dict(label="Chemprop, untrained", family="graph", color=SHADES["graph"][2]),
 
     # ---- the descriptor proxy ladder (blue) -- figures C/D ----------------------------------
     # These are not representations, they are the five candidate models for the PREDICT block.
@@ -145,9 +172,9 @@ ARMS = {
 # cannot put the same arms in two different orders -- which reads as two different comparisons.
 # Grouped classical -> HUME -> external, i.e. cheapest to most expensive at inference, which is
 # the axis the whole paper is about.
-ARM_ORDER = ["ecfp", "r3cfp", "desc", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
+ARM_ORDER = ["ecfp", "r3cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc", "desc",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
-             "chemberta", "molformer", "smi_ted", "minimol", "chemprop", "chemeleon"]
+             "chemberta", "molformer", "selfies_ted", "minimol", "chemeleon", "chemprop"]
 _unknown = set(ARM_ORDER) - set(ARMS)
 assert not _unknown, f"arms.py: ARM_ORDER names an arm that does not exist: {sorted(_unknown)}"
 
