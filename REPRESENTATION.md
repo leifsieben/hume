@@ -364,6 +364,66 @@ no single defensible default across all chemistry. The decision rule adopted:
 3. Whatever is chosen, the docs must state the regime it was chosen for. A default that is right
    for QM and wrong for potency cliffs is not a bug, but silently presenting it as universal is.
 
+### The measured cost of everything (C++, 2026-08-26)
+
+10,000 benchmark molecules, mean 30.6 heavy atoms, single thread. Native entries are
+`cpp/predict.cpp` and `cpp/bench.cpp`; RDKit entries are its own C++ routines timed one call per
+molecule with the Python->C++ boundary (0.106 us) measured and subtracted. **No Python/Mordred
+timing appears in this table.**
+
+| stage | us/mol | note |
+|---|---|---|
+| **SMILES parse -> mol** | **67.48** | paid once, before anything else. Bigger than ECFP |
+| **ECFP4 counts, 2048** | **31.90** | |
+| our five blocks: chi + cycles + resistance | 15.25 | native; conjugation and stereo not yet in C++ |
+| CORE, the 108 RDKit columns | **685.94** | RDKit C++. Mostly SMARTS fragment counts |
+| CORE, the 591 Mordred columns | **unmeasured** | **no C++ implementation exists anywhere** |
+| PREDICT, exact, RDKit BCUT2D | 332 | `compute_exact_descriptors=True` |
+| **PREDICT, exact, our BCUT2D** | **120** | **the default** |
+| PREDICT, ridge proxy | 0.75 | |
+| PREDICT, GNN proxy | 211 | |
+
+### Three things this table says
+
+**1. The predict block was never the problem.** At 120 us it is a sixth of CORE's RDKit half
+alone. The expensive part of HUME is the block the design calls cheap -- and 591 of CORE's 699
+columns have no C++ implementation at all, so its true cost is not merely large, it is unknown.
+Whatever the default ends up being, `core` cannot ship on until that is measured.
+
+**2. Exact computation beats both proxies worth having.** 120 us against the GNN's 211 us settles
+it: the GNN is not worth a training pipeline, a checkpoint and a PyTorch dependency to be slower
+than computing the answer. Ridge at 0.75 us stays as the opt-in ultra-fast mode, and it earns its
+place partly on correctness rather than speed -- BCUT2D is undefined wherever RDKit has no
+Gasteiger parameters (selenium; 1 molecule in 10,000), and a proxy covers those cells.
+
+**3. Fixed costs dominate at the cheap end.** Parse + ECFP is 99.38 us before a single descriptor
+is computed. A "fingerprint only" configuration is not free, and the marginal cost of adding the
+whole exact predict block to it is barely more than doubling it.
+
+### Headroom on BCUT2D, honestly
+
+94.37 us for four full spectra through `dsyevd`, down from RDKit's 306.83. Two further ideas were
+tried or costed:
+
+* **Skipping the LAPACK workspace query** (it is itself a call, so querying before every
+  factorisation doubles the call count). Implemented -- 94.50 -> 94.37 us, i.e. nothing.
+  Accelerate's query is cheap.
+* **An extremal-only iterative solver.** The Burden matrix is `0.001*J` plus a sparse part, so a
+  matrix-vector product is O(n + m) and Lanczos never forms the dense matrix. The honest estimate
+  is **2-3x, not 20x**: these molecules average 30.6 heavy atoms, and at n = 30 a Lanczos run long
+  enough to converge both extremes costs a similar order to the direct factorisation. The 20x
+  argument only applies to large molecules, which this corpus does not have. Expect ~30-45 us, and
+  a predict block near 55-70 us.
+
+### `compute_exact_descriptors`
+
+A flag, default **off**. Off uses our BCUT2D (94.37 us); on uses RDKit's (306.83 us).
+
+It is NOT a correctness switch -- ours is verified exact against RDKit on all 10,000 molecules,
+all sixteen values, max relative deviation 3e-11. It exists so a result can be reproduced against
+the reference implementation without editing code, which is the kind of escape hatch a reviewer
+asks for and a 3.2x speedup on a load-bearing family deserves.
+
 ### Cost note that shapes the flags
 
 **Only C++ numbers belong here.** Python/Mordred timings measure the interpreter, not the

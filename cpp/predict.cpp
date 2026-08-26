@@ -360,16 +360,15 @@ static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
   // where only the two extremes are wanted -- so the number this produces is an upper bound,
   // and an extremal-only solver (Lanczos, or dsyevr through a LAPACK that accepts it) can only
   // be faster.
+  // NO WORKSPACE QUERY. The query is itself a LAPACK call, so querying before every
+  // factorisation doubles the number of calls -- eight per molecule where four are needed. For
+  // JOBZ='N' the requirement is documented and tiny (LWORK >= 2N+1, LIWORK >= 1), so the buffers
+  // are sized directly and reused across molecules; they only ever grow.
   char jobz = 'N', uplo = 'U';
-  int nn = n, lda = n, info = 0, lwork = -1, liwork = -1;
+  int nn = n, lda = n, info = 0, lwork = 2 * n + 1, liwork = 1;
   W.w.resize(n);
-  double wq;
-  int iwq;
-  dsyevd_(&jobz, &uplo, &nn, W.A.data(), &lda, W.w.data(), &wq, &lwork, &iwq, &liwork, &info);
-  lwork = (int)wq;
-  liwork = iwq;
-  W.work.resize(lwork);
-  W.iwork.resize(liwork);
+  if ((int)W.work.size() < lwork) W.work.resize(lwork);
+  if ((int)W.iwork.size() < liwork) W.iwork.resize(liwork);
   dsyevd_(&jobz, &uplo, &nn, W.A.data(), &lda, W.w.data(), W.work.data(), &lwork,
           W.iwork.data(), &liwork, &info);
   *lo = W.w[0];
