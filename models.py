@@ -261,27 +261,115 @@ def build_mlp(d, t):
 # ------------------------------------------------------------------------------------ GNN
 
 ATOMS = [1, 5, 6, 7, 8, 9, 14, 15, 16, 17, 35, 53]
+NDIM_ATOM = len(ATOMS) + 1 + 5      # element one-hot + explicit OTHER slot + 5 scalars
+NDIM_BOND = 6                       # bond order one-hot(4) + conjugated + in-ring
 
 
 def graph_of(smi):
+    """SMILES -> (atom features, edge index, bond features).
+
+    TWO FIXES over the first version, both found by reading the featuriser back on 2026-08-26
+    while writing up what the GNN actually sees:
+
+    1. IODINE COLLIDED WITH "OTHER". The old code did `ATOMS.index(z) if z in ATOMS else 11`
+       over a 12-element list, so index 11 meant BOTH iodine and every unlisted element --
+       the model could not tell an iodine from a selenium or a metal. OTHER now has its own
+       slot at the end and the element block is len(ATOMS)+1 wide.
+    2. THERE WERE NO BOND FEATURES AT ALL. Bonds existed only as edges, so single/double/
+       triple/aromatic were invisible except indirectly through hydrogen counts. That is a
+       strange blind spot for a model whose job is to predict descriptors built on bond
+       orders, and Figure A's new C=C -> C-C panel is precisely an edit it could barely see.
+
+    Formal charge is added at the same time: protonation state moves a large part of the
+    descriptor block (Figure A panel d) and the old feature set had no way to represent it.
+    """
     from rdkit import Chem
     m = Chem.MolFromSmiles(smi)
     if m is None:
-        return np.zeros((1, 16), np.float32), np.zeros((2, 0), np.int64)
+        return (np.zeros((1, NDIM_ATOM), np.float32), np.zeros((2, 0), np.int64),
+                np.zeros((0, NDIM_BOND), np.float32))
     n = m.GetNumAtoms()
-    F = np.zeros((n, 16), np.float32)
+    nel = len(ATOMS)
+    F = np.zeros((n, NDIM_ATOM), np.float32)
     for i, a in enumerate(m.GetAtoms()):
         z = a.GetAtomicNum()
-        F[i, ATOMS.index(z) if z in ATOMS else 11] = 1.0
-        F[i, 12] = a.GetDegree() / 4.0
-        F[i, 13] = a.GetTotalNumHs() / 4.0
-        F[i, 14] = float(a.GetIsAromatic())
-        F[i, 15] = float(a.IsInRing())
-    e = [[], []]
+        F[i, ATOMS.index(z) if z in ATOMS else nel] = 1.0        # nel == the OTHER slot
+        F[i, nel + 1] = a.GetDegree() / 4.0
+        F[i, nel + 2] = a.GetTotalNumHs() / 4.0
+        F[i, nel + 3] = float(a.GetIsAromatic())
+        F[i, nel + 4] = float(a.IsInRing())
+        F[i, nel + 5] = np.clip(a.GetFormalCharge(), -2, 2) / 2.0
+    e, bf = [[], []], []
+    BT = {Chem.BondType.SINGLE: 0, Chem.BondType.DOUBLE: 1,
+          Chem.BondType.TRIPLE: 2, Chem.BondType.AROMATIC: 3}
     for b in m.GetBonds():
         i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
-        e[0] += [i, j]; e[1] += [j, i]
-    return F, np.array(e, np.int64) if e[0] else np.zeros((2, 0), np.int64)
+        v = np.zeros(NDIM_BOND, np.float32)
+        v[BT.get(b.GetBondType(), 0)] = 1.0
+        v[4] = float(b.GetIsConjugated())
+        v[5] = float(b.IsInRing())
+        e[0] += [i, j]
+        e[1] += [j, i]
+        bf += [v, v]                      # the same feature vector on both directed copies
+    E = np.array(e, np.int64) if e[0] else np.zeros((2, 0), np.int64)
+    B = np.stack(bf) if bf else np.zeros((0, NDIM_BOND), np.float32)
+    return F, E, B
+
+
+def build_gnn(h, depth, t_out):
+    """The D-MPNN, at module level so a CHECKPOINT CAN BE REBUILT WITHOUT TRAINING.
+
+    Lifted out of train_gnn verbatim -- same attribute names, so the state_dict keys of every
+    checkpoint written before this refactor still load (proxy_cost.py asserts that with
+    strict=True). Inference-only consumers need the architecture without the 35-minute training
+    function wrapped around it, and a second hand-written copy of a network is exactly how the
+    copy and the original drift apart.
+    """
+    import torch
+    import torch.nn as nn
+
+    class GNN(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.emb = nn.Linear(NDIM_ATOM, h)
+            # Edge-conditioned messages: the message from a neighbour is a function of the
+            # neighbour's state AND the bond it arrives over, rather than a bare sum of
+            # neighbour states. This is what lets bond order reach the model at all.
+            self.emsg = nn.ModuleList([nn.Linear(h + NDIM_BOND, h) for _ in range(depth)])
+            self.msg = nn.ModuleList([nn.Linear(2 * h, h) for _ in range(depth)])
+            self.nrm = nn.ModuleList([nn.LayerNorm(h) for _ in range(depth)])
+            self.out = nn.Sequential(nn.Linear(h, 512), nn.GELU(), nn.Linear(512, t_out))
+
+        def forward(self, F, E, B, batch, nb):
+            x = self.emb(F)
+            for em, lin, nrm in zip(self.emsg, self.msg, self.nrm):
+                agg = torch.zeros_like(x)
+                if E.shape[1] > 0:
+                    agg.index_add_(0, E[1], torch.relu(em(torch.cat([x[E[0]], B], -1))))
+                x = nrm(x + torch.relu(lin(torch.cat([x, agg], -1))))
+            # SUM readout: descriptors are extensive; mean pooling is what collapsed UMA to rank 5
+            g = torch.zeros(nb, x.shape[1], device=x.device)
+            g.index_add_(0, batch, x)
+            return self.out(g)
+
+    return GNN()
+
+
+def collate_graphs(idx, graphs, dev):
+    """Pack (atom features, edge index, bond features) into one disjoint-union batch."""
+    import torch
+    Fs, Es, Bs, bt, off = [], [], [], [], 0
+    for k, i in enumerate(idx):
+        F, E, B = graphs[i]
+        Fs.append(F)
+        Es.append(E + off)
+        Bs.append(B)
+        bt.append(np.full(len(F), k, np.int64))
+        off += len(F)
+    return (torch.from_numpy(np.concatenate(Fs)).to(dev),
+            torch.from_numpy(np.concatenate(Es, axis=1)).to(dev),
+            torch.from_numpy(np.concatenate(Bs)).to(dev),
+            torch.from_numpy(np.concatenate(bt)).to(dev), len(idx))
 
 
 def train_gnn(smi_tr, Ytr, smi_sets, epochs, t_out, h=128, depth=4, bs=256, threads=10,
@@ -290,33 +378,13 @@ def train_gnn(smi_tr, Ytr, smi_sets, epochs, t_out, h=128, depth=4, bs=256, thre
     run and the GPU run -- same class, same init, same seed, same optimiser, same readout --
     so the GPU arm is comparable with the four matrix models rather than a separate experiment.
     """
-    import torch, torch.nn as nn
+    import torch
     torch.set_num_threads(threads); torch.manual_seed(0)
     dev = torch.device(device)
 
-    class GNN(nn.Module):
-        def __init__(self):
-            super().__init__()
-            self.emb = nn.Linear(16, h)
-            self.msg = nn.ModuleList([nn.Linear(2 * h, h) for _ in range(depth)])
-            self.nrm = nn.ModuleList([nn.LayerNorm(h) for _ in range(depth)])
-            self.out = nn.Sequential(nn.Linear(h, 512), nn.GELU(), nn.Linear(512, t_out))
-
-        def forward(self, F, E, batch, nb):
-            x = self.emb(F)
-            for lin, nrm in zip(self.msg, self.nrm):
-                agg = torch.zeros_like(x)
-                if E.shape[1] > 0:
-                    agg.index_add_(0, E[1], x[E[0]])
-                x = nrm(x + torch.relu(lin(torch.cat([x, agg], -1))))
-            # SUM readout: descriptors are extensive; mean pooling is what collapsed UMA to rank 5
-            g = torch.zeros(nb, x.shape[1], device=x.device)
-            g.index_add_(0, batch, x)
-            return self.out(g)
-
     print("    [gnn] building graphs...", flush=True)
     G = [graph_of(s) for s in smi_tr]
-    net = GNN().to(dev)
+    net = build_gnn(h, depth, t_out).to(dev)
     opt = torch.optim.AdamW(net.parameters(), lr=1e-3, weight_decay=1e-5)
 
     # Resume. Spot reclaimed a 60-epoch run at epoch ~20 and the volume went with it; without
@@ -325,7 +393,8 @@ def train_gnn(smi_tr, Ytr, smi_sets, epochs, t_out, h=128, depth=4, bs=256, thre
     if ckpt and Path(ckpt).exists():
         try:
             c = torch.load(ckpt, map_location=dev, weights_only=False)
-            if c.get("arch", {}) == {"h": h, "depth": depth, "t_out": t_out}:
+            if c.get("arch", {}) == {"h": h, "depth": depth, "t_out": t_out,
+                                     "na": NDIM_ATOM, "nb": NDIM_BOND}:
                 net.load_state_dict(c["state_dict"])
                 opt.load_state_dict(c["opt"])
                 start_ep = int(c["epoch"])
@@ -340,23 +409,16 @@ def train_gnn(smi_tr, Ytr, smi_sets, epochs, t_out, h=128, depth=4, bs=256, thre
     mt = torch.from_numpy(np.isfinite(Ytr).astype(np.float32)).to(dev)
 
     def collate(idx, graphs):
-        Fs, Es, bt, off = [], [], [], 0
-        for k, i in enumerate(idx):
-            F, E = graphs[i]
-            Fs.append(F); Es.append(E + off)
-            bt.append(np.full(len(F), k, np.int64)); off += len(F)
-        return (torch.from_numpy(np.concatenate(Fs)).to(dev),
-                torch.from_numpy(np.concatenate(Es, axis=1)).to(dev),
-                torch.from_numpy(np.concatenate(bt)).to(dev), len(idx))
+        return collate_graphs(idx, graphs, dev)
 
     t0 = time.time()
     for ep in range(start_ep, epochs):
         net.train(); perm = np.random.default_rng(ep).permutation(len(G)); tot = 0.0
         for i in range(0, len(G), bs):
             idx = perm[i:i + bs]
-            F, E, bt, nb = collate(idx, G)
+            F, E, Bf, bt, nb = collate(idx, G)
             opt.zero_grad()
-            p = net(F, E, bt, nb)
+            p = net(F, E, Bf, bt, nb)
             k = torch.from_numpy(idx).to(dev)
             loss = (((p - yt[k]) ** 2) * mt[k]).sum() / mt[k].sum().clamp(min=1)
             loss.backward(); opt.step(); tot += float(loss) * len(idx)
@@ -366,7 +428,8 @@ def train_gnn(smi_tr, Ytr, smi_sets, epochs, t_out, h=128, depth=4, bs=256, thre
             # ~2 minutes' notice; a run that only saves at completion loses everything.
             torch.save({"epoch": ep + 1, "state_dict": net.state_dict(),
                         "opt": opt.state_dict(), "loss": tot / len(G),
-                        "arch": {"h": h, "depth": depth, "t_out": t_out}}, ckpt)
+                        "arch": {"h": h, "depth": depth, "t_out": t_out,
+                                 "na": NDIM_ATOM, "nb": NDIM_BOND}}, ckpt)
 
     net.eval(); outs = []
     with torch.no_grad():
@@ -375,8 +438,8 @@ def train_gnn(smi_tr, Ytr, smi_sets, epochs, t_out, h=128, depth=4, bs=256, thre
             preds = []
             for i in range(0, len(gs), 512):
                 idx = list(range(i, min(i + 512, len(gs))))
-                F, E, bt, nb = collate(idx, gs)
-                preds.append(net(F, E, bt, nb).cpu().numpy())
+                F, E, Bf, bt, nb = collate(idx, gs)
+                preds.append(net(F, E, Bf, bt, nb).cpu().numpy())
             outs.append(np.concatenate(preds))
     return outs
 
@@ -395,6 +458,11 @@ def main() -> None:
                          "X[tr] a view instead of an 10.5 GB copy at 1M")
     ap.add_argument("--fp16", action="store_true",
                     help="hold X as float16 -- 5.8 GB rather than 11.6 GB at 1M")
+    ap.add_argument("--device", default="cpu",
+                    help="torch device for the GNN: cpu | mps | cuda. The ONLY difference "
+                         "between the local and GPU runs -- same class, seed and optimiser.")
+    ap.add_argument("--gnn-ckpt", default=str(OUT / "ckpt_gnn.pt"),
+                    help="written every epoch and resumed from if the architecture matches")
     a = ap.parse_args()
 
     import corpus_data
@@ -453,7 +521,8 @@ def main() -> None:
             pv, pb, W_ridge = train_ridge(Xtr, Ytr, [Xva, Xb], return_w=True)
         elif name == "gnn":
             pv, pb = train_gnn([smi[i] for i in tr], Ytr,
-                               [[smi[i] for i in va], smib], a.gnn_epochs, Ytr.shape[1])
+                               [[smi[i] for i in va], smib], a.gnn_epochs, Ytr.shape[1],
+                               device=a.device, ckpt=a.gnn_ckpt)
         else:
             d, t = X.shape[1], Ytr.shape[1]
             net = {"linquad": lambda: LinQuad.build(d, t),

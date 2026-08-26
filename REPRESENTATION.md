@@ -326,3 +326,54 @@ with `exact` is about 310 core-days. That ratio is the product.
   stereo failure in the surrogate impossible rather than merely unlikely.
 - **Tautomers and protonation state.** Not addressed anywhere; the representation describes
   the molecule as written.
+
+---
+
+## The block flags (decided 2026-08-26)
+
+**Every block is independently switchable, and any combination is legal.** The caller decides
+what to pay for; nothing is welded to anything else. There are four:
+
+| flag | columns | what it is |
+|---|---|---|
+| `ecfp` | 2048 | Morgan r=2 counts, chirality on. (`r3cfp` swaps radius 3 in its place.) |
+| `core` | 699 | descriptor families cheap enough to compute exactly |
+| `blocks` | ~166 | our five: resistance, cycles, conjugation, stereo, chi |
+| `predict` | 166 | the expensive families, predicted by a proxy — or `exact` to compute them |
+
+So `ecfp` alone, `ecfp+core`, `ecfp+blocks`, `ecfp+core+blocks+predict`, and every other subset
+are all valid requests. `blocks.split()` already returns `core` and `predict` as disjoint column
+lists, so this is concatenation, not coupling — the DEV grid has been building arms this way all
+along.
+
+### The default is the hard part, and it is benchmark-dependent
+
+The two benchmarks disagree about `core`, and not marginally:
+
+* **34-dataset potency suite (MoleculeACE-style):** bare `ecfp` has the BEST mean rank (2.85) and
+  beats `ecfp+core` on 28 of 34 datasets. `core` HURTS.
+* **28-dataset DEV grid (QM, physchem, ADMET, tox):** descriptors help — +25.8% on QM, +17.0% on
+  physchem.
+
+This is the same MoleculeNet/MoleculeACE split seen throughout the project, and it means there is
+no single defensible default across all chemistry. The decision rule adopted:
+
+1. Set the default from the **DEV grid**, because that is the benchmark where the descriptor
+   question has a positive answer and where a wrong default costs the most.
+2. If `core` proves to hurt *consistently* across both suites, ship it **off** by default.
+3. Whatever is chosen, the docs must state the regime it was chosen for. A default that is right
+   for QM and wrong for potency cliffs is not a bug, but silently presenting it as universal is.
+
+### Cost note that shapes the flags
+
+Measured on this machine, per molecule, in the CURRENT Python pipeline:
+
+    core block, exact       52,091 us     <- three times the predict block
+    predict block, exact    17,241 us
+    gnn proxy                  211 us     (139 graph build + 72 forward)
+    ridge proxy                  0.75 us
+
+The CORE/PREDICT split was drawn on **C++** cost estimates, not Python ones. In Python today the
+"cheap" half is the expensive half, by 3x. The split only earns its name once `core` is in the
+C++ core -- which is exactly what `cpp/` is for, and it is now on the critical path rather than
+being an optimisation.
