@@ -27,6 +27,9 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors, rdPartialCharges
 
 RDLogger.DisableLog("rdApp.*")
+# E/Z as +/-1, matching stereo.py's _E exactly (TRANS is E, CIS is Z).
+_EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
+       Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -60,17 +63,28 @@ def main(n_want: int = 10_000) -> None:
             chg = [0.0] * m.GetNumAtoms()
             ok = False
         crip = rdMolDescriptors._CalcCrippenContribs(m)
+        # CIP codes for the stereo block. MolFromSmiles assigns them already; the explicit call
+        # is the safety net stereo.py also carries, and is verified to change nothing here.
+        Chem.AssignStereochemistry(m, cleanIt=True, force=True)
+        cip = []
+        for a in m.GetAtoms():
+            if a.HasProp("_CIPCode"):
+                cip.append(1 if a.GetProp("_CIPCode") == "R" else -1)
+            else:
+                cip.append(0)
         rows = []
         for i, a in enumerate(m.GetAtoms()):
             rows.append(f"{a.GetAtomicNum()} {a.GetDegree()} {a.GetTotalNumHs()} "
                         f"{a.GetFormalCharge()} {int(a.GetHybridization())} "
                         f"{int(a.GetIsAromatic())} {int(a.IsInRing())} "
                         f"{a.GetMass():.10g} {chg[i]:.10g} "
-                        f"{crip[i][0]:.10g} {crip[i][1]:.10g}")
+                        f"{crip[i][0]:.10g} {crip[i][1]:.10g} {cip[i]}")
         bonds = []
         for b in m.GetBonds():
+            st = _EZ.get(b.GetStereo(), 0)
             bonds.append(f"{b.GetBeginAtomIdx()} {b.GetEndAtomIdx()} "
-                         f"{b.GetBondTypeAsDouble():.10g}")
+                         f"{b.GetBondTypeAsDouble():.10g} "
+                         f"{int(b.GetIsConjugated())} {int(b.IsInRing())} {st}")
         out.append(f"{m.GetNumAtoms()} {len(bonds)} {int(ok)}\n" + "\n".join(rows) +
                    ("\n" + "\n".join(bonds) if bonds else ""))
         kept.append(Chem.MolToSmiles(m))
