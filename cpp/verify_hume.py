@@ -35,7 +35,8 @@ from pathlib import Path
 
 import numpy as np
 from rdkit import Chem, RDLogger
-from rdkit.Chem import GraphDescriptors as GD
+from rdkit.Chem import Descriptors, GraphDescriptors as GD, rdMolDescriptors
+from rdkit.Chem.EState import EStateIndices
 
 RDLogger.DisableLog("rdApp.*")
 HERE = Path(__file__).resolve().parent
@@ -62,7 +63,16 @@ SPEC = [
     ("T_sum", "py", stereo, "T_sum"), ("T_absum", "py", stereo, "T_absum"),
 ] + [(f"SATS{k}", "py", stereo, f"SATS{k}") for k in range(1, 7)] + [
     ("SATS_far", "py", stereo, "SATS_far"),
-]
+    # merged in from predict.cpp -- same binary, same graph build, same BFS
+    ("MaxEStateIndex", "rdkit", lambda m: max(EStateIndices(m))),
+    ("MinEStateIndex", "rdkit", lambda m: min(EStateIndices(m))),
+    ("MaxAbsEStateIndex", "rdkit", lambda m: max(abs(np.asarray(EStateIndices(m))))),
+    ("MinAbsEStateIndex", "rdkit", lambda m: min(abs(np.asarray(EStateIndices(m))))),
+    ("Kappa1", "rdkit", GD.Kappa1), ("Kappa2", "rdkit", GD.Kappa2),
+    ("Kappa3", "rdkit", GD.Kappa3), ("HallKierAlpha", "rdkit", Descriptors.HallKierAlpha),
+] + [(f"BCUT2D_{t}", "rdkit", (lambda i: (lambda m: rdMolDescriptors.BCUT2D(m)[i]))(i))
+     for i, t in enumerate(["MWHI", "MWLOW", "CHGHI", "CHGLO",
+                            "LOGPHI", "LOGPLOW", "MRHI", "MRLOW"])]
 
 
 def main() -> None:
