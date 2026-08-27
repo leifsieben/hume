@@ -54,10 +54,16 @@ mordred; **1,335 of 1,613 columns exact on every molecule**; 864 of 3,000 molecu
 on every column. So 278 columns disagree somewhere.
 
 **HUME**: bit-exactness *per column* over 100,000 molecules, family by family — VSA 66/66,
-RingCount 49/49, PathCount 11/11, the fragment matcher 76/76, Autocorrelation via a checksum
-identical across a refactor, E-state 2,868,290/2,868,290 atoms. Where a definition is
-ill-posed we diverge deliberately and say so, and the claim becomes *deterministic and
-documented* instead.
+RingCount 49/49, PathCount 11/11, the fragment matcher 76/76, Chi + walks 55/55, E-state
+2,868,290/2,868,290 atoms. Where a definition is ill-posed we diverge deliberately and say so,
+and the claim becomes *deterministic and documented* instead.
+
+For Autocorrelation the claim in force is narrower and worth stating precisely, because a
+stronger version of it was written into this file before its evidence existed: the 486 columns
+that predate the `Z` weight are proven **unchanged** by it — projecting the new 540-column
+artifact back onto its non-`Z` columns reproduces the previous file's md5 `7f08884f…`
+byte-for-byte across all 98,905 molecules. The full 540-column grade against mordred 1.2.0 is
+**running, not finished**, and the 52 new `*Z` columns are unverified until it lands.
 
 Neither standard is wrong; they answer different questions. But a reader comparing "98.6%
 agreement" with "bit-exact on 100,000" is not comparing like with like, and our paper must not
