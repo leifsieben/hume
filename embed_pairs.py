@@ -103,8 +103,24 @@ def _hf(smiles, path, batch=64, pool="mean"):
     import torch
     from transformers import AutoModel, AutoTokenizer
     tok = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
-    mod = AutoModel.from_pretrained(path, trust_remote_code=True, deterministic_eval=True) \
-        if "MoLFormer" in str(path) else AutoModel.from_pretrained(path, trust_remote_code=True)
+    # `deterministic_eval=True` IS PASSED UNCONDITIONALLY, and the models that do not take it
+    # ignore it. It used to be gated on `"MoLFormer" in str(path)` -- which NEVER MATCHED, because
+    # the weights live in models_hf/MolFormer with a lowercase 'l'. So the one model that needs
+    # the flag was the one model that never got it.
+    #
+    # MoLFormer-XL uses linear attention with random feature maps, and RESAMPLES THEM ON EVERY
+    # FORWARD PASS unless this is set. Measured on two SMILES: max component difference between
+    # two identical runs was 0.46161187 as previously called, and exactly 0.0 with the flag. The
+    # embedding was therefore not a function of its input -- two calls produced two incompatible
+    # spaces, and Figure A's sigma normaliser was estimated on a different draw than the pairs it
+    # normalised, so it did not cancel.
+    #
+    # A string test against a directory name is the wrong mechanism regardless: it fails silently,
+    # and it fails in the direction that produces plausible numbers.
+    try:
+        mod = AutoModel.from_pretrained(path, trust_remote_code=True, deterministic_eval=True)
+    except TypeError:
+        mod = AutoModel.from_pretrained(path, trust_remote_code=True)
     dev = "mps" if torch.backends.mps.is_available() else "cpu"
     mod = mod.to(dev).eval()
     outs, t0 = [], time.time()

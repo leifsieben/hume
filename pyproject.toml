@@ -1,0 +1,21 @@
+# Packaging for HUME's verified blocks. See PACKAGING.md for why scikit-build-core + CMake +
+# pybind11 rather than ctypes, Cython, or a subprocess over text files.
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "hume"
+version = "0.1.0"
+description = "Verified molecular descriptor blocks, computed in C++"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.24", "rdkit>=2023.03"]
+
+[tool.scikit-build]
+# The package is src/hume; src/hume_core is C++ only and is not installed. The extension lands
+# next to __init__.py as hume._core, per the install(TARGETS ... DESTINATION hume) in
+# CMakeLists.txt.
+wheel.packages = ["src/hume"]
+minimum-version = "0.10"
+cmake.version = ">=3.15"
+build-dir = "build/{wheel_tag}"
