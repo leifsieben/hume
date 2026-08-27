@@ -25,6 +25,7 @@
 
 #include "crippen_typer.h"
 #include "hume_blocks.h"
+#include "molpickle.h"
 
 namespace py = pybind11;
 
@@ -103,6 +104,59 @@ static void crippen_fill(criptyper::Mol &c, std::vector<int32_t> &cur, const int
   criptyper::contribs(c, logp, mr);
 }
 
+// The per-molecule loop, lifted out of blocks() unchanged so the pickle path below can call the
+// SAME code rather than growing a second copy of it. Nothing here touches a Python object; the
+// caller holds the buffers alive and has released the GIL.
+static void run_blocks(ssize_t nm, const int *AO, const int *BO, const int *OKf, const int *AI,
+                       const double *AD, const int *BI, const int *BS, const double *BD,
+                       double *O) {
+  BlockWork W;
+  Mol m;
+  criptyper::Mol c;
+  std::vector<int32_t> cur;
+  for (ssize_t k = 0; k < nm; k++) {
+    const int a0 = AO[k], a1 = AO[k + 1], b0 = BO[k], b1 = BO[k + 1];
+    m.n = a1 - a0;
+    m.nb = b1 - b0;
+    m.chg_ok = OKf[k];
+
+    m.Z.resize(m.n); m.deg.resize(m.n); m.nH.resize(m.n); m.fchg.resize(m.n);
+    m.hyb.resize(m.n); m.arom.resize(m.n); m.ring.resize(m.n); m.cip.resize(m.n);
+    m.mass.resize(m.n); m.gast.resize(m.n); m.clogp.resize(m.n); m.cmr.resize(m.n);
+    for (int i = 0; i < m.n; i++) {
+      const int *r = AI + (ssize_t)(a0 + i) * N_ATOM_INT;
+      m.Z[i] = r[0]; m.deg[i] = r[1]; m.nH[i] = r[2]; m.fchg[i] = r[3];
+      m.hyb[i] = r[4]; m.arom[i] = r[5]; m.ring[i] = r[6]; m.cip[i] = r[7];
+      const double *d = AD + (ssize_t)(a0 + i) * N_ATOM_DBL;
+      m.mass[i] = d[0]; m.gast[i] = d[1];
+    }
+    crippen_fill(c, cur, AI, BI, m.n, m.nb, a0, b0, m.clogp.data(), m.cmr.data());
+
+    // Built in exactly the order cpp/hume.cpp's load() builds them: adjacency first over all
+    // bonds, then the (neighbour, bond index) incidence list. Neighbour ORDER is part of the
+    // answer -- chi's DFS and the cycle enumeration walk these lists -- so this loop must not
+    // be fused or reordered.
+    m.bu.resize(m.nb); m.bv.resize(m.nb); m.bord.resize(m.nb);
+    m.bconj.resize(m.nb); m.bring.resize(m.nb); m.bstereo.resize(m.nb);
+    m.adj.assign(m.n, {});
+    for (int b = 0; b < m.nb; b++) {
+      const int *r = BI + (ssize_t)(b0 + b) * N_BOND_INT;
+      m.bu[b] = r[0]; m.bv[b] = r[1]; m.bconj[b] = r[2]; m.bring[b] = r[3];
+      m.bstereo[b] = BS[b0 + b];
+      m.bord[b] = BD[b0 + b];
+      m.adj[m.bu[b]].push_back(m.bv[b]);
+      m.adj[m.bv[b]].push_back(m.bu[b]);
+    }
+    m.inc.assign(m.n, {});
+    for (int b = 0; b < m.nb; b++) {
+      m.inc[m.bu[b]].push_back({m.bv[b], b});
+      m.inc[m.bv[b]].push_back({m.bu[b], b});
+    }
+
+    blocks_row(m, W, O + (ssize_t)k * HUME_NBLOCK_COLS);
+  }
+}
+
 static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, ArrI atom_i,
                                   ArrD atom_d, ArrI bond_i, ArrI bond_s, ArrD bond_d) {
   need(atom_off.ndim() == 1 && bond_off.ndim() == 1 && chg_ok.ndim() == 1, "offsets must be 1-D");
@@ -131,53 +185,136 @@ static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, Arr
   // raw pointer obtained above.
   {
     py::gil_scoped_release nogil;
-    BlockWork W;
-    Mol m;
-    criptyper::Mol c;
-    std::vector<int32_t> cur;
-    for (ssize_t k = 0; k < nm; k++) {
-      const int a0 = AO[k], a1 = AO[k + 1], b0 = BO[k], b1 = BO[k + 1];
-      m.n = a1 - a0;
-      m.nb = b1 - b0;
-      m.chg_ok = OKf[k];
-
-      m.Z.resize(m.n); m.deg.resize(m.n); m.nH.resize(m.n); m.fchg.resize(m.n);
-      m.hyb.resize(m.n); m.arom.resize(m.n); m.ring.resize(m.n); m.cip.resize(m.n);
-      m.mass.resize(m.n); m.gast.resize(m.n); m.clogp.resize(m.n); m.cmr.resize(m.n);
-      for (int i = 0; i < m.n; i++) {
-        const int *r = AI + (ssize_t)(a0 + i) * N_ATOM_INT;
-        m.Z[i] = r[0]; m.deg[i] = r[1]; m.nH[i] = r[2]; m.fchg[i] = r[3];
-        m.hyb[i] = r[4]; m.arom[i] = r[5]; m.ring[i] = r[6]; m.cip[i] = r[7];
-        const double *d = AD + (ssize_t)(a0 + i) * N_ATOM_DBL;
-        m.mass[i] = d[0]; m.gast[i] = d[1];
-      }
-      crippen_fill(c, cur, AI, BI, m.n, m.nb, a0, b0, m.clogp.data(), m.cmr.data());
-
-      // Built in exactly the order cpp/hume.cpp's load() builds them: adjacency first over all
-      // bonds, then the (neighbour, bond index) incidence list. Neighbour ORDER is part of the
-      // answer -- chi's DFS and the cycle enumeration walk these lists -- so this loop must not
-      // be fused or reordered.
-      m.bu.resize(m.nb); m.bv.resize(m.nb); m.bord.resize(m.nb);
-      m.bconj.resize(m.nb); m.bring.resize(m.nb); m.bstereo.resize(m.nb);
-      m.adj.assign(m.n, {});
-      for (int b = 0; b < m.nb; b++) {
-        const int *r = BI + (ssize_t)(b0 + b) * N_BOND_INT;
-        m.bu[b] = r[0]; m.bv[b] = r[1]; m.bconj[b] = r[2]; m.bring[b] = r[3];
-        m.bstereo[b] = BS[b0 + b];
-        m.bord[b] = BD[b0 + b];
-        m.adj[m.bu[b]].push_back(m.bv[b]);
-        m.adj[m.bv[b]].push_back(m.bu[b]);
-      }
-      m.inc.assign(m.n, {});
-      for (int b = 0; b < m.nb; b++) {
-        m.inc[m.bu[b]].push_back({m.bv[b], b});
-        m.inc[m.bv[b]].push_back({m.bu[b], b});
-      }
-
-      blocks_row(m, W, O + (ssize_t)k * HUME_NBLOCK_COLS);
-    }
+    run_blocks(nm, AO, BO, OKf, AI, AD, BI, BS, BD, O);
   }
   return out;
+}
+
+// --------------------------------------------------------------------------------------------
+// THE PICKLE PATH. Same arithmetic, same run_blocks(), different way of getting the numbers in.
+//
+// `extract()` builds the arrays above by asking an RDKit molecule ~300 questions from Python.
+// This asks it ONE: `m.ToBinary(...)`. The blob is parsed by src/hume_core/molpickle.h, which
+// fills byte-for-byte the same arrays -- verified as such on both corpora by
+// cpp/verify_molpickle.py, which is the only reason this path is allowed to exist.
+//
+// The existing path is NOT going anywhere: it reads the molecule through RDKit's supported
+// Python API and is therefore the oracle, the fallback for molecules this reader refuses
+// (queries, substance groups), and the thing that still works the day RDKit moves its format.
+// --------------------------------------------------------------------------------------------
+
+//! The flat arrays for a batch, owned by std::vector so the fast path allocates no numpy.
+struct Flat {
+  std::vector<int> atom_off, bond_off, chg_ok, atom_i, bond_i, bond_s;
+  std::vector<double> atom_d, bond_d;
+};
+
+//! Borrowed views of the caller's bytes objects. Gathered under the GIL, used without it; the
+//! Python list keeps every buffer alive for the duration of the call.
+struct Blobs {
+  std::vector<const std::uint8_t *> ptr;
+  std::vector<std::size_t> len;
+};
+
+static Blobs borrow(const py::sequence &pickles) {
+  Blobs b;
+  const ssize_t nm = py::len(pickles);
+  b.ptr.resize(nm);
+  b.len.resize(nm);
+  for (ssize_t k = 0; k < nm; k++) {
+    py::object o = pickles[k];
+    char *data = nullptr;
+    ssize_t n = 0;
+    if (PyBytes_AsStringAndSize(o.ptr(), &data, &n) != 0) {
+      throw py::error_already_set();
+    }
+    b.ptr[k] = (const std::uint8_t *)data;
+    b.len[k] = (std::size_t)n;
+  }
+  return b;
+}
+
+//! Two passes: peek every header for its atom/bond counts to build the offsets, then parse.
+//! The peek is 28 bytes per molecule and is what lets the flat arrays be allocated exactly once.
+static void fill_from_pickles(const Blobs &b, Flat &f) {
+  const ssize_t nm = (ssize_t)b.ptr.size();
+  f.atom_off.resize(nm + 1);
+  f.bond_off.resize(nm + 1);
+  f.chg_ok.resize(nm);
+  f.atom_off[0] = f.bond_off[0] = 0;
+  for (ssize_t k = 0; k < nm; k++) {
+    int na = 0, nb = 0;
+    molpickle::peek_sizes(b.ptr[k], b.len[k], na, nb);
+    f.atom_off[k + 1] = f.atom_off[k] + na;
+    f.bond_off[k + 1] = f.bond_off[k] + nb;
+  }
+  const int n_atoms = f.atom_off[nm], n_bonds = f.bond_off[nm];
+  f.atom_i.resize((std::size_t)n_atoms * N_ATOM_INT);
+  f.atom_d.resize((std::size_t)n_atoms * N_ATOM_DBL);
+  f.bond_i.resize((std::size_t)n_bonds * N_BOND_INT);
+  f.bond_s.resize(n_bonds);
+  f.bond_d.resize(n_bonds);
+
+  molpickle::Work w;
+  for (ssize_t k = 0; k < nm; k++) {
+    const int a0 = f.atom_off[k], b0 = f.bond_off[k];
+    molpickle::Sink s{f.atom_i.data() + (std::size_t)a0 * N_ATOM_INT,
+                      f.atom_d.data() + (std::size_t)a0 * N_ATOM_DBL,
+                      f.bond_i.data() + (std::size_t)b0 * N_BOND_INT,
+                      f.bond_s.data() + b0, f.bond_d.data() + b0};
+    f.chg_ok[k] = molpickle::parse(b.ptr[k], b.len[k], f.atom_off[k + 1] - a0,
+                                   f.bond_off[k + 1] - b0, s, w);
+  }
+}
+
+static py::array_t<double> blocks_from_pickles(py::sequence pickles) {
+  Blobs b = borrow(pickles);
+  const ssize_t nm = (ssize_t)b.ptr.size();
+  auto out = py::array_t<double>({(ssize_t)nm, (ssize_t)HUME_NBLOCK_COLS});
+  double *O = out.mutable_data();
+  {
+    py::gil_scoped_release nogil;
+    Flat f;
+    fill_from_pickles(b, f);
+    run_blocks(nm, f.atom_off.data(), f.bond_off.data(), f.chg_ok.data(), f.atom_i.data(),
+               f.atom_d.data(), f.bond_i.data(), f.bond_s.data(), f.bond_d.data(), O);
+  }
+  return out;
+}
+
+//! The parsed boundary as arrays, for cpp/verify_molpickle.py to hold against extract(). The
+//! fast path never builds these -- a paired comparison needs them, a descriptor does not.
+static py::tuple pickle_extract(py::sequence pickles) {
+  Blobs b = borrow(pickles);
+  Flat f;
+  {
+    py::gil_scoped_release nogil;
+    fill_from_pickles(b, f);
+  }
+  const ssize_t nm = (ssize_t)b.ptr.size();
+  const ssize_t na = f.atom_off[nm], nb = f.bond_off[nm];
+  auto vec_i = [](const std::vector<int> &v, ssize_t rows, ssize_t cols) {
+    auto a = cols == 1 ? py::array_t<int>({rows}) : py::array_t<int>({rows, cols});
+    std::memcpy(a.mutable_data(), v.data(), v.size() * sizeof(int));
+    return a;
+  };
+  auto vec_d = [](const std::vector<double> &v, ssize_t rows, ssize_t cols) {
+    auto a = cols == 1 ? py::array_t<double>({rows}) : py::array_t<double>({rows, cols});
+    std::memcpy(a.mutable_data(), v.data(), v.size() * sizeof(double));
+    return a;
+  };
+  return py::make_tuple(vec_i(f.atom_off, nm + 1, 1), vec_i(f.bond_off, nm + 1, 1),
+                        vec_i(f.chg_ok, nm, 1), vec_i(f.atom_i, na, N_ATOM_INT),
+                        vec_d(f.atom_d, na, N_ATOM_DBL), vec_i(f.bond_i, nb, N_BOND_INT),
+                        vec_i(f.bond_s, nb, 1), vec_d(f.bond_d, nb, 1));
+}
+
+//! The import-time drift guard. src/hume/_extract.py hands this one probe pickle at import, so
+//! an RDKit whose MolPickler version differs from the pinned one is an ImportError naming both,
+//! rather than 182 quietly wrong columns.
+static void pickle_check(py::buffer probe) {
+  py::buffer_info info = probe.request();
+  molpickle::check_version((const std::uint8_t *)info.ptr, (std::size_t)info.size * info.itemsize);
 }
 
 // The Crippen typer on its own, for src/hume/_verify_crippen.py. blocks() consumes the pair
@@ -225,4 +362,20 @@ PYBIND11_MODULE(_core, mod) {
           py::arg("bond_i"),
           "Per-atom Wildman-Crippen (logP, MR) as (n_atoms, 2). For verification against "
           "rdMolDescriptors._CalcCrippenContribs; blocks() computes this internally.");
+
+  // The pickle path. See src/hume_core/molpickle.h for the format pin and what it costs.
+  mod.attr("PICKLE_VERSION") = py::make_tuple(molpickle::PIN_MAJOR, molpickle::PIN_MINOR,
+                                              molpickle::PIN_PATCH);
+  mod.attr("PICKLE_TABLES_SPEC") = std::string(pickletab::SPEC_SHA256);
+  mod.attr("PICKLE_TABLES_RDKIT") = std::string(pickletab::SOURCE_RDKIT);
+  mod.def("blocks_from_pickles", &blocks_from_pickles, py::arg("pickles"),
+          "Compute the 182 verified block columns from a sequence of RDKit ToBinary() blobs. "
+          "The whole boundary is parsed in C++; see src/hume/_extract.py's extract_pickles().");
+  mod.def("pickle_extract", &pickle_extract, py::arg("pickles"),
+          "The boundary arrays parsed out of ToBinary() blobs, in Batch order. For "
+          "cpp/verify_molpickle.py's paired comparison against extract(); the fast path does "
+          "not build these.");
+  mod.def("pickle_check", &pickle_check, py::arg("probe"),
+          "Assert that a pickle's MolPickler format version is the one this reader was written "
+          "against. Raises RuntimeError naming both versions if not.");
 }

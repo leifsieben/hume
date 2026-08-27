@@ -272,6 +272,78 @@ def extract(mols) -> Batch:
     )
 
 
+# ------------------------------------------------------------------------------------------
+# THE PICKLE PATH -- the same boundary, with the ~300 Python calls per molecule deleted.
+#
+# extract() above is now the REFERENCE IMPLEMENTATION and stays that way. It reads the molecule
+# through RDKit's supported Python API, so it is the oracle the pickle reader is graded against
+# (cpp/verify_molpickle.py), the fallback for molecules the reader refuses -- query atoms,
+# substance groups, anything unsanitised -- and the path that still works the day RDKit moves
+# its pickle format. Nothing below replaces it; it sits alongside.
+#
+# WHAT MOVED. The 15 us/mol of atom- and bond-WRAPPER CONSTRUCTION that reads nothing, plus
+# every per-column pass on top of it, are gone. What is left on this side is three RDKit calls
+# per molecule -- charges, stereochemistry, serialise -- and none of them is a per-atom round
+# trip. src/hume_core/molpickle.h fills the arrays from the blob.
+#
+# WHY ComputedProps IS IN THE FLAG SET, and it is not free. `_GasteigerCharge` is a COMPUTED
+# property, not a private one: `PrivateProps | AtomProps` pickles `_CIPCode` and stops, and a
+# reader trusting the obvious flag pair would silently see zero charges. Adding ComputedProps
+# takes the blob from 452 to 5034 bytes/mol, because each atom then also carries
+# `_GasteigerHCharge`, `_CIPRank` and a `__computedProps` vector naming them. Those are skipped
+# by the reader; what they cost is ToBinary's time and they are why this is 26 us/mol rather
+# than the 10 the smaller flag set takes. NoConformers drops a section we never had.
+_PICKLE_FLAGS = (Chem.PropertyPickleOptions.PrivateProps
+                 | Chem.PropertyPickleOptions.AtomProps
+                 | Chem.PropertyPickleOptions.ComputedProps
+                 | Chem.PropertyPickleOptions.NoConformers)
+
+_to_binary = Chem.Mol.ToBinary
+
+
+def extract_pickles(mols) -> list:
+    """Serialise molecules for the C++ reader. The Python half of the pickle boundary.
+
+    Returns one `bytes` per molecule, in order. Same contract as `extract()`: `None` is rejected
+    loudly rather than skipped, and the two RDKit computations that `extract()` performs happen
+    here in the same order, because both are inputs the blob has to carry.
+    """
+    out = []
+    for k, m in enumerate(mols):
+        if m is None:
+            raise ValueError(f"molecule {k} is None; parse before calling extract_pickles()")
+        try:
+            rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
+        except Exception:
+            # extract() zeroes the charge column for the WHOLE molecule when this throws, not
+            # just for the atoms that failed. Clearing the computed props reproduces that on
+            # this side: the reader then finds no `_GasteigerCharge` on any atom and writes 0.0
+            # with chg_ok = 0. `_CIPCode` is private rather than computed and survives.
+            m.ClearComputedProps()
+        Chem.AssignStereochemistry(m, cleanIt=True, force=True)
+        out.append(_to_binary(m, _PICKLE_FLAGS))
+    return out
+
+
+def _check_pickle_version() -> None:
+    """Fail at import if RDKit's pickle format is not the one molpickle.h was written against.
+
+    Same shape as the drift guards in src/hume_core/crippen_typer.h and cpp/estate_tables.h, and
+    for the same reason: a silently misparsed pickle is a wrong descriptor with no symptom. The
+    probe is one carbon atom, so this costs microseconds once per process.
+    """
+    from . import _core
+
+    probe = Chem.MolFromSmiles("C")
+    try:
+        _core.pickle_check(_to_binary(probe, _PICKLE_FLAGS))
+    except RuntimeError as exc:
+        raise ImportError(str(exc)) from None
+
+
+_check_pickle_version()
+
+
 def _empty() -> Batch:
     z32, z64 = np.zeros(0, np.int32), np.zeros(0, np.float64)
     return Batch(np.zeros(1, np.int32), np.zeros(1, np.int32), z32,
