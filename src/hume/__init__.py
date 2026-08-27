@@ -39,6 +39,22 @@ assert _core.N_COLS == N_COLS, (
 # by the C++ that decides their order, so the package cannot disagree with the extension about
 # which number is which. FAMILY_OFFSETS says where each family starts.
 ALL_COLUMNS: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail())
+
+# NAMED BUT NOT YET COMPUTED. These columns appear in ALL_COLUMNS and in the output array, and
+# are NaN on every molecule, because each is blocked on a boundary field that does not exist yet:
+#
+#   qed  needs qedAlerts -- the count of QED's 116 structural-alert SMARTS that match
+#   SPS  needs stereo perception (FindPotentialStereo), which also blocks
+#        NumAtomStereoCenters and NumUnspecifiedAtomStereoCenters -- one addition buys three
+#
+# They are named rather than dropped so the schema is stable across the port. But COVERAGE MUST
+# NOT COUNT THEM: "790 of 864 have a name" and "788 produce a value" are different claims, and
+# this project has already overstated its position twice by conflating a column count with a
+# capability. Use `covered = set(ALL_COLUMNS) - set(PENDING_COLUMNS)` when reporting.
+#
+# Ipc / AvgIpc / Log2Ipc are NOT here: they are not emitted at all, pending the open bug at the
+# top of src/hume_core/infocontent.h. Two different states, deliberately kept distinct.
+PENDING_COLUMNS: tuple[str, ...] = ("qed", "SPS")
 N_ALL_COLS: int = _core.N_ALL_COLS
 FAMILY_OFFSETS: dict = dict(_core.ALL_OFFSETS)
 

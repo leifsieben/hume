@@ -20,10 +20,17 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include <cmath>
+#include <cstring>
 #include <stdexcept>
 #include <string>
 
 #include "autocorr.h"
+// chi.h's namespace is `chisub`, NOT `chi`: hume_blocks.h below defines a file-scope
+// `static void chi(...)` -- RDKit's Kier-Hall chi0n..chi4v -- and `namespace chi` would be a hard
+// redefinition error the moment both are included here, which is exactly what this file does.
+#include "chi.h"
+#include "constit.h"
 #include "crippen_typer.h"
 #include "estate_typer.h"
 #include "frag_matcher.h"
@@ -33,6 +40,7 @@
 #include "pathcount.h"
 #include "ringcount.h"
 #include "topocharge.h"
+#include "topomisc.h"
 #include "vsa_bins.h"
 
 namespace py = pybind11;
@@ -395,7 +403,28 @@ enum {
   // atom-counting SMARTS Lipinski.py displays) and HeavyAtomCount.
   OFF_FRAG   = OFF_AC + autocorr::N_COLS,
   N_FRAG_COLS = frag_prog::N_NAMED + 2,
-  N_ALL_COLS = OFF_FRAG + N_FRAG_COLS,
+  // mordred's Chi: the 40 SUBGRAPH-enumeration columns. Not RDKit's chi0n..chi4v, which are in
+  // the 182 blocks above and share no code with these; see the note on the include.
+  OFF_CHI    = OFF_FRAG + N_FRAG_COLS,
+  // WalkCount 6 + Constitutional 4 + TopologicalIndex 2 + WienerIndex 2 + ABCIndex 1.
+  OFF_TOPOMISC = OFF_CHI + chisub::N_COLS,
+  // The "small constitutional" census block -- CarbonTypes, AtomCount, BondCount, KappaShapeIndex
+  // and friends. Unrelated to topomisc's `Constitutional` above despite the names; zero column
+  // overlap, and PORT_STATUS.md records the collision.
+  OFF_CONSTIT = OFF_TOPOMISC + topomisc::N_COLS,
+  // ---- ALIASES, NOT COMPUTATION ----
+  // One column: mordred's `SLogP`, whose implementation is literally
+  // `return Crippen.MolLogP(self.mol)`, i.e. vsa_bins.h's C_MOLLOGP under a second name. It is
+  // copied rather than recomputed.
+  //
+  // THE OTHER FIVE COLUMNS constit.h's wiring note lists here ARE ALREADY EMITTED under exactly
+  // their mordred names and were already counted in the coverage before this change:
+  // `TopoPSA`, `TPSA`, `PEOE_VSA11`, `SMR_VSA1` and `EState_VSA1` all come out of
+  // vsabin::col_name() verbatim (checked at module load, below). Emitting them again would put
+  // duplicate names in hume.ALL_COLUMNS, which is worse than the naming gap it would close.
+  OFF_ALIAS  = OFF_CONSTIT + constit::N_COLS,
+  N_ALIAS_COLS = 1,
+  N_ALL_COLS = OFF_ALIAS + N_ALIAS_COLS,
 };
 
 // B_CODE -> the bond-order number `fragmatch` compares against, which is RDKit's Bond::BondType
@@ -425,6 +454,68 @@ static inline int frag_border(int bcode) {
   }
 }
 
+// --------------------------------------------------------------------------------------------
+// WHERE constit's INPUTS COME FROM, resolved BY NAME rather than by a hard-coded index.
+//
+// constit.h computes none of MolLogP, MolMR, TPSA, the H-bond and rotatable-bond counts or the
+// ring counts: they belong to vsa_bins.h, frag_matcher.h and ringcount.h, each already verified
+// bit-exact against RDKit on this corpus, and recomputing any of them here would be both slower
+// and a second chance to differ. What the wiring has to get right is WHICH COLUMN each one is,
+// and an integer literal for that is exactly the silent-transposition failure cpp/verify_wiring.py
+// exists to catch. So the three name lookups are done once, at module load, and a rename upstream
+// is an ImportError naming the missing column instead of a wrong `Vabc`.
+//
+// vsa_bins.h's three are compile-time enumerators (`vsabin::C_MOLLOGP` and friends) and need no
+// lookup; the module-load check below asserts their NAMES too, for the same reason.
+struct InputCols {
+  int naRing = -1, nARing = -1, hbd = -1, hba = -1, nrot = -1;
+  InputCols() {
+    for (int c = 0; c < ringcount::N_COLS; c++) {
+      const char *nm = ringcount::COLS[c].name;
+      if (!std::strcmp(nm, "naRing")) naRing = c;
+      if (!std::strcmp(nm, "nARing")) nARing = c;
+    }
+    for (int c = 0; c < frag_prog::N_NAMED; c++) {
+      const char *nm = frag_prog::NAMED[c].name;
+      if (!std::strcmp(nm, "NumHDonors")) hbd = c;
+      if (!std::strcmp(nm, "NumHAcceptors")) hba = c;
+      if (!std::strcmp(nm, "NumRotatableBonds")) nrot = c;
+    }
+    const std::pair<const char *, int> need[] = {{"naRing", naRing}, {"nARing", nARing},
+                                                 {"NumHDonors", hbd}, {"NumHAcceptors", hba},
+                                                 {"NumRotatableBonds", nrot}};
+    for (const auto &kv : need)
+      if (kv.second < 0)
+        throw std::runtime_error(std::string("hume._core: constit's input column '") + kv.first +
+                                 "' is no longer emitted by the family that owns it");
+    // The three vsa_bins columns are indexed by enumerator, so what can drift is the NAME, and a
+    // name that moved would mean the enumerator now points at a different quantity.
+    const std::pair<int, const char *> vsa_need[] = {{(int)vsabin::C_MOLLOGP, "MolLogP"},
+                                                     {(int)vsabin::C_MOLMR, "MolMR"},
+                                                     {(int)vsabin::C_TPSA, "TPSA"}};
+    for (const auto &kv : vsa_need)
+      if (std::strcmp(vsabin::col_name(kv.first), kv.second))
+        throw std::runtime_error(std::string("hume._core: vsa_bins column ") +
+                                 std::to_string(kv.first) + " is '" +
+                                 vsabin::col_name(kv.first) + "', not '" + kv.second + "'");
+    // The five columns the alias block deliberately does NOT re-emit, asserted present so that
+    // "already covered under their mordred names" stays a fact rather than a comment.
+    const std::pair<int, const char *> already[] = {
+        {(int)vsabin::C_TOPOPSA, "TopoPSA"}, {(int)vsabin::C_TPSA, "TPSA"},
+        {(int)vsabin::C_PEOE + 10, "PEOE_VSA11"}, {(int)vsabin::C_SMR, "SMR_VSA1"},
+        {(int)vsabin::C_ESTATE_VSA, "EState_VSA1"}};
+    for (const auto &kv : already)
+      if (std::strcmp(vsabin::col_name(kv.first), kv.second))
+        throw std::runtime_error(std::string("hume._core: '") + kv.second +
+                                 "' is no longer emitted by vsa_bins.h under that name");
+  }
+};
+
+static const InputCols &input_cols() {
+  static const InputCols c;
+  return c;
+}
+
 //! Scratch for every family, allocated once per batch rather than once per molecule.
 struct AllWork {
   BlockWork bw;
@@ -449,6 +540,16 @@ struct AllWork {
   fragmatch::Mol fm;
   fragmatch::Matcher fmt;            // holds the recursive-query cache across molecules
   std::vector<int> fcount;
+  chisub::Mol xm;
+  // chisub::Scratch owns a 512 KB pow() memo (65,536 doubles). It is hoisted here for that
+  // reason above all: constructing one per molecule would allocate and zero half a megabyte
+  // 100,000 times and throw away every memo hit. Same for the rest of this struct, but this one
+  // is the expensive mistake.
+  chisub::Scratch xs;
+  topomisc::Mol wm;
+  topomisc::Scratch ws;
+  constit::Mol km;
+  std::vector<int32_t> rp_loc;       // the molecule's ring CSR, rebased to start at 0
   AllWork() : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES), fcount(frag_prog::N_NAMED) {}
 };
 
@@ -460,17 +561,32 @@ struct AllWork {
 // F_BLOCKS is not optional. The 182 blocks are what fill BlockWork::ES, and the EState `S*`
 // columns weight by it -- asking for EState without BLOCKS would silently weight by a stale
 // molecule's index, so the flag is forced on rather than left as a trap.
+//
+// F_CONSTIT AND F_ALIAS ARE NOT INDEPENDENT AND family_mask() FORCES THEIR DEPENDENCIES ON.
+// constit.h consumes seven values other families own (see InputCols above) plus the H-added
+// Gasteiger charges, so asking for `constit` alone would feed it a row of zeros -- a wrong
+// descriptor with no symptom, which is the failure mode this whole file is written against.
+// The consequence for measurement is stated where it matters: a `["constit"]` arm in
+// bench_e2e.py's per-family loop times vsa + ringcount + frag + constit, so bench_e2e.py
+// subtracts the dependency arm rather than the blocks-only arm for these two.
 enum : unsigned {
   F_BLOCKS = 1u, F_VSA = 2u, F_ESTATE = 4u, F_RING = 8u, F_PATH = 16u, F_TOPO = 32u, F_IC = 64u,
-  F_AC = 128u, F_FRAG = 256u,
-  F_ALL = 511u,
+  F_AC = 128u, F_FRAG = 256u, F_CHI = 512u, F_TOPOMISC = 1024u, F_CONSTIT = 2048u,
+  F_ALIAS = 4096u,
+  F_ALL = 8191u,
 };
+
+//! Families that need the hydrogen-added blob parsed. Autocorrelation descriptors that graph
+//! directly; constit reads only its Gasteiger charges off it (RNCG/RPCG). Keeping the two in one
+//! predicate is what stops `["constit"]` from silently getting a null charge array -- and what
+//! stops it from paying for Autocorrelation's 486 columns to get one.
+static constexpr unsigned F_NEEDS_H = F_AC | F_CONSTIT;
 
 static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, const int *BS,
                     const double *BD, int a0, int b0, int n, int nb, int chg_ok,
                     const int *ring_ptr, const int *ring_at, int n_rings,
                     const int *HAI, const int *HBI, const double *HAC, int ha0, int hb0,
-                    int hn, int hnb, unsigned fams, double *out) {
+                    int hn, int hnb, int h_chg_ok, unsigned fams, double *out) {
   const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
   const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
@@ -635,6 +751,96 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     out[OFF_FRAG + frag_prog::N_NAMED] = (double)fragmatch::nhohCount(W.fm);
     out[OFF_FRAG + frag_prog::N_NAMED + 1] = (double)fragmatch::heavyAtomCount(W.fm);
   }
+
+  // ---- mordred Chi: 40 columns, and mordred's Chi is not RDKit's ----
+  // NO NEW BOUNDARY COLUMN. Both of the next two families read Z / nH / formal charge out of
+  // `atom_i` (columns 0, 2, 3) and the endpoint pair out of `bond_i` (columns 0, 1), in RDKit's
+  // own bond index order -- which the pickle reader preserves and which chi.h's enumeration order
+  // is load-bearing on (see note 2 in chi.h: the sum is order-sensitive, so a permuted bond list
+  // moves the last bits of every column).
+  //
+  // THE GRAPH IS THE HYDROGEN-SUPPRESSED ONE, which is what `extract_pickles` serialises and what
+  // ringcount / pathcount / topocharge already receive. topomisc derives the H-added atom count
+  // its `Constitutional` columns need from the `nH` column itself, so handing either of these the
+  // AddHs graph -- the one Autocorrelation gets -- would be wrong twice over.
+  if (fams & F_CHI) {
+    chisub::build_from_rows(W.xm, n, nb, ai, N_ATOM_INT, bi, N_BOND_INT);
+    chisub::compute(W.xm, out + OFF_CHI, W.xs);
+  }
+
+  // ---- WalkCount / Constitutional / TopologicalIndex / WienerIndex / ABCIndex: 15 columns ----
+  if (fams & F_TOPOMISC) {
+    topomisc::build_from_rows(W.wm, n, nb, ai, N_ATOM_INT, bi, N_BOND_INT);
+    topomisc::compute(W.wm, out + OFF_TOPOMISC, W.ws);
+  }
+
+  // ---- the small constitutional census block: 43 columns ----
+  // EVERY INPUT IS ANOTHER FAMILY'S ALREADY-WRITTEN ANSWER, read out of `out` above rather than
+  // recomputed. That is constit.h's own rule ("if a value has to be recomputed to wire this up,
+  // that is a sign the wiring is wrong") and it is also what keeps `Vabc`, `Lipinski`,
+  // `GhoseFilter` and `RotRatio` consistent with the columns they are derived from.
+  if (fams & F_CONSTIT) {
+    // The ring CSR arrives as the molecule's slice of a BATCH-wide CSR, so `ring_ptr[0]` is a
+    // global offset. ringcount reads it that way on purpose; constit::Mol copies the arrays, so
+    // it is rebased here instead -- otherwise build_from_rows would copy the whole batch's atom
+    // list for every molecule (correct, and O(total) per molecule).
+    W.rp_loc.resize(n_rings + 1);
+    for (int q = 0; q <= n_rings; q++) W.rp_loc[q] = ring_ptr[q] - ring_ptr[0];
+    W.km.build_from_rows(n, ai, N_ATOM_INT, AD + (ssize_t)a0 * N_ATOM_DBL, N_ATOM_DBL, nb, bi,
+                         N_BOND_INT, bd, n_rings, W.rp_loc.data(), ring_at + ring_ptr[0]);
+
+    const InputCols &IC = input_cols();
+    constit::Inputs in;
+    in.molLogP = out[OFF_VSA + vsabin::C_MOLLOGP];
+    in.molMR = out[OFF_VSA + vsabin::C_MOLMR];
+    in.nHBDon = (int)out[OFF_FRAG + IC.hbd];
+    in.nHBAcc = (int)out[OFF_FRAG + IC.hba];
+    in.nRot = (int)out[OFF_FRAG + IC.nrot];
+    in.naRing = out[OFF_RING + IC.naRing];
+    in.nARing = out[OFF_RING + IC.nARing];
+
+    // RNCG / RPCG read the H-ADDED molecule's Gasteiger charges, which is the array
+    // Autocorrelation's boundary already materialises -- mordred's `c` getter, conditional and
+    // all, straight out of molpickle.h's `ac_charge`. No second H-graph is built for this.
+    //
+    // THE NULL CASE IS NOT AN OPTIMISATION, IT IS THE VERIFIED CONTRACT. cpp/verify_constit.py
+    // passes no charge array at all when `ComputeGasteigerCharges` failed or produced a
+    // non-finite value, and constit.h then returns NaN for both columns rather than a number
+    // derived from garbage. That is the configuration the 100,000-molecule result was measured
+    // in, so the wiring reproduces the same screen: the pickle reader's own `chg_ok` covers the
+    // missing-property case, and the finite sweep covers the rest.
+    const double *hc = HAC ? HAC + ha0 : nullptr;
+    bool hc_ok = h_chg_ok != 0 && hc != nullptr && hn > 0;
+    if (hc_ok)
+      for (int i = 0; i < hn; i++)
+        if (!std::isfinite(hc[i])) { hc_ok = false; break; }
+    in.hchg = hc_ok ? hc : nullptr;
+    in.nhchg = hc_ok ? hn : 0;
+
+    // THE TWO COLUMNS THAT CANNOT BE FINISHED YET. Left at their defaults, which make
+    // constit.h emit NaN rather than a plausible number:
+    //   `qed`  waits on `qedAlerts`, the count of RDKit QED's 116 structural-alert SMARTS that
+    //          match. They need matcher opcodes frag_matcher.h's compiled program does not carry
+    //          (isotope, `~`, `@`, component-level `.`), and writing a second matcher would put
+    //          two subgraph-isomorphism implementations in the repo. The other seven QED
+    //          properties are computed and verified in constit.h today.
+    //   `SPS`  waits on RDKit's POTENTIAL stereo perception (`FindMolChiralCenters`
+    //          includeUnassigned + `FindPotentialStereoBonds`), which the boundary's
+    //          ASSIGNED-only `cip` and `bond_s` columns cannot answer. The same boundary
+    //          addition unblocks `NumAtomStereoCenters` and `NumUnspecifiedAtomStereoCenters`.
+    // They are emitted as NaN and NAMED, not dropped: a missing column reads as an oversight,
+    // and a faked one reads as an answer.
+    in.qedAlerts = -1;
+    in.stereoAtom = nullptr;
+    in.stereoBond = nullptr;
+
+    constit::compute(W.km, in, out + OFF_CONSTIT, out[OFF_VSA + vsabin::C_TPSA]);
+  }
+
+  // ---- aliases: a name, not a computation ----
+  // mordred/SLogP.py in full is `return Crippen.MolLogP(self.mol)`. It is the SAME double as
+  // vsa_bins.h's MolLogP, copied rather than recomputed, so the two can never disagree.
+  if (fams & F_ALIAS) out[OFF_ALIAS] = out[OFF_VSA + vsabin::C_MOLLOGP];
 }
 
 static unsigned family_mask(const py::object &families) {
@@ -642,7 +848,8 @@ static unsigned family_mask(const py::object &families) {
   static const std::pair<const char *, unsigned> NAMED[] = {
       {"blocks", F_BLOCKS}, {"vsa", F_VSA}, {"estate", F_ESTATE}, {"ringcount", F_RING},
       {"pathcount", F_PATH}, {"topocharge", F_TOPO}, {"infocontent", F_IC},
-      {"autocorr", F_AC}, {"frag", F_FRAG}};
+      {"autocorr", F_AC}, {"frag", F_FRAG}, {"chi", F_CHI}, {"topomisc", F_TOPOMISC},
+      {"constit", F_CONSTIT}, {"alias", F_ALIAS}};
   unsigned mask = F_BLOCKS;   // never optional; see the note on the enum
   for (auto h : families) {
     const std::string want = py::cast<std::string>(h);
@@ -652,6 +859,11 @@ static unsigned family_mask(const py::object &families) {
     if (!bit) throw std::invalid_argument("hume._core: unknown family '" + want + "'");
     mask |= bit;
   }
+  // The two families that consume other families' output. Forced rather than validated: a caller
+  // that asks for `constit` wants constit's numbers, not an exception about vsa_bins, and the
+  // alternative -- computing it over a row of zeros -- is the silent-wrong-descriptor failure.
+  if (mask & F_CONSTIT) mask |= F_VSA | F_RING | F_FRAG;
+  if (mask & F_ALIAS) mask |= F_VSA;
   return mask;
 }
 
@@ -681,18 +893,21 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // a boundary array instead.
     fill_from_pickles(b, f);
     Flat h;
-    if (fams & F_AC) fill_from_pickles(hb, h, /*want_ac_charge=*/true);
+    // Parsed for Autocorrelation OR for constit's RNCG/RPCG charges -- see F_NEEDS_H. Asking for
+    // `constit` used to be the case that quietly got a null charge array here.
+    const bool need_h = (fams & F_NEEDS_H) != 0;
+    if (need_h) fill_from_pickles(hb, h, /*want_ac_charge=*/true);
     AllWork W;
     for (ssize_t k = 0; k < nm; k++) {
       const int r0 = RM[k], nr = RM[k + 1] - r0;
-      const int ha0 = (fams & F_AC) ? h.atom_off[k] : 0;
-      const int hb0 = (fams & F_AC) ? h.bond_off[k] : 0;
+      const int ha0 = need_h ? h.atom_off[k] : 0;
+      const int hb0 = need_h ? h.bond_off[k] : 0;
       all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
               f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
               f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
               h.atom_i.data(), h.bond_i.data(), h.ac_charge.data(), ha0, hb0,
-              (fams & F_AC) ? h.atom_off[k + 1] - ha0 : 0,
-              (fams & F_AC) ? h.bond_off[k + 1] - hb0 : 0, fams,
+              need_h ? h.atom_off[k + 1] - ha0 : 0,
+              need_h ? h.bond_off[k + 1] - hb0 : 0, need_h ? h.chg_ok[k] : 0, fams,
               O + (ssize_t)k * N_ALL_COLS);
     }
   }
@@ -718,6 +933,12 @@ static py::list all_column_names_tail() {
   for (int c = 0; c < frag_prog::N_NAMED; c++) out.append(py::str(frag_prog::NAMED[c].name));
   out.append(py::str("NHOHCount"));
   out.append(py::str("HeavyAtomCount"));
+  for (int c = 0; c < chisub::N_COLS; c++) out.append(py::str(chisub::COLS[c].name));
+  for (int c = 0; c < topomisc::N_COLS; c++) out.append(py::str(topomisc::COLS[c]));
+  for (int c = 0; c < constit::N_COLS; c++) out.append(py::str(constit::col_name(c)));
+  // The alias block. `qed` and `SPS` above it are NaN today and are named anyway; so is this,
+  // for the opposite reason -- it is a real value under a second name.
+  out.append(py::str("SLogP"));
   return out;
 }
 
@@ -762,6 +983,14 @@ PYBIND11_MODULE(_core, mod) {
   esttyper::selfCheck();
   ringcount::selfCheck();
   infoic::selfCheck();
+  // constit.h's own guard: it re-derives cpp/gen_constit_tables.py's canonical form byte for byte
+  // and hashes it, so a table that moved is an ImportError rather than a wrong `FilterItLogS`.
+  // chi.h and topomisc.h carry no equivalent -- their spec guard is cpp/verify_chiwalk.py's
+  // check_spec(), which asserts every emitted name against a LIVE mordred object and therefore
+  // cannot run without mordred installed.
+  constit::checkSpec();
+  // Resolves constit's seven borrowed input columns BY NAME, once, and throws if one moved.
+  input_cols();
   mod.doc() = "HUME's verified descriptor blocks. Arrays in, (n_mol, 182) out.";
   mod.attr("N_COLS") = (int)HUME_NBLOCK_COLS;
   mod.def("blocks", &blocks, py::arg("atom_off"), py::arg("bond_off"), py::arg("chg_ok"),
@@ -799,7 +1028,9 @@ PYBIND11_MODULE(_core, mod) {
       py::arg("estate") = (int)OFF_ESTATE, py::arg("ringcount") = (int)OFF_RING,
       py::arg("pathcount") = (int)OFF_PATH, py::arg("topocharge") = (int)OFF_TOPO,
       py::arg("infocontent") = (int)OFF_IC, py::arg("autocorr") = (int)OFF_AC,
-      py::arg("frag") = (int)OFF_FRAG, py::arg("end") = (int)N_ALL_COLS);
+      py::arg("frag") = (int)OFF_FRAG, py::arg("chi") = (int)OFF_CHI,
+      py::arg("topomisc") = (int)OFF_TOPOMISC, py::arg("constit") = (int)OFF_CONSTIT,
+      py::arg("alias") = (int)OFF_ALIAS, py::arg("end") = (int)N_ALL_COLS);
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"),
           py::arg("families") = py::none(),

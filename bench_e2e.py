@@ -95,6 +95,20 @@ def _versions() -> dict:
     without this is not evidence in this repo -- see constraints.txt for why."""
     import rdkit
     v = {"rdkit": rdkit.__version__, "numpy": np.__version__}
+    # THE NUMERIC CANARY, because a version banner is not evidence: a process can print
+    # `rdkit 2025.09.2` and execute 2026.3.5's arithmetic out of unlinked-but-still-mapped dylibs,
+    # which has happened in this repo. cpp/verify_hume.py's molecule and expected value, computed
+    # here, by the process that produces the timings.
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Descriptors
+        v["canary_BCUT2D_MRLOW"] = Descriptors.BCUT2D_MRLOW(Chem.MolFromSmiles(
+            "O=C1CCNCCNNNCCNCCC(=O)c2ccc(o2)COCOCc2ccc1o2"))
+        v["canary_ok"] = v["canary_BCUT2D_MRLOW"] == -0.07665884800196521
+    except Exception as e:                                     # noqa: BLE001
+        v["canary_BCUT2D_MRLOW"] = None
+        v["canary_ok"] = False
+        v["canary_error"] = repr(e)
     try:
         import mordred
         v["mordred"] = mordred.__version__
@@ -253,12 +267,27 @@ def arm_hume(n_mols: int, n_reps: int) -> dict:
     # WITHIN each repetition and the SD taken over the differences, not over the two arms
     # separately: on a contended box the two arms move together, and differencing the means
     # would throw away exactly the pairing that makes the number mean anything.
+    #
+    # TWO FAMILIES ARE NOT INDEPENDENT AND SUBTRACTING THE BLOCKS-ONLY ARM WOULD CHARGE THEM FOR
+    # WORK THAT IS NOT THEIRS. `constit` consumes vsa_bins' MolLogP/MolMR/TPSA, ringcount's
+    # aromatic/aliphatic counts and frag_matcher's HBD/HBA/rotatable counts, so
+    # `all_from_pickles(..., ["constit"])` forces those three on (bindings.cpp's family_mask does
+    # it deliberately -- the alternative is computing constit over a row of zeros). Its own arm
+    # is therefore differenced against a DEPENDENCY arm rather than against blocks_only, which is
+    # the same paired-within-repetition subtraction one level up.
+    fam_deps = {"constit": ["vsa", "ringcount", "frag"], "alias": ["vsa"]}
     fam_names = [k for k in hume.FAMILY_OFFSETS if k not in ("blocks", "end")]
-    per_rep: dict[str, list[float]] = {k: [] for k in ["blocks_only"] + fam_names}
-    arms = ["blocks_only"] + fam_names
+    dep_arms = {f"deps:{n}": d for n, d in fam_deps.items() if n in fam_names}
+    arms = ["blocks_only"] + fam_names + list(dep_arms)
+    per_rep: dict[str, list[float]] = {k: [] for k in arms}
     for cyc in range(n_reps):
         for name in arms[cyc % len(arms):] + arms[:cyc % len(arms)]:
-            sel = [] if name == "blocks_only" else [name]
+            if name == "blocks_only":
+                sel = []
+            elif name in dep_arms:
+                sel = dep_arms[name]
+            else:
+                sel = [name]
             t0 = _cpu()
             _all(sel)
             t1 = _cpu()
@@ -268,7 +297,8 @@ def arm_hume(n_mols: int, n_reps: int) -> dict:
                            "us_sd": round(statistics.stdev(base), 3) if len(base) > 1 else None,
                            "columns": hume.N_COLS}}
     for name in fam_names:
-        d = [a - b for a, b in zip(per_rep[name], base)]
+        ref = per_rep[f"deps:{name}"] if name in fam_deps else base
+        d = [a - b for a, b in zip(per_rep[name], ref)]
         lo = hume.FAMILY_OFFSETS[name]
         hi = min([v for v in hume.FAMILY_OFFSETS.values() if v > lo], default=hume.N_ALL_COLS)
         fams[name] = {"us_mean": round(statistics.mean(d), 3),

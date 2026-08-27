@@ -28,6 +28,12 @@ So this checks the WIRING, against an oracle outside it, family by family:
                     paths sum in different orders (see cpp/verify_topo3.py).
   InfoContent (42)  invariance under `Chem.RenumberAtoms`, which is what infocontent.h claims and
                     the only well-posed thing to claim -- mordred's own IC is numbering-dependent.
+  Chi (40)          mordred's own `Chi` objects, pulled out of mordred's `preset()` generators by
+  TopoMisc (15)     name and evaluated IN THIS PROCESS on the same molecules. Needs the mordred
+  Constit (41)      environment -- see MORDRED below -- and is SKIPPED with a loud line when
+  SLogP (1)         mordred is not importable, so the RDKit-graded families still run in `.venv`.
+                    `qed` and `SPS` are excluded from the 43: they are NaN by construction today
+                    and `--nan-audit` checks that they are NaN and that nothing ELSE is.
   Fragments (76)    RDKit's own `Descriptors`, in this process, on the same molecules -- the
                     oracle OUTSIDE the code path, not cpp/frag's standalone harness, which shares
                     src/hume_core/frag_matcher.h with the wiring and so could only confirm that
@@ -37,6 +43,29 @@ So this checks the WIRING, against an oracle outside it, family by family:
                     `NumHDonors` and `NumHAcceptors` are the three columns that read it.
 
     .venv/bin/python cpp/verify_wiring.py [n_mols]
+
+MORDRED. Three of the families above have no RDKit oracle at all -- they are mordred's, and
+mordred 1.2.0 needs python 3.11 (it imports `distutils`) and numpy 1.x, neither of which the
+pinned `.venv` has. So this file runs in EITHER environment and grades what that environment can
+answer, printing which. To grade the mordred families, install this package into a python-3.11
+environment that has mordred and run the same command there:
+
+    uv venv --python 3.11 .venv-mordred
+    uv pip install --python .venv-mordred/bin/python "mordred==1.2.0" "rdkit==2025.9.2" \
+                   "numpy==1.26.4" "networkx"
+    uv pip install -e . --python .venv-mordred/bin/python --no-deps --no-build-isolation-package hume
+    .venv-mordred/bin/python cpp/verify_wiring.py 5000
+
+THE ORACLE IS NEVER cpp/chiwalk OR cpp/constit. Those binaries include the same headers the
+wiring does and can therefore only confirm that the arithmetic agrees with itself; what is under
+test here is whether all_row() hands each header the right graph. mordred is asked directly, in
+process, on the same RDKit molecule objects.
+
+TWO NUMPY SHIMS, both dead aliases rather than behaviour changes, both already carried by
+cpp/verify_chiwalk.py and cpp/verify_topo3.py: `np.float = float` (mordred/ABCIndex.py's last
+line, and without it ABCGG raises AttributeError on EVERY molecule under the pin, so there is no
+oracle at all) and `np.product = np.prod` (module scope in mordred/MolecularDistanceEdge.py,
+needed only to import `mordred.descriptors`).
 """
 from __future__ import annotations
 
@@ -77,7 +106,7 @@ def col(name: str) -> int:
 
 
 def report(label: str, got: np.ndarray, want: np.ndarray, names, tol: float = 0.0,
-           note: str = "") -> int:
+           note: str = "", nan_eq: bool = False) -> int:
     """-> number of failing columns.
 
     THE MAX DEVIATION IS ALWAYS PRINTED, tolerance or not. House rule 5 in PORT_STATUS.md: a
@@ -88,6 +117,15 @@ def report(label: str, got: np.ndarray, want: np.ndarray, names, tol: float = 0.
     error is the wrong ruler for a column like MinAbsEStateIndex, which is a minimum of absolute
     values and so lives arbitrarily close to zero: two answers a single ULP apart there score
     1e-12 relative and 1e-16 absolute, and only the second says anything about the arithmetic.
+
+    `nan_eq` KEEPS THE COMPARISON BITWISE AND STOPS IT FAILING ON A SIGN BIT NOBODY DEFINED. The
+    mordred families below produce NaN legitimately and often -- chi.h's `c <= 0` abort, mordred's
+    ZeroDivisionError on an empty subgraph list, ABCGG on a bondless graph -- and there is no
+    specification anywhere for whether that NaN comes out 0x7ff8.. or 0xfff8... `float("nan")` on
+    the python side and `0.0/0.0` on the C++ side can differ in the SIGN BIT alone, which the
+    uint64 comparison reports as every column differing on thousands of molecules. Under `nan_eq`
+    two NaNs match and everything else must still be bit-for-bit identical -- and WHICH cells are
+    NaN is still compared exactly, so a column that went NaN when it should not have still fails.
     """
     bad = 0
     worst = 0.0
@@ -97,13 +135,16 @@ def report(label: str, got: np.ndarray, want: np.ndarray, names, tol: float = 0.
         dev = float(np.max(np.abs(g[fin] - w[fin]) /
                            np.maximum(np.abs(w[fin]), 1.0))) if fin.any() else 0.0
         worst = max(worst, dev)
+        same = g.view(np.uint64) == w.view(np.uint64)
+        if nan_eq:
+            same = same | (np.isnan(g) & np.isnan(w))
         if tol == 0.0:
-            ok = np.array_equal(g.view(np.uint64), w.view(np.uint64))
+            ok = bool(same.all())
         else:
             ok = bool((np.isfinite(g) == np.isfinite(w)).all()) and dev <= tol
         if not ok:
             bad += 1
-            n_off = int(np.count_nonzero(g.view(np.uint64) != w.view(np.uint64)))
+            n_off = int(np.count_nonzero(~same))
             print(f"    {nm:22s} DIFFERS on {n_off} molecules, max dev {dev:.3e}")
     kind = "bitwise" if tol == 0.0 else f"dev <= {tol:g}"
     print(f"  {label:26s} {'EXACT' if not bad else f'{bad} / {len(names)} COLUMNS DIFFER'}"
@@ -245,10 +286,210 @@ def run_binary(name: str, inp: Path, tmp: Path, n_cols: int, n_mols: int) -> np.
 
 
 # --------------------------------------------------------------------------------------------
+# the three mordred families, against mordred itself, in this process
+# --------------------------------------------------------------------------------------------
+
+# constit.h's 43 columns minus the two that cannot be finished yet. `qed` is rdkit's and `SPS` is
+# rdkit's; both are NaN through the wiring today (qedAlerts / potential-stereo are not at the
+# boundary) and are checked separately, as NaN, rather than being quietly dropped from the list.
+CONSTIT_NAN = ("qed", "SPS")
+
+
+def _numpy_shim() -> None:
+    """The two dead aliases mordred 1.2.0 needs under numpy 1.26. See the module docstring."""
+    if not hasattr(np, "product"):
+        np.product = np.prod          # mordred/MolecularDistanceEdge.py, module scope
+    if not hasattr(np, "float"):
+        np.float = float              # mordred/ABCIndex.py's last line -- ABCGG has no oracle
+        np.float_ = np.float64        # without it
+
+
+def check_mordred(mols, X) -> int:
+    """Chi 40 + TopoMisc 15 + Constit 41 + SLogP 1, against mordred's own descriptor objects.
+
+    THE OBJECTS ARE PULLED OUT OF MORDRED'S PRESET BY NAME, never constructed from a tuple
+    retyped here, so a name we emit that mordred no longer produces is a hard failure rather than
+    a silently skipped column. mordred's own Context then hands each descriptor `Chem.AddHs` or
+    `Chem.RemoveHs` as that descriptor declares -- which is the whole point of asking mordred
+    instead of a text file: three different graphs are in play across these 55 columns
+    (`Constitutional` alone is the H-ADDED one) and the wiring's claim is that it fed each header
+    the graph its own harness verified it on.
+    """
+    try:
+        _numpy_shim()
+        import mordred
+        from mordred import Calculator, descriptors as mdesc
+    except Exception as e:                                     # noqa: BLE001
+        print(f"  {'mordred families':26s} SKIPPED -- mordred not importable here ({e}). "
+              f"See the docstring: it needs python 3.11 + numpy 1.x, which the pinned .venv is "
+              f"not. Chi (40), TopoMisc (15), Constit (41) and SLogP are UNGRADED in this run.")
+        return 0
+    if mordred.__version__ != "1.2.0":
+        raise SystemExit(f"WRONG MORDRED: {mordred.__version__}. uv resolves mordred DOWN to "
+                         f"0.6.0 next to numpy 2 rather than erroring; see the docstring.")
+    import numpy
+    print(f"  mordred {mordred.__version__}  numpy {numpy.__version__}   "
+          f"-- the mordred families are graded IN THIS PROCESS")
+
+    lo_chi, lo_tm, lo_ct = OFF["chi"], OFF["topomisc"], OFF["constit"]
+    chi_names = NAMES[lo_chi:lo_tm]
+    tm_names = NAMES[lo_tm:lo_ct]
+    ct_names = [n for n in NAMES[lo_ct:OFF["alias"]] if n not in CONSTIT_NAN]
+    want_names = chi_names + tm_names + ct_names + ["SLogP"]
+
+    full = Calculator(mdesc, ignore_3D=True)
+    by_name = {}
+    for d in full.descriptors:
+        by_name.setdefault(str(d), d)
+    missing = [n for n in want_names if n not in by_name]
+    if missing:
+        raise SystemExit(f"SPEC DRIFT: mordred's preset no longer produces {missing}")
+    calc = Calculator([by_name[n] for n in want_names], ignore_3D=True)
+    order = [str(d) for d in calc.descriptors]
+    assert order == want_names, "mordred reordered the descriptors"
+
+    W = np.empty((len(mols), len(want_names)))
+    for i, m in enumerate(mols):
+        for j, v in enumerate(calc(m)):
+            try:
+                W[i, j] = float(v)
+            except Exception:                                  # noqa: BLE001
+                W[i, j] = np.nan                               # a mordred Error object
+
+    bad = 0
+    got = X[:, [col(n) for n in want_names]]
+    n_chi, n_tm, n_ct = len(chi_names), len(tm_names), len(ct_names)
+    a, b, c = n_chi, n_chi + n_tm, n_chi + n_tm + n_ct
+    bad += report("chi vs mordred", got[:, :a], W[:, :a], chi_names, nan_eq=True)
+    bad += report("topomisc vs mordred", got[:, a:b], W[:, a:b], tm_names, nan_eq=True)
+    # ONE POPULATION IS DELIBERATELY DIFFERENT AND MUST NOT HIDE INSIDE THE OTHER, which is the
+    # split cpp/verify_constit.py already makes for the standalone binary. The wiring feeds constit
+    # the REPAIRED ring set (`_rings.rings_for`, the same one RingCount gets), while mordred's
+    # `Rings()` is raw `Chem.GetSymmSSSR` -- and the two differ on roughly 1 molecule in 3,000,
+    # where `symmetrizeSSSR` finds a symmetry-equivalent extra ring it does not always find
+    # (PORT_STATUS.md: 22 of 100,000 move under atom+bond shuffling before the repair, 0 after).
+    # Two constit columns read rings: `fMF` directly and `Vabc` through naRing/nARing.
+    ringdiff = np.array([sorted(sorted(int(i) for i in r) for r in rings_for(m)) !=
+                         sorted(sorted(int(i) for i in r) for r in Chem.GetSymmSSSR(m))
+                         for m in mols])
+    keep = ~ringdiff
+    bad += report("constit vs mordred", got[np.ix_(keep, range(b, c))],
+                  W[np.ix_(keep, range(b, c))], ct_names, nan_eq=True,
+                  note=f"  [{int(ringdiff.sum())} molecules excluded: repaired ring set != "
+                       f"GetSymmSSSR]")
+    if ringdiff.any():
+        # Reported, never graded: on this population the two answers are supposed to differ, and
+        # the useful fact is WHICH columns moved and by how much -- anything outside {Vabc, fMF}
+        # would mean the ring set is reaching a column nobody thought read rings.
+        moved = []
+        for j, nm in enumerate(ct_names):
+            g, w = got[ringdiff, b + j], W[ringdiff, b + j]
+            same = (g.view(np.uint64) == w.view(np.uint64)) | (np.isnan(g) & np.isnan(w))
+            if not same.all():
+                fin = np.isfinite(g) & np.isfinite(w)
+                dev = float(np.max(np.abs(g[fin] - w[fin]) /
+                                   np.maximum(np.abs(w[fin]), 1.0))) if fin.any() else 0.0
+                moved.append((nm, int((~same).sum()), dev))
+        print(f"  {'  ring-set population':26s} {int(ringdiff.sum())} molecules, columns that "
+              f"move: {[(n, k) for n, k, _ in moved] or 'none'}")
+        for nm, k, dev in moved:
+            print(f"    {nm:22s} differs on {k}, max dev {dev:.3e}   "
+                  f"{'EXPECTED (reads the ring set)' if nm in ('Vabc', 'fMF') else 'UNEXPECTED'}")
+        if any(nm not in ("Vabc", "fMF") for nm, _, _ in moved):
+            bad += 1
+    # The alias, graded as its own line. `SLogP` is copied from vsa_bins' MolLogP inside the C++,
+    # so this is the check that mordred/SLogP.py really is `Crippen.MolLogP(mol)` and that the
+    # copy landed in the right column -- not a check of any arithmetic.
+    bad += report("SLogP alias vs mordred", got[:, c:], W[:, c:], ["SLogP"], nan_eq=True)
+
+    # The five columns that were already emitted under their mordred names before this wiring, and
+    # are therefore NOT re-emitted by the alias block. Claimed in constit.h's wiring note as
+    # "already computed"; measured here, against mordred, so the claim is not left as a comment.
+    already = ["TopoPSA", "TPSA", "PEOE_VSA11", "SMR_VSA1", "EState_VSA1"]
+    have = [n for n in already if n in by_name]
+    skip = [n for n in already if n not in by_name]
+    if skip:
+        # `TPSA` is RDKit's name, not mordred's -- mordred calls the same quantity `TopoPSA`. It is
+        # graded above, against RDKit, in the "VSA vs RDKit" line.
+        print(f"  {'':26s} (not mordred names, graded against RDKit above: {skip})")
+    if have:
+        calc2 = Calculator([by_name[n] for n in have], ignore_3D=True)
+        W2 = np.empty((len(mols), len(have)))
+        for i, m in enumerate(mols):
+            for j, v in enumerate(calc2(m)):
+                try:
+                    W2[i, j] = float(v)
+                except Exception:                              # noqa: BLE001
+                    W2[i, j] = np.nan
+        bad += report("already-emitted vs mordred", X[:, [col(n) for n in have]], W2, have,
+                      nan_eq=True, note="  [not re-emitted; already in ALL_COLUMNS]")
+
+    # PER COLUMN, PRINTED WHETHER OR NOT IT PASSED -- the same discipline as the fragment table
+    # above. A family-level EXACT line hides which of the 97 were ever EXERCISED: a column that is
+    # NaN on every molecule, or constant, is reported exact by any comparison and says nothing.
+    # `nonzero` and `nan` are that, and they are worth seeing rather than inferring.
+    print(f"\n  per-column, {len(mols)} molecules from cpp/hard.smi "
+          f"(mordred 1.2.0, in-process; `excl` = molecules on the deliberately-different ring "
+          f"set):")
+    for j, nm in enumerate(want_names):
+        g, w = got[:, j], W[:, j]
+        same = (g.view(np.uint64) == w.view(np.uint64)) | (np.isnan(g) & np.isnan(w))
+        n_ok = int(same[keep].sum())
+        n_ex = int(len(mols) - keep.sum())
+        nz = int(np.count_nonzero(np.nan_to_num(w)))
+        nn = int(np.count_nonzero(~np.isfinite(w)))
+        print(f"    {nm:22s} {n_ok:6d} / {int(keep.sum()):6d}"
+              f"   {'EXACT' if n_ok == int(keep.sum()) else 'MISMATCH'}"
+              f"   nonzero on {nz:5d}   mordred non-finite on {nn:5d}   excl {n_ex}")
+    for nm in CONSTIT_NAN:
+        n_nan = int(np.count_nonzero(np.isnan(X[:, col(nm)])))
+        print(f"    {nm:22s} {'':6s}   {'':6s}   NOT COMPUTED -- NaN on {n_nan} / {len(mols)}"
+              f"   (needs {'QED structural alerts' if nm == 'qed' else 'potential-stereo perception'})")
+    return bad
+
+
+def nan_audit(mols, X) -> int:
+    """WHICH cells of the three new families are non-finite, and whether that is the two known
+    placeholders or something nobody decided.
+
+    PORT_STATUS.md records that non-finite values are CORRECT and expected in this matrix (144 of
+    1015 columns for ethanol are `AATS<k>*` beyond the molecule's diameter). That makes a bare NaN
+    count useless as a guard, so this prints the per-column non-finite rate for the new families
+    and asserts only the thing that IS decided: `qed` and `SPS` are NaN on EVERY molecule, and
+    nothing else in constit is NaN on every molecule.
+    """
+    lo, hi = OFF["chi"], OFF["end"]
+    print(f"\n  non-finite rate, {X.shape[0]} molecules, the four new families:")
+    allnan = []
+    for j in range(lo, hi):
+        n = int(np.count_nonzero(~np.isfinite(X[:, j])))
+        if n:
+            print(f"    {NAMES[j]:22s} {n:6d} / {X.shape[0]:6d} non-finite"
+                  f"{'   <- ALL' if n == X.shape[0] else ''}")
+        if n == X.shape[0]:
+            allnan.append(NAMES[j])
+    expect = list(CONSTIT_NAN)
+    if sorted(allnan) != sorted(expect):
+        print(f"    UNEXPECTED: always-NaN columns are {sorted(allnan)}, expected {sorted(expect)}")
+        return 1
+    print(f"    always-NaN: {sorted(allnan)} -- the two documented placeholders, and only those")
+    return 0
+
+
+# --------------------------------------------------------------------------------------------
 def main() -> int:
     n_want = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
+    # THE NUMERIC CANARY, not the version banner. cpp/verify_hume.py's note in full: a process can
+    # print `rdkit 2025.09.2` and execute another version's arithmetic out of unlinked-but-still-
+    # mapped dylibs, which has happened in this repo. The number is computed here, by this
+    # process, in the interpreter that produces every comparison below.
+    canary = Descriptors.BCUT2D_MRLOW(Chem.MolFromSmiles(
+        "O=C1CCNCCNNNCCNCCC(=O)c2ccc(o2)COCOCc2ccc1o2"))
     print(f"rdkit {rdkit.__version__}   numpy {np.__version__}   "
-          f"python {sys.version.split()[0]}")
+          f"python {sys.version.split()[0]}   CANARY {canary!r}")
+    if canary != -0.07665884800196521:
+        raise SystemExit(f"CANARY MISMATCH: {canary!r}, expected -0.07665884800196521 (rdkit "
+                         f"2025.09.2). The RDKit executing is not the one on the label.")
     print(f"{_core.N_ALL_COLS} columns, offsets {dict(OFF)}\n")
 
     smis = [s for s in (ROOT / "cpp" / "hard.smi").read_text().split("\n") if s]
@@ -352,13 +593,18 @@ def main() -> int:
     # `fn(m)` on the molecule as given, exactly as cpp/verify_frag.py's `verify` grades the
     # standalone harness -- none of these caches anything on the molecule the way Crippen does.
     lo = OFF["frag"]
-    frag_names = NAMES[lo:OFF["end"]]
+    # The family's OWN width -- the next offset above it, not "everything to the end". This read
+    # OFF["end"] and was correct only while `frag` happened to be the last family in the layout;
+    # adding chi / topomisc / constit after it broke that, exactly as adding `frag` after
+    # Autocorrelation broke the same idiom in check_autocorr.
+    hi = min(v for v in OFF.values() if v > lo)
+    frag_names = NAMES[lo:hi]
     want = np.empty((len(mols), len(frag_names)))
     for j, nm in enumerate(frag_names):
         f = fns[nm]
         for i, m in enumerate(mols):
             want[i, j] = float(f(m))
-    got = X[:, lo:OFF["end"]]
+    got = X[:, lo:hi]
     bad += report("fragments vs RDKit", got, want, frag_names)
     # PER COLUMN, printed whether or not it passed. These are integer counts: "exact" means every
     # molecule, and a family-level EXACT line hides which of the 76 were ever exercised. The
@@ -371,6 +617,11 @@ def main() -> int:
         print(f"    {nm:24s} {n_ok:6d} / {len(mols):6d}"
               f"   {'EXACT' if n_ok == len(mols) else 'MISMATCH'}"
               f"   nonzero on {nz}")
+
+    # ---- the three mordred families and the alias --------------------------------------------
+    print()
+    bad += check_mordred(mols, X)
+    bad += nan_audit(mols, X)
 
     print("\nWIRING EXACT -- every family sees the graph its own harness verified it on"
           if not bad else f"\n{bad} COLUMNS DISAGREE")

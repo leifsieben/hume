@@ -46,6 +46,10 @@ logs/
 __pycache__/
 *.pyc
 .venv/
+# The mordred oracle environment: python 3.11 + numpy 1.26.4, which the pinned .venv cannot be
+# (mordred 1.2.0 imports distutils and requires numpy 1.x). cpp/verify_wiring.py's docstring has
+# the three commands that rebuild it. ~400 MB.
+.venv-mordred/
 
 # Credentials and keys — never.
 *.pem
