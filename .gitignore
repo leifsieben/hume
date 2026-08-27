@@ -136,3 +136,14 @@ cpp/infocontent
 cpp/frag_dump.txt
 cpp/frag_counts.txt
 cpp/frag
+
+# Chi / WalkCount port exchange + verification artifacts (cpp/verify_chiwalk.py)
+cpp/chiwalk
+cpp/chiwalk_mols.txt
+cpp/chiwalk_ref.txt
+cpp/chiwalk_cpp.txt
+cpp/chiwalk_pw.txt
+cpp/chiwalk_log.txt
+cpp/chiwalk_perm*.txt
+cpp/chiwalk_bench.smi
+cpp/chiwalk_bench_mols.txt
