@@ -32,8 +32,10 @@ flag transfers by SMILES lookup. It is a property of the molecule within its dat
 on both sides of MoleculeACE's own split), so it is valid under our scaffold folds.
 
 SPLITS. Scaffold folds only — random splits put near-identical analogs on both sides and would
-inflate every arm. 3 repeats x 5 folds; repeat r uses fold seed r and XGBoost seed r, and every
-arm sees the identical (fold, seed) pairs, so all arm comparisons are paired.
+inflate every arm. ``scaffold_folds(smiles, k=5, seed=0)`` with XGBoost ``seed=0``, which is the
+protocol every other experiment in this repo uses. Every arm sees the identical folds, so all
+arm comparisons are paired; spread is reported as the std over the 5 folds, and the aggregate
+comparisons pool 30 datasets x 5 folds = 150 paired observations per arm.
 
 PRE-REGISTERED PREDICTION. On MoleculeACE the optimal w is > 1 and the gain is concentrated in
 the cliff subset with non-cliff flat or slightly worse; on MoleculeNet physchem the optimal w is
@@ -60,8 +62,8 @@ ACE = pathlib.Path("/Users/lsieben/chempfn-data/eval/locked/moleculeace")
 OUT = ROOT / "results" / "cliff_mechanism.json"
 
 N_ECFP = 2048          # X[:, :2048] ECFP, X[:, 2048:] descriptors — verified in assemble.py:89
-N_REPEATS = 3          # repeat r uses fold seed r and XGBoost seed r
-K_FOLDS = 5
+N_REPEATS = 1          # repeat r uses fold seed r and XGBoost seed r
+K_FOLDS = 5            # 5 folds, seed 0 — the protocol every other experiment in this repo uses
 COLSAMPLE_BYNODE = 0.3  # frozen across every arm; chosen on split-share range, not on error
 
 W_GRID = [0.1, 0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 100.0]

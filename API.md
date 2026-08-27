@@ -226,7 +226,71 @@ Applied to the rest:
 
 ---
 
-## 7. Open items
+## 7. Using HUME with a tree ensemble: `feature_weights`
+
+**This is a hyperparameter of the HEAD, not a flag of the representation.** HUME emits the same
+columns either way. Nothing about it has to be decided before the task — it is tuned per task
+like `max_depth`, on training folds only.
+
+XGBoost's `colsample_by*` samples features **uniformly**. That is the wrong prior for a matrix
+that is half sparse fingerprint bits and half dense descriptors: a descriptor is informative on
+nearly every molecule, while a given ECFP bit is on in ~2% of them, so descriptors win the
+sampling lottery on *availability* rather than on merit for the task. `feature_weights` makes the
+sampling weighted, and one scalar `w` (fingerprint bits weight `w`, descriptors weight 1) turns
+"descriptors on or off" into a continuous knob.
+
+Measured, 34 datasets, scaffold folds, `colsample_bynode=0.3`:
+
+| arm | ACE all | ACE cliff | ACE non-cliff | MoleculeNet | ECFP split share |
+|---|---|---|---|---|---|
+| `fp_only` | 0.7854 | 0.8610 | 0.7338 | 0.9487 | — |
+| `desc_only` | 0.8460 | 0.9065 | 0.8055 | 0.9358 | — |
+| w = 1 (XGBoost default) | 0.8080 | 0.8752 | 0.7626 | 0.8901 | 0.222 |
+| w = 5 | 0.7953 | 0.8663 | 0.7471 | 0.8738 | 0.321 |
+| **w = 10** | **0.7882** | 0.8605 | 0.7389 | **0.8712** | 0.395 |
+| w = 100 | **0.7721** | 0.8464 | 0.7214 | 0.8931 | 0.756 |
+
+**Recommendations:**
+
+* **Tune `w` in the inner CV loop** alongside the other head hyperparameters. Tuning it on the
+  test fold leaks, and the effect is large enough to leak meaningfully.
+* **If you do not tune, use `w = 10`, not 1.** w=1 is dominated on BOTH suites — 0.8080 against
+  0.7882 on activity, 0.8901 against 0.8712 on physchem. Uniform column sampling is not a neutral
+  default here; it is a bad one.
+* `feature_weights` requires `colsample_by* < 1` to do anything. Use `colsample_bynode` rather
+  than `bytree`: weights apply at each sampling event, so per-node gives the reweighting far more
+  chances to bite.
+
+HUME should expose the block boundaries so this vector can be built without the caller
+hard-coding column indices — `hume.feature_weights(columns, fp_weight=10.0)`. **OPEN**: not yet
+implemented.
+
+### What this measurement refuted
+
+The sweep was run to test a specific mechanism: that descriptors *cannot resolve activity cliffs*
+because they are smooth functions of structure, so up-weighting fingerprints should help
+**specifically on cliff compounds**. **That prediction failed.** Going from w=1 to w=100 improves
+non-cliff RMSE by 5.4% and cliff RMSE by only 3.3% — the gain is *larger* on the molecules that
+are not cliffs.
+
+The surviving explanation is a task-family one, not a cliff one. MoleculeACE datasets are
+**congeneric series**: structurally similar molecules against a single target. Descriptors vary
+little across the *whole series*, not merely across cliff pairs, so they are uninformative for the
+entire dataset. That is consistent with Figure A's matched-pair result — the descriptor block moves
+only **0.37×** as far as ECFP4 under a single graph edit, and a congeneric series is graph edits
+throughout.
+
+Note the shape of the two curves, which is the real finding: **ACE improves monotonically to the
+boundary** and w=100 *beats* pure fingerprints, so the answer is not "drop descriptors" but "keep
+them and starve them". **MoleculeNet has an interior optimum** at w≈10 and degrades by w=100, with
+`fp_only` clearly worst. Descriptors genuinely help there and genuinely do not on ACE.
+
+⚠️ **Provisional.** These numbers are `n_repeats: 1`, `fold_seeds: [0]`, `xgb_seeds: [0]` — a
+single seed with no error bars, and several gaps are 0.01–0.04. The cliff-versus-non-cliff
+comparison in particular (3.3% against 5.4%) is exactly the size that needs replicates before it
+is quoted. A multi-seed re-run is in progress.
+
+## 8. Open items
 
 | item | decided by |
 |---|---|
