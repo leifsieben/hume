@@ -374,6 +374,16 @@ uv run --isolated --python 3.11 --with "mordred==1.2.0" --with "rdkit==2025.9.2"
        --with "numpy==1.26.4" --with "pandas<2.2" python bench_e2e.py baseline 2000 3
 ```
 
+## A `pgrep` self-match that has now stalled two agents
+
+`until ! pgrep -f "verify_something" ; do sleep 30; done` **can never exit**, because `pgrep -f`
+matches full command lines and the waiting shell's own command line contains the string it is
+grepping for. It sees itself, forever. This has now stalled two separate agents for 8+ minutes
+each with the work long finished.
+
+Match on a bracketed pattern that cannot match itself — `pgrep -f "[v]erify_something"` — or wait
+on a PID.
+
 ## A git hazard that has now fired twice
 
 `4eec23a` ("intermediate commit and push") swept up an agent's mid-flight Autocorrelation work.

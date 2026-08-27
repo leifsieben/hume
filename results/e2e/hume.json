@@ -3,86 +3,111 @@
  "n_mols": 2000,
  "steps": {
   "extract_pickles_boundary": {
-   "us_mean": 164.793,
-   "us_sd": 1.312,
-   "us_min": 163.463,
-   "n_reps": 3
+   "us_mean": 167.273,
+   "us_sd": 0.76,
+   "us_min": 166.314,
+   "n_reps": 7
   },
   "ecfp_r3_2048": {
-   "us_mean": 29.281,
-   "us_sd": 1.422,
-   "us_min": 28.354,
-   "n_reps": 3
+   "us_mean": 30.22,
+   "us_sd": 0.796,
+   "us_min": 29.465,
+   "n_reps": 7
   },
   "smiles_parse": {
-   "us_mean": 58.11,
-   "us_sd": 0.243,
-   "us_min": 57.83,
-   "n_reps": 3
+   "us_mean": 59.154,
+   "us_sd": 0.356,
+   "us_min": 58.692,
+   "n_reps": 7
   },
   "cpp_all_columns": {
-   "us_mean": 527.108,
-   "us_sd": 7.797,
-   "us_min": 522.52,
-   "n_reps": 3,
-   "columns": 1015
+   "us_mean": 747.78,
+   "us_sd": 2.056,
+   "us_min": 745.6,
+   "n_reps": 7,
+   "columns": 1190
   }
  },
  "detail": {
   "per_family": {
    "blocks_182": {
-    "us_mean": 187.87,
-    "us_sd": 0.706,
+    "us_mean": 199.009,
+    "us_sd": 0.641,
     "columns": 182
    },
    "vsa": {
-    "us_mean": 19.478,
-    "us_sd": 11.76,
+    "us_mean": 12.104,
+    "us_sd": 0.874,
     "columns": 66
    },
    "estate": {
-    "us_mean": 1.57,
-    "us_sd": 0.598,
+    "us_mean": 1.391,
+    "us_sd": 1.145,
     "columns": 158
    },
    "ringcount": {
-    "us_mean": -0.177,
-    "us_sd": 0.401,
+    "us_mean": 0.454,
+    "us_sd": 0.69,
     "columns": 49
    },
    "pathcount": {
-    "us_mean": 13.287,
-    "us_sd": 3.582,
+    "us_mean": 12.367,
+    "us_sd": 0.785,
     "columns": 11
    },
    "topocharge": {
-    "us_mean": 12.693,
-    "us_sd": 7.086,
+    "us_mean": 9.506,
+    "us_sd": 0.852,
     "columns": 21
    },
    "infocontent": {
-    "us_mean": 279.877,
-    "us_sd": 3.183,
+    "us_mean": 280.76,
+    "us_sd": 1.696,
     "columns": 42
    },
    "autocorr": {
-    "us_mean": 23.176,
-    "us_sd": 0.474,
+    "us_mean": 24.396,
+    "us_sd": 0.969,
     "columns": 486
+   },
+   "frag": {
+    "us_mean": 118.756,
+    "us_sd": 0.887,
+    "columns": 76
+   },
+   "chi": {
+    "us_mean": 51.605,
+    "us_sd": 0.845,
+    "columns": 40
+   },
+   "topomisc": {
+    "us_mean": 11.368,
+    "us_sd": 0.876,
+    "columns": 15
+   },
+   "constit": {
+    "us_mean": 17.539,
+    "us_sd": 0.88,
+    "columns": 43
+   },
+   "alias": {
+    "us_mean": 0.611,
+    "us_sd": 0.734,
+    "columns": 1
    }
   },
   "cpp_blocks_182_only": {
-   "us_mean": 191.666,
-   "us_sd": 5.674,
-   "us_min": 187.847,
-   "n_reps": 3,
+   "us_mean": 198.733,
+   "us_sd": 0.811,
+   "us_min": 197.318,
+   "n_reps": 7,
    "columns": 182
   },
   "extract_api_boundary": {
-   "us_mean": 131.774,
-   "us_sd": 0.998,
-   "us_min": 130.708,
-   "n_reps": 3
+   "us_mean": 134.306,
+   "us_sd": 0.949,
+   "us_min": 132.765,
+   "n_reps": 7
   },
   "offsets": {
    "blocks": 0,
@@ -93,22 +118,29 @@
    "topocharge": 466,
    "infocontent": 487,
    "autocorr": 529,
-   "end": 1015
+   "frag": 1015,
+   "chi": 1091,
+   "topomisc": 1131,
+   "constit": 1146,
+   "alias": 1189,
+   "end": 1190
   }
  },
- "columns_descriptors": 615,
- "columns_emitted": 1015,
+ "columns_descriptors": 790,
+ "columns_emitted": 1190,
  "columns_ecfp": 2048,
  "machine": {
   "platform": "darwin arm64",
   "cpu_count": 12,
-  "load1": 3.46,
+  "load1": 3.38,
   "contended": true,
   "python": "3.12.13"
  },
  "versions": {
   "rdkit": "2025.09.2",
   "numpy": "2.4.6",
+  "canary_BCUT2D_MRLOW": -0.07665884800196521,
+  "canary_ok": true,
   "mordred": null
  }
 }
