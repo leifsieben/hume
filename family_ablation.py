@@ -42,6 +42,7 @@ MIN_COLS = 8  # families too small to move a 30-dataset mean are not worth a run
 
 
 def _cv_rmse(X, y, smiles) -> float:
+    import _vendor  # noqa: F401  - puts vendor/chemtfm on sys.path
     from chemtfm.bench import metrics as M
     from chemtfm.bench.datasets import REGRESSION
     from chemtfm.bench.splits import scaffold_folds, train_test

@@ -22,6 +22,7 @@ PROF = Path("data/budget_profile.json")
 OUT = Path("data/cheap_vs_all.json")
 
 def _cv_rmse(X, y, smiles):
+    import _vendor  # noqa: F401  - puts vendor/chemtfm on sys.path
     from chemtfm.bench import metrics as M
     from chemtfm.bench.datasets import REGRESSION
     from chemtfm.bench.splits import scaffold_folds, train_test

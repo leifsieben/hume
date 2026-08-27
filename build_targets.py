@@ -42,8 +42,7 @@ _gen = rdFingerprintGenerator.GetMorganGenerator(radius=2, fpSize=2048, includeC
 
 def _worker(smi: str):
     """One molecule -> (ecfp, rdkit96, erg, mordred). Returns None if unparseable."""
-    import sys
-    sys.path.insert(0, "/Users/lsieben/VSCode/ChemTFM_OLD")
+    import _vendor  # noqa: F401  - puts vendor/chemtfm on sys.path
     from chemtfm.feat.descriptors import descriptors as rdkit96
 
     mol = Chem.MolFromSmiles(smi)

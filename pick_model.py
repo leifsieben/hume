@@ -86,6 +86,7 @@ def main() -> None:
             print(f"  (skip {m}: no predictions)")
     print(f"arms: {list(arms)}\n")
 
+    import _vendor  # noqa: F401  - puts vendor/chemtfm on sys.path
     from chemtfm.bench import metrics as M
     from chemtfm.bench.datasets import REGRESSION
     from chemtfm.bench.splits import scaffold_folds, train_test
