@@ -147,3 +147,13 @@ cpp/chiwalk_log.txt
 cpp/chiwalk_perm*.txt
 cpp/chiwalk_bench.smi
 cpp/chiwalk_bench_mols.txt
+
+# cpp/constit.cpp exchange + verification artifacts (cpp/verify_constit.py --dump regenerates
+# them; constit_in.txt is ~400 MB at 100,000 molecules).  constit_meta.json is small but is a
+# RUN RECORD, not a source: it carries the resolved oracle versions of the run that produced
+# constit_ref.txt, and keeping a stale one would be worse than having none.
+cpp/constit
+cpp/constit_in.txt
+cpp/constit_ref.txt
+cpp/constit_cpp.txt
+cpp/constit_meta.json
