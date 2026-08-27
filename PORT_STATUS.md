@@ -215,25 +215,37 @@ directory.
 
 ## What is true right now
 
-    callable from the package (hume.featurize_all)   248 of 864
-    verified C++ NOT yet wired into the extension    419 (Autocorrelation) + 76 (frag/rdkit_core)
-    total verified C++                               743
-    still Python                                    ~121
+    callable from the package (hume.featurize_all)   615 of 864
+    verified C++ NOT yet wired into the extension     76 (frag / rdkit_core)
+    total verified C++                               691
+    still Python                                    ~173
+
+Autocorrelation IS now wired (+367). Note it is 367, not the 419 the census claimed: the other
+52 are mordred's TENTH weight `Z` (bare atomic number), and `cpp/ac_weights.h` implements nine.
+Adding it is a table plus a line, but it re-shapes `cpp/values_ac.txt` from 486 to 540 columns --
+i.e. it invalidates the verified artifact -- so it was deliberately left. Same class of census
+error as the 642.
 
 `hume.featurize_all(smiles) -> (fp, X, ALL_COLUMNS)` works today: SMILES -> ECFP (2048, r=3,
 chirality) + 529 emitted columns, through ONE pickle parse, six headers, one boundary fill.
 
 ## The three things to do next, in priority order
 
-**1. WIRE AUTOCORRELATION — 419 columns, by far the largest coverage win.** `cpp/ac.cpp` is
-verified but is a `main()` over a text file. Needs a header lift (the way `hume_blocks.h` was
-lifted out of `cpp/hume.cpp`) plus a hydrogen-added graph at the boundary. Two hazards, both
-already written down in `cpp/ac_weights.h` — read that header first:
-  * mordred's charge getter is `(_GasteigerCharge + _GasteigerHCharge) if HasProp(...) else 0.0`
-    — the sum is INSIDE the conditional, so an atom missing the H-charge prop contributes 0.0
-    rather than its own charge.
-  * The nine weight vectors are computed in C++ from `cpp/ac_tables.h`. Do not reintroduce a
-    Python pass for them; that is the 473.9 µs/mol that was already removed once.
+**1. DONE — Autocorrelation is wired.** `src/hume_core/autocorr.h` holds the computation and
+`cpp/ac.cpp` now includes it rather than carrying a copy, so there is one copy of the arithmetic.
+Proof the lift changed nothing: `./ac verify mols_h.txt` over 98,905 molecules × 486 columns
+produces `values_ac.txt` with md5 `7f08884f8700c23fd41e2a5315870a2e`, **identical before and
+after** — the existing evidence transfers exactly. Wiring checked against a *second, independent*
+H-graph construction in the harness.
+
+  Two findings worth keeping: the H-graph charges are **not** derivable from the heavy-atom
+  pickle (5,221 of 42,359 heavy atoms get a different `_GasteigerCharge` from `AddHs(m)` than
+  from `m`), so `extract_pickles` serialises a real second molecule rather than putting 419
+  columns permanently on a tolerance. And a "lean" AC pickle silently drops the charges:
+  `AtomProps|ComputedProps` without `PrivateProps` yields 277 bytes with no `_GasteigerCharge`
+  at all — it is private *and* computed.
+
+  Remaining AC work: the tenth weight `Z`, 52 columns. See the note above on why it was left.
 
 **2. WIRE THE 76 FRAGMENT COLUMNS.** `src/hume_core/frag_matcher.h` + `cpp/frag_program.h` are
 ALL EXACT on 100,000 and have a standalone harness, but nothing calls them from `bindings.cpp`.
@@ -250,10 +262,12 @@ open bug, see the header.
   numberings, one value) and correct (exact integer Faddeev–Le Verrier agrees to ~1e-15). The
   overflow argument does not apply: largest coefficient on the failing molecule is 9 digits.
   Disconnected-graph path is the prime suspect. Full diagnosis in `infocontent.h`'s header.
-* **The `gate()` predicate costs 25.7 µs/mol to save 35.7.** A Python loop over every bond of
-  every molecule. All three clauses are answerable from `RingInfo` in O(#rings): max ring size,
-  `NumAtomRings`, and union-find over rings sharing an atom for the cyclomatic clause. The dense
-  ring decision itself stands; it is the predicate that is overpriced.
+* **FIXED — the `gate()` predicate.** Rewritten O(#rings) from `RingInfo` alone: 25.7 → 10.2
+  ± 0.15 µs/mol, of which 4.7 is the `AtomRings()` call `rings_for` needs anyway, so the
+  predicate itself went 21.1 → 5.5. Identical on all 100,000 (0 disagreements with the old gate,
+  same 21.3% firing rate, hexaprismane still fires) and `gatecheck` still reports
+  `gated != unconditional on 0 / 100000`. It was deliberately NOT moved to C++: at 5.5 µs it is
+  no longer the lever — `canon_rings` on the gated 20% is 27.7 of the remaining 39.4.
 * **`bench_e2e.py`'s `baseline.json` is a stale 100-molecule run.** Regenerate at the same size
   as the hume arm. `report` correctly refuses a headline ratio while the arms disagree on a
   shared step or the machine is contended — do not defeat that, it has already caught a bad
@@ -272,3 +286,54 @@ open bug, see the header.
 * **A version banner is not evidence** — `cpp/verify_hume.py` carries a numeric canary for this,
   checked at both ends of the run. A process can print `rdkit 2025.09.2` and compute 2026.3.5's
   numbers out of unlinked-but-still-mapped dylibs.
+
+## Measured at the pause (CONTENDED — ordering only, not publishable)
+
+`bench_e2e.py hume 2000 7`, CPU time, cold molecules, load1 10.92:
+
+    cpp_all_columns            646.3 ± 89.94    1015 emitted, 615 of the 865
+    extract_pickles_boundary   167.1 ±  0.99
+    smiles_parse                59.7 ±  0.61
+    ecfp_r3_2048                30.3 ±  0.98
+
+Per family, paired and differenced *within* each repetition:
+
+    infocontent   291.3 ± 13.23    42 cols     <- still the pipeline
+    blocks_182    201.6 ±  4.97   182 cols
+    autocorr       22.5 ±  5.33   486 cols     <- cheapest per column by a wide margin
+    topocharge     14.8 ± 11.14    21 cols
+    pathcount      13.8 ±  5.95    11 cols
+    vsa            13.5 ±  3.98    66 cols
+    estate          2.6 ±  4.44   158 cols
+    ringcount       1.7 ±  4.70    49 cols
+
+**Hold these loosely.** The ±89.94 on `cpp_all_columns` is 14% — the box got busy mid-run. The
+same arm at load1 5.05 gave 635.3 ± 3.12, so the SD is the machine, not the code. AC's 22.5 µs is
+COMPUTE ONLY; its boundary cost is the +67 µs in `extract_pickles_boundary` (100.3 → 167.1), the
+H-added pickle.
+
+## The baseline arm, and why it is not done
+
+`results/e2e/baseline.json` is still a 100-molecule / 3-rep run. Not an invocation problem — at
+mordred's ~390 ms/mol it is roughly **an hour** at 2000×3. The docstring's command is also
+incomplete: `calc.pandas()` needs pandas, which mordred does not declare. Working invocation:
+
+```
+uv run --isolated --python 3.11 --with "mordred==1.2.0" --with "rdkit==2025.9.2" \
+       --with "numpy==1.26.4" --with "pandas<2.2" python bench_e2e.py baseline 2000 3
+```
+
+## A git hazard that has now fired twice
+
+`4eec23a` ("intermediate commit and push") swept up an agent's mid-flight Autocorrelation work.
+It happened to catch a consistent state and was verified after the fact — but earlier in this
+session the same pattern captured a *slower* eigensolver that then had to be superseded. **Prefer
+staging named paths over `git add -A` while agents are running**, or check `ListAgents` first.
+
+## Non-finite values are CORRECT and expected
+
+`featurize_all` returns NaN in some columns — 144 of 1015 for ethanol. These are `AATS<k>*` at a
+lag longer than the molecule's diameter: 0/0. Confirmed against mordred, which returns an error
+object for exactly those and a real value for `AATS1c`. `cpp/ac_weights.h` states the contract:
+NaN where mordred returns NaN. Do not "fix" this, and do not let a downstream model see it
+without an explicit decision.
