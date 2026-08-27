@@ -41,13 +41,34 @@ from __future__ import annotations
 
 import json
 import os
-import platform
-import statistics
-import sys
-import time
-from pathlib import Path
 
-import numpy as np
+# THREAD CAPS MUST BE SET BEFORE numpy IS IMPORTED, AND THIS FILE HAD THEM AT THE BOTTOM.
+#
+# BLAS reads these at load time. `os.environ.setdefault("OMP_NUM_THREADS", "1")` inside
+# `if __name__ == "__main__"` runs long after `import numpy` on line ~50, so it did nothing at
+# all -- and mordred's matrix work (TopologicalCharge's A.D2 is a dgemm) then ran on every core.
+# Observed: 789% CPU on the baseline arm.
+#
+# THAT WOULD HAVE FLATTERED US, NOT PENALISED US, WHICH IS WHY IT MATTERS. This harness measures
+# `time.process_time()`, which sums CPU across ALL THREADS of the process. A baseline spread over
+# ~8 threads therefore reports ~8x the CPU time it would single-threaded, against a HUME arm that
+# is single-threaded throughout. The end-to-end ratio would have come out several times too good,
+# and every step of it would have looked internally consistent.
+#
+# Both arms are now pinned to one thread so the comparison is per-core work against per-core work.
+# If a threaded baseline is ever wanted, that is a DIFFERENT and legitimate measurement -- wall
+# clock on a quiet box, stated as such -- not this one with the cap removed.
+for _v in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
+           "VECLIB_MAXIMUM_THREADS", "NUMEXPR_NUM_THREADS"):
+    os.environ.setdefault(_v, "1")
+
+import platform  # noqa: E402
+import statistics  # noqa: E402
+import sys  # noqa: E402
+import time  # noqa: E402
+from pathlib import Path  # noqa: E402
+
+import numpy as np  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "results" / "e2e"
@@ -414,5 +435,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    # Thread caps live at the TOP of this file, before `import numpy`. A setdefault here would be
+    # too late to have any effect -- which is exactly the bug that used to sit on this line.
     main()
