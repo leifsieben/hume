@@ -8,12 +8,23 @@ Regenerate this census with the snippet at the bottom. Do not hand-edit the coun
 
 ## Where it stands
 
+**TWO NUMBERS, AND THEY ARE NOT THE SAME NUMBER.** Conflating them overstates the position by
+2.7×, and this file did exactly that for a while:
+
 | | columns |
 |---|---|
-| ported and verified in C++ | **642** |
-| in flight | **~99** |
-| still Python | **~124** |
-| (already native, counted under an RDKit-family label) | ~22 |
+| **callable from the package** (`hume.featurize_all`) | **248** |
+| verified C++ exists, but NOT wired into the extension | **419** (Autocorrelation) |
+| total verified C++ | 667 |
+| still Python | ~197 |
+
+"Verified C++ exists" is a claim about `cpp/*.cpp`; "callable" is a claim about the wheel. Only
+the second one is what a user gets, and only the second belongs in a speed comparison — the
+Autocorrelation 419 live in `cpp/ac.cpp` as a `main()` over a text file, so today the package
+cannot produce them at all.
+
+Note also the dedupe set has **864 unique names**, not 865: one name is defined by both RDKit and
+Mordred and survives under both sources.
 
 **A warning about the number 182.** `hume.featurize_blocks` returns 182 columns and they are
 `ALL EXACT`, but they are **mostly HUME-specific descriptors** — `SATS*`, `RATSC*`, `RW*`,
@@ -34,6 +45,17 @@ and `src/hume_core/estate_typer.h` computes **50** E-state columns.
 
 Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), RDKit `Chi*` (9),
 `BalabanJ` (1), and the four `*EStateIndex` reductions.
+
+## The two things standing between here and the goal
+
+**1. Autocorrelation is not in the extension — 419 columns, the single largest coverage win.**
+`cpp/ac.cpp` is verified but is a `main()` over a text file, and it descriptors the
+**hydrogen-added** graph with charges summed as `_GasteigerCharge + _GasteigerHCharge`. So it is
+a header refactor plus an H-graph build at the boundary, not a call.
+
+**2. `infocontent` is now the pipeline.** 399.9 ± 2.52 µs/mol for 42 emitted columns, 33 of which
+are in the 865 — 63% of all compute, 2× the entire original 182-column block, and ~6× everything
+else wired put together. It also still has the open `Ipc` bug.
 
 ## In flight
 
