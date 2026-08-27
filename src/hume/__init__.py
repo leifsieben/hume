@@ -63,6 +63,27 @@ ALL_COLUMNS: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail())
 # Ipc / AvgIpc / Log2Ipc are NOT here: they are not emitted at all, pending the open bug at the
 # top of src/hume_core/infocontent.h. Two different states, deliberately kept distinct.
 PENDING_COLUMNS: tuple[str, ...] = ("qed", "SPS")
+
+
+# FOUR NAMES APPEAR TWICE IN ALL_COLUMNS, AND A NAIVE name->index MAP SILENTLY PICKS THE SECOND.
+#
+#   MaxEStateIndex  MinEStateIndex  MaxAbsEStateIndex  MinAbsEStateIndex
+#
+# They are emitted once by the 182-column block (from hume_blocks.h) and again by the VSA family
+# (from vsa_bins.h). The two are INDEPENDENT computations of the same descriptor and differ in
+# the last bit, so `{n: i for i, n in enumerate(ALL_COLUMNS)}` resolves to the second copy and a
+# whole-matrix A/B against a stored dump reports thousands of molecules as moved. That cost an
+# agent an hour of chasing a difference that was an indexing artifact, not a change.
+#
+# Deliberately NOT silently deduplicated here: dropping either copy shifts every column index
+# above it, which is a schema change and belongs to the project owner rather than to an import
+# hook. Until then this constant exists so the trap is discoverable, and DUPLICATE_COLUMNS is
+# checked by the test suite rather than assumed empty.
+#
+# Note bindings.cpp already avoids exactly this for five other columns via an alias block that
+# asserts a single emission -- the four below are the case that predates it.
+DUPLICATE_COLUMNS: tuple[str, ...] = tuple(
+    sorted({n for n in ALL_COLUMNS if ALL_COLUMNS.count(n) > 1}))
 N_ALL_COLS: int = _core.N_ALL_COLS
 FAMILY_OFFSETS: dict = dict(_core.ALL_OFFSETS)
 
