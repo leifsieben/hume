@@ -27,6 +27,14 @@ N_BACKGROUND = 10_000
 
 
 def _all_smiles():
+    """-> (pairs, unique pair molecules in first-seen order, the reserved background).
+
+    The background is READ from background.json, which make_pairs.py reserves BEFORE it builds
+    any pair. It is deliberately not re-derived here as "benchmark molecules not in a pair":
+    that made the sigma denominator a function of the pair set, so adding the C=C saturation
+    panel moved the descriptor arm's protonation cell by 18% without touching the pairs it was
+    measured on.
+    """
     d = json.load(open(FIGA / "pairs.json"))
     pairs = d["pairs"]
     seen, order = set(), []
@@ -35,11 +43,9 @@ def _all_smiles():
             if s not in seen:
                 seen.add(s)
                 order.append(s)
-    # Background: benchmark molecules that appear in no pair.
-    bench = list(np.load(ROOT / "data" / "surrogate" / "bench.npz", allow_pickle=True)["smiles"])
-    rng = np.random.default_rng(0)
-    cand = [s for s in bench if s not in seen]
-    bg = [cand[i] for i in rng.choice(len(cand), min(N_BACKGROUND, len(cand)), replace=False)]
+    bg = json.load(open(FIGA / "background.json"))
+    assert len(bg) == N_BACKGROUND, f"background.json has {len(bg)}, expected {N_BACKGROUND}"
+    assert not (set(bg) & seen), "background overlaps the pairs; re-run make_pairs.py"
     return pairs, order, bg
 
 

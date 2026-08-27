@@ -124,7 +124,8 @@ def featurize(smiles, workers=1):
     #   *_predict      vs *_exact     -> what does the proxy cost?
     # `hume_core*` are the DEDUPLICATED 865-column set; `ecfp_all_desc` is the raw 1830.
     out = {
-        "ecfp": E2,
+        "ecfp": E2,                    # Morgan r=2 counts, chirality on
+        "r3cfp": E3,                   # Morgan r=3 counts -- direct radius comparison
         "ecfp_all_desc": np.hstack([E2, MD, RD]),
         "ecfp_rdkit_desc": np.hstack([E2, RD]),
         "ecfp_mordred_desc": np.hstack([E2, MD]),

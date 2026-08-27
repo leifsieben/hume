@@ -32,6 +32,9 @@ RDLogger.DisableLog("rdApp.*")
 ROOT = Path(__file__).resolve().parent
 OUT = ROOT / "results" / "figures" / "figA"
 N_PER_EDIT = 1000
+# Reserved for sigma estimation and excluded from every pair. Must match embed_pairs.py, which
+# reads background.json rather than re-deriving it -- see the note in main().
+N_BACKGROUND = 10_000
 
 
 # --- chemical edits: mol -> mol|None ------------------------------------------------------
@@ -334,10 +337,47 @@ def main() -> None:
     random.shuffle(pool)
     mols = [(s, _mol(s)) for s in pool]
     mols = [(s, m) for s, m in mols if m is not None and 8 <= m.GetNumAtoms() <= 60]
-    print(f"pool: {len(mols):,} usable benchmark molecules")
+    raw = len(mols)
+
+    # DEDUPLICATE ON THE CANONICAL SMILES, and key everything downstream by it. The benchmark
+    # pools 34 datasets and the same compound appears in several of them under different input
+    # strings; pairs are written canonicalised, so two rows that differ as strings become the
+    # same molecule the moment they are compared. Splitting before deduplicating put 700 of them
+    # on both sides of the background/pair boundary -- caught by the disjointness assert below,
+    # which is the whole reason it is an assert and not a comment.
+    seen, uniq = set(), []
+    for _, m in mols:
+        c = Chem.MolToSmiles(m)
+        if c not in seen:
+            seen.add(c)
+            uniq.append((c, m))
+    mols = uniq
+    print(f"pool: {len(mols):,} distinct benchmark molecules ({raw - len(mols):,} duplicates "
+          f"collapsed on canonical SMILES)")
+
+    # THE BACKGROUND IS RESERVED FIRST, AND IS NOT A FUNCTION OF THE PAIR SET.
+    #
+    # sigma_j -- the per-dimension spread that puts every representation on one axis -- is
+    # estimated on these molecules. They used to be chosen AFTER pair generation, as "whatever
+    # benchmark molecules are left over", which quietly made the denominator depend on which
+    # modes existed: adding the C=C saturation panel changed the leftovers, and the descriptor
+    # arm's protonation cell moved 1.199 -> 0.979 (18%) with no change to the pairs it was
+    # measured on. The fingerprint arms moved <2%, because descriptor sigma is heavy-tailed and a
+    # handful of dimensions carry the normalisation.
+    #
+    # Reserving up front makes disjointness a property of the construction rather than of a
+    # filter, and freezes the reference sample: adding, removing or re-tuning a mode can no
+    # longer move a number in any other panel.
+    background = [s for s, _ in mols[:N_BACKGROUND]]
+    mols = mols[N_BACKGROUND:]
+    json.dump(background, open(OUT / "background.json", "w"))
+    print(f"background: {len(background):,} reserved (excluded from every pair); "
+          f"{len(mols):,} left for pairs")
 
     pairs, counts = [], {}
     shattered = {k: 0 for k in EDITS}       # rejected by _intact -- REPORTED, never silent
+    collided = {k: 0 for k in EDITS}        # product landed on a reserved background molecule
+    bgset = set(background)
     for name, fn in EDITS.items():
         got = 0
         for s, m in mols:
@@ -356,12 +396,22 @@ def main() -> None:
             if not _intact(m, e):
                 shattered[name] += 1
                 continue
+            # The PRODUCT can collide with the background even though the input cannot: the
+            # benchmark contains real matched pairs, so saturating a C=C in one compound
+            # sometimes lands exactly on another compound already reserved for sigma. Reject the
+            # pair and keep scanning -- 45k candidates for 1,000 slots, so backfilling is free,
+            # and shrinking the background instead would make its size depend on the mode list
+            # again.
+            if b in bgset:
+                collided[name] += 1
+                continue
             pairs.append({"edit": name, "cls": "chemical", "a": a, "b": b})
             got += 1
         counts[name] = got
         print(f"  {name:16s} {got:5d}"
-              + (f"   ({shattered[name]} rejected: edit fragmented the molecule)"
-                 if shattered[name] else "")
+              + (f"   ({shattered[name]} rejected: fragmented)" if shattered[name] else "")
+              + (f"   ({collided[name]} rejected: product is a background molecule)"
+                 if collided[name] else "")
               + ("" if got >= N_PER_EDIT else "   <- SHORT"))
 
     for name, fn in (("null_enumerate", null_enumerate), ("null_kekulize", null_kekulize)):
@@ -397,6 +447,12 @@ def main() -> None:
             got += 1
     counts["matched_mw"] = got
     print(f"  {'matched_mw':16s} {got:5d}   (reference -- defines 1.00)")
+
+    # Disjointness is asserted, not assumed. If the background ever overlapped the pairs, every
+    # edit would inflate its own denominator and pull every arm toward the same score.
+    inpair = {s for p in pairs for s in (p["a"], p["b"])}
+    overlap = inpair & set(background)
+    assert not overlap, f"{len(overlap)} background molecules appear in a pair"
 
     json.dump({"counts": counts, "pairs": pairs}, open(OUT / "pairs.json", "w"))
     print(f"\n{len(pairs):,} pairs across {len(counts)} conditions -> {OUT / 'pairs.json'}")
