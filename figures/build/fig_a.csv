@@ -97,20 +97,34 @@ chemberta_mlm,ChemBERTa-2 (MLM),ring_contract,A,0.161766,0.118991,0.235589,1000,
 chemberta_mlm,ChemBERTa-2 (MLM),regioisomer,A,0.260972,0.195918,0.353625,1000,1.449516
 chemberta_mlm,ChemBERTa-2 (MLM),matched_mw,REF,1.000000,0.866670,1.157031,1000,1.449516
 chemberta_mlm,ChemBERTa-2 (MLM),null_kekulize,B,1.172237,0.961065,1.330536,1000,1.449516
-molformer,MoLFormer,stereo_flip,A,0.056895,0.042170,0.075242,1000,1.436958
-molformer,MoLFormer,ez_flip,A,0.060670,0.050559,0.071349,1000,1.436958
-molformer,MoLFormer,isotope_13c,A,0.289712,0.268491,0.317247,1000,1.436958
-molformer,MoLFormer,protonate,A,0.387650,0.351879,0.428888,1000,1.436958
-molformer,MoLFormer,halogen_swap,A,0.280733,0.225171,0.345927,1000,1.436958
-molformer,MoLFormer,saturate,A,0.363302,0.276050,0.437419,1000,1.436958
-molformer,MoLFormer,null_enumerate,B,0.789905,0.695044,0.885376,1000,1.436958
-molformer,MoLFormer,h_to_methyl,A,0.450090,0.348261,0.566479,1000,1.436958
-molformer,MoLFormer,n_methylation,A,0.367793,0.319447,0.431763,1000,1.436958
-molformer,MoLFormer,scaffold_hop,A,0.371114,0.339242,0.413811,1000,1.436958
-molformer,MoLFormer,ring_contract,A,0.268252,0.170131,0.328388,1000,1.436958
-molformer,MoLFormer,regioisomer,A,0.359454,0.322657,0.407946,1000,1.436958
-molformer,MoLFormer,matched_mw,REF,1.000000,0.907550,1.092868,1000,1.436958
-molformer,MoLFormer,null_kekulize,B,0.871346,0.769378,0.963245,1000,1.436958
+chemberta_mtr,ChemBERTa-2 (MTR),stereo_flip,A,0.000000,0.000000,0.000000,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),ez_flip,A,0.006215,0.004694,0.008202,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),isotope_13c,A,0.378199,0.286920,0.480101,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),protonate,A,0.000000,0.000000,0.000000,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),halogen_swap,A,0.331295,0.284473,0.380642,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),saturate,A,0.361182,0.300256,0.441429,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),null_enumerate,B,0.672783,0.515604,0.860845,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),h_to_methyl,A,0.272129,0.223565,0.346283,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),n_methylation,A,0.330221,0.294213,0.374929,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),scaffold_hop,A,0.392352,0.337856,0.465215,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),ring_contract,A,0.109243,0.081735,0.146378,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),regioisomer,A,0.172566,0.123531,0.250195,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),matched_mw,REF,1.000000,0.830777,1.183990,1000,1.105980
+chemberta_mtr,ChemBERTa-2 (MTR),null_kekulize,B,1.807292,1.402978,2.333671,1000,1.105980
+molformer,MoLFormer,stereo_flip,A,0.063718,0.048939,0.084937,1000,1.441609
+molformer,MoLFormer,ez_flip,A,0.057157,0.048015,0.067709,1000,1.441609
+molformer,MoLFormer,isotope_13c,A,0.083443,0.061241,0.120925,1000,1.441609
+molformer,MoLFormer,protonate,A,0.290012,0.244233,0.347629,1000,1.441609
+molformer,MoLFormer,halogen_swap,A,0.237286,0.203197,0.283886,1000,1.441609
+molformer,MoLFormer,saturate,A,0.313727,0.240795,0.394939,1000,1.441609
+molformer,MoLFormer,null_enumerate,B,0.781172,0.689950,0.874507,1000,1.441609
+molformer,MoLFormer,h_to_methyl,A,0.429803,0.272105,0.560011,1000,1.441609
+molformer,MoLFormer,n_methylation,A,0.313968,0.253214,0.405481,1000,1.441609
+molformer,MoLFormer,scaffold_hop,A,0.265489,0.216720,0.318740,1000,1.441609
+molformer,MoLFormer,ring_contract,A,0.178730,0.139427,0.266607,1000,1.441609
+molformer,MoLFormer,regioisomer,A,0.267217,0.197912,0.340319,1000,1.441609
+molformer,MoLFormer,matched_mw,REF,1.000000,0.909461,1.095785,1000,1.441609
+molformer,MoLFormer,null_kekulize,B,0.854712,0.749896,0.939486,1000,1.441609
 selfies_ted,SELFIES-TED,stereo_flip,A,0.071639,0.056724,0.091090,1000,1.344533
 selfies_ted,SELFIES-TED,ez_flip,A,0.210486,0.170100,0.255648,1000,1.344533
 selfies_ted,SELFIES-TED,isotope_13c,A,0.682630,0.575045,0.801144,1000,1.344533

@@ -219,12 +219,21 @@ ARMS = {
                           hf="DeepChem/ChemBERTa-77M-MTR", desc_pretrained=True),
     "molformer": dict(label="MoLFormer", family="clm", color=SHADES["clm"][4],
                       hf="ibm-research/MoLFormer-XL-both-10pct", desc_pretrained=False),
-    # CDDD: a 2019 translation autoencoder whose latent vector was explicitly proposed as a
-    # DESCRIPTOR SUBSTITUTE -- the thesis of this paper, stated as a design goal seven years
-    # earlier. String input, hence the CLM family. Its released weights are TensorFlow 1.x, so
-    # it may need a pinned environment; if it cannot be run, the arm is dropped and said so,
-    # never silently omitted.
-    "cddd": dict(label="CDDD", family="clm", color=SHADES["clm"][3], desc_pretrained=False),
+    # CDDD IS DROPPED, and this entry stays as the record of why rather than vanishing.
+    # (Leif 2026-08-27: "Let's drop CDDD.") It is a 2019 translation autoencoder whose latent
+    # vector was explicitly proposed as a DESCRIPTOR SUBSTITUTE -- this paper's thesis, stated as
+    # a design goal seven years earlier -- so it would have been the single most on-the-nose arm
+    # in Figure B. It cannot be run:
+    #   * the `cddd` PyPI package requires tensorflow-gpu==1.10.0, wheels cp27-cp36, linux/win
+    #     x86_64 only;
+    #   * tensorflow==1.15.5 wheels are cp36m/cp37m, linux + macOS x86_64 -- no arm64 build of
+    #     TF 1.x exists at all;
+    #   * uv's lowest macOS-arm64 Python is 3.8, so there is no interpreter it would install
+    #     against;
+    #   * no PyTorch port exists on PyPI (cddd-pytorch, pytorch-cddd, cddd2, molvecgen: absent).
+    # The only route is an x86_64 Python 3.7 under Rosetta with TF 1.15. The PAPER SHOULD SAY SO
+    # -- "we could not run it" is a finding about the field's reproducibility, and it is more
+    # honest than a silent omission a reader would read as an oversight.
     # SELFIES-TED, not SMI-TED (Leif 2026-08-26: "more interesting model"). Both are IBM
     # encoder-decoders; SELFIES-TED reads SELFIES rather than SMILES, which makes it the only arm
     # on the plate whose input grammar cannot express an invalid molecule. That is exactly the
@@ -279,7 +288,7 @@ ARM_ORDER = ["ecfp", "r3cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_
              # comparisons easier"). Applies to every figure at once, which is the point of
              # this list existing: two figures must not put the same arms in two orders.
              "minimol", "chemeleon", "unimol", "chemprop",
-             "chemberta_mlm", "chemberta_mtr", "molformer", "selfies_ted", "cddd"]
+             "chemberta_mlm", "chemberta_mtr", "molformer", "selfies_ted"]
 _unknown = set(ARM_ORDER) - set(ARMS)
 assert not _unknown, f"arms.py: ARM_ORDER names an arm that does not exist: {sorted(_unknown)}"
 
