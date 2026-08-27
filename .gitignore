@@ -68,3 +68,13 @@ gpu/data/
 results/**/*.npz
 results/**/embeddings/
 .DS_Store
+
+# scikit-build-core's CMake tree and the compiled extension. `pip install -e .` regenerates
+# both; src/hume_core/*.cpp|.h are the sources and ARE tracked.
+build/
+src/hume/_core*.so
+*.egg-info/
+
+# Eigensolver benchmark build products (cpp/eigen_small.h and the .cpp sources are tracked).
+cpp/bench_eigen
+cpp/v_*.o

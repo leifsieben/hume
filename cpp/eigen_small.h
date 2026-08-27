@@ -12,16 +12,36 @@
 // than the blocking saves. If that is true, the tuned BLAS underneath is not buying much either,
 // and a self-contained reduction can match it -- while being byte-identical on every platform.
 //
-// WHAT IT IS. Householder tridiagonalisation (the LAPACK dsytd2 UPLO='U' algorithm, with the
-// reference-BLAS dsymv/dsyr2 inner kernels written out) followed by implicit-shift QL/QR on the
-// tridiagonal. Header-only C++17. No BLAS, no LAPACK, no intrinsics, no -march=native
-// requirement. The arithmetic is the SAME arithmetic LAPACK does, in the same order, which is
-// why it agrees with Accelerate to ~1e-15 relative rather than to "some tolerance".
+// WHAT IT IS. Two stages, both written out rather than called:
+//   1. Householder tridiagonalisation -- LAPACK's dsytd2 UPLO='U', with the reference-BLAS
+//      dsymv/dsyr2 inner kernels inlined. Unblocked, because at n ~ 27 there is nothing to
+//      block and a blocked dsytrd pays ILAENV to discover that.
+//   2. Pal-Walker-Kahan QL/QR on the tridiagonal -- LAPACK's dsterf, the square-root-free
+//      eigenvalues-only sweep, NOT dsteqr's rotation sweep. See the note above sterf_min_max
+//      for why that distinction turned out to be the whole ballgame.
+// Header-only C++17. No BLAS, no LAPACK, no intrinsics, no -march=native requirement.
+//
+// It is the SAME ALGORITHM LAPACK runs, in the same order, so agreement is structural rather
+// than tuned. Measured against Accelerate's dsytd2+dsterf on all 395,620 Burden matrices of the
+// 98,905-molecule corpus: max absolute deviation 4.3e-13, zero non-convergences. That is below
+// verify_hume.py's 1e-12 atol floor on its own, so the BCUT2D gate cannot be broken by this
+// solver at any value magnitude, before the rtol term is even counted.
 //
 // SCOPE. Eigenvalues only, and only the two extremes are returned -- that is all BCUT2D wants.
-// The QL sweep still resolves the whole spectrum because deflation proceeds from the ends and
-// an extremal-only stop would change which numbers come out; the sweep is O(n^2) against the
-// reduction's O(n^3), so nothing is lost by finishing it.
+// The sweep still resolves the whole spectrum, because deflation proceeds from the ends and
+// stopping early would change which numbers come out. That is NOT cheap and the original note
+// here claimed it was: the sweep is 66-80% of total cost across n = 10..117, against the
+// reduction's O(n^3). "It is only O(n^2), so finishing it is free" was wrong, and believing it
+// is what kept a slower sweep in place for a whole round of measurement.
+//
+// WHERE THE REMAINING HEADROOM IS, FLAGGED BUT NOT TAKEN. Because the sweep is 66-80% of the
+// cost and it computes ALL n eigenvalues when two are wanted, the obvious next lever is an
+// extremal-only sweep -- Sturm-sequence bisection (dstebz's kernel) costs O(n) per bisection
+// step, so ~120n flops for both ends against the sweep's O(n^2) per deflation. That is a real
+// opportunity and it is NOT a measurement: it has not been built or timed here, and bisection
+// would stop being "the same algorithm LAPACK runs", which is the property the agreement
+// argument above rests on. Anyone taking it should re-run `bench_eigen verify` first and
+// expect to defend a new agreement number, not inherit this one.
 //
 // NOT WIRED INTO bcut2d. This is a candidate under measurement; see cpp/bench_eigen.cpp.
 
@@ -124,9 +144,22 @@ inline double larfg(int n, double &alpha, double *x) {
 }
 
 // y := alpha * A * x, A symmetric n x n, UPPER triangle, column-major, beta = 0.
-// This is reference dsymv's loop order verbatim: one pass over each column j accumulates both
-// the contribution of x[j] to y[0..j-1] and the dot product of column j with x[0..j-1]. One
+//
+// This is reference dsymv's loop verbatim: one pass over each column j accumulates both the
+// contribution of x[j] to y[0..j-1] and the dot product of column j with x[0..j-1]. One
 // traversal of the triangle, both strides unit, and the same summation order LAPACK gets.
+//
+// A HAND-UNROLLED VERSION WITH FOUR ACCUMULATORS WAS TRIED AND REMOVED. The reasoning was
+// sound on paper -- `t2 += col[k]*x[k]` is a loop-carried dependency the compiler may not
+// reassociate under IEEE semantics, so the loop should run at one FMA latency per element, and
+// at n = 27 the matrix is 5.8 KB and sits in L1 so nothing here is memory-bound. Measured
+// in-process against this version, alternated, 41 cycles per size: seq/split was 1.010, 0.883,
+// 0.928, 0.965, 1.030, 0.932 at n = 10, 19, 27, 36, 53, 117 -- i.e. the UNROLLED one was
+// slower at four of six sizes and inside the noise at the other two. clang already interleaves
+// this loop; the manual version only got in its way. It is gone, and with it the need to argue
+// that a changed summation order is still safe. The lesson is the one hume.cpp's Lanczos note
+// records: the probe has to measure the thing that would ship, and a plausible mechanism is
+// not a measurement.
 inline void symv_upper(int n, double alpha, const double *A, int lda, const double *x,
                        double *y) {
   for (int k = 0; k < n; k++) y[k] = 0.0;
@@ -209,39 +242,39 @@ inline void lae2(double a, double b, double c, double *rt1, double *rt2) {
   }
 }
 
-// LAPACK dlartg: the plane rotation [c s; -s c] * (f, g)' = (r, 0)'. The zero cases are not
-// cosmetic -- they are how the sweep survives an exactly-deflated off-diagonal without a
-// divide by zero, which is the failure mode a naive r = hypot(f,g); c = f/r costs you.
-inline void lartg(double f, double g, double *cs, double *sn, double *r) {
-  if (g == 0.0) { *cs = 1.0; *sn = 0.0; *r = f; return; }
-  if (f == 0.0) { *cs = 0.0; *sn = 1.0; *r = g; return; }
-  *r = lapy2(f, g);
-  *cs = f / *r;
-  *sn = g / *r;
-  if (std::fabs(f) > std::fabs(g) && *cs < 0.0) { *cs = -*cs; *sn = -*sn; *r = -*r; }
-}
-
-// Implicit-shift QL/QR on a symmetric tridiagonal, eigenvalues only -- the dsterf job, written
-// out as LAPACK's dsteqr performs it with ICOMPZ = 0.
+// Pal-Walker-Kahan QL/QR on a symmetric tridiagonal, eigenvalues only. This is LAPACK's dsterf
+// algorithm, not dsteqr's.
 //
-// Direction is chosen per unreduced block the way LAPACK does: QL when the small-|d| end is at
-// the bottom, QR otherwise, so the Wilkinson shift chases the end that is already nearly
-// converged. A single-direction sweep gets the same eigenvalues but takes measurably more
-// iterations on the Burden spectra, which are strongly graded -- a mass diagonal runs from 12
-// to 127 while the off-diagonals sit at 0.001 to 1.
+// WHY THE SQUARE-ROOT-FREE VARIANT AND NOT THE OBVIOUS ONE. The first version here was
+// dsteqr's rotation sweep -- generate a Givens rotation per step, one dlapy2 (hence one sqrt)
+// per rotation. It is the textbook algorithm and it was measured against Accelerate's dsterf
+// on Burden matrices, reduction and sweep timed separately:
 //
-// The split test is dsteqr's: e^2 <= eps^2 * |d_m| * |d_{m+1}| + safmin. A bare
-// |e| <= eps*(|d_m| + |d_{m+1}|) -- the textbook/Numerical-Recipes test -- is WRONG for this
-// application: the Gasteiger-charge Burden matrix has a diagonal of order 0.1 against
-// off-diagonals fixed at 0.001, and on a near-zero diagonal a relative test with no absolute
-// floor never terminates. That floor is why safmin is in there and not decoration.
+//     n      my reduction / dsytd2      my dsteqr sweep / dsterf      sweep as % of total
+//    10          0.84 / 1.06                 4.49 / 3.83                    84% / 78%
+//    27          7.24 / 5.27                29.51 / 21.05                   80% / 80%
+//    53         23.19 / 57.38               89.26 / 97.30                   79% / 63%
+//   117        139.83 / 301.33             350.94 / 427.29                  72% / 59%
 //
-// NOT IMPLEMENTED, deliberately: dsteqr's per-block rescaling to [sqrt(safmin), sqrt(safmax)].
-// It guards against overflow in the rotations for spectra spanning ~1e150, which a matrix of
-// atomic masses, logP contributions and Gasteiger charges cannot produce. The convergence
-// counter below turns any surprise into a false return rather than a wrong number.
+// Two things fall out of that table and both were surprises. First, THE SWEEP IS 72-84% OF THE
+// COST, not the O(n^3) reduction -- so tuning the reduction, which is where anyone would look
+// first, is tuning the small end. Second, this unblocked reduction is already 2.2x faster than
+// Accelerate's dsytd2 at n = 117 and 2.5x at n = 53; the reduction was never the problem. The
+// entire deficit against Accelerate at molecular sizes was one sqrt per rotation in a loop that
+// runs O(n^2) times.
 //
-// Returns false if a block fails to converge within 30n sweeps.
+// PWK removes it by iterating on the SQUARED off-diagonals: e is squared once per block up
+// front, the inner loop works in p = gamma^2 and never takes a root, and only the shift needs
+// one sqrt per sweep rather than one per step. Same eigenvalues, same stability class -- this
+// is what LAPACK ships as its eigenvalues-only path, for exactly this reason.
+//
+// SQUARING e HALVES THE USABLE EXPONENT RANGE, which is why the per-block scaling below is
+// present and is not ceremony: an off-diagonal of 1e200 is representable and its square is not.
+// A Burden matrix cannot produce one, but a header that claims to solve dense symmetric
+// eigenproblems should not quietly return infinities to someone who hands it a different
+// matrix. The cost is one max-scan and at most two scalar passes per block.
+//
+// Returns false if any block fails to converge in 30n sweeps.
 inline bool sterf_min_max(int n, double *d, double *e, double *lo, double *hi) {
   if (n <= 0) return false;
   if (n == 1) { *lo = *hi = d[0]; return true; }
@@ -249,105 +282,157 @@ inline bool sterf_min_max(int n, double *d, double *e, double *lo, double *hi) {
   const double eps = std::numeric_limits<double>::epsilon();
   const double eps2 = eps * eps;
   const double safmin = std::numeric_limits<double>::min();
+  const double safmax = 1.0 / safmin;
+  const double ssfmax = std::sqrt(safmax) / 3.0;
+  const double ssfmin = std::sqrt(safmin) / eps2;
   const int maxit = 30 * n;
-  int iter = 0;
-  double c, s, r, g, p, f, b, rt1, rt2;
+  int jtot = 0;
 
   int l1 = 0;
   while (l1 < n) {
     if (l1 > 0) e[l1 - 1] = 0.0;
-    int mblk = l1;
-    while (mblk < n - 1) {
-      const double t = std::fabs(e[mblk]);
-      if (t * t <= (eps2 * std::fabs(d[mblk])) * std::fabs(d[mblk + 1]) + safmin) break;
-      mblk++;
+    // Block boundary, on the UNSQUARED off-diagonal: |e_m| <= eps*sqrt(|d_m|)*sqrt(|d_m+1|).
+    int mb = l1;
+    while (mb < n - 1) {
+      if (std::fabs(e[mb]) <=
+          (std::sqrt(std::fabs(d[mb])) * std::sqrt(std::fabs(d[mb + 1]))) * eps) {
+        e[mb] = 0.0;
+        break;
+      }
+      mb++;
     }
-    int l = l1, lend = mblk;
-    l1 = mblk + 1;
-    if (l == lend) continue;
+    int l = l1, lend = mb;
+    const int lsv = l, lendsv = lend;
+    l1 = mb + 1;
+    if (lend == l) continue;
 
-    // Orient the block so the sweep deflates at the SMALL-|d| end: QL (indices increase) if
-    // that end is already at the top, QR (indices decrease) after the swap if it is at the
-    // bottom. This is dsteqr's choice, and on a mass-diagonal Burden matrix -- 12 at carbon,
-    // 127 at iodine -- getting it backwards costs iterations, not accuracy.
-    if (std::fabs(d[lend]) < std::fabs(d[l])) std::swap(l, lend);
-    const bool ql = l < lend;
+    // dlanst('M'): the largest entry of this block, then scale into a range where squaring e
+    // cannot overflow or flush to zero.
+    double anorm = 0.0;
+    for (int i = l; i <= lend; i++) anorm = std::max(anorm, std::fabs(d[i]));
+    for (int i = l; i < lend; i++) anorm = std::max(anorm, std::fabs(e[i]));
+    if (anorm == 0.0) continue;
+    int iscale = 0;
+    if (anorm > ssfmax) {
+      iscale = 1;
+      const double f = ssfmax / anorm;
+      for (int i = l; i <= lend; i++) d[i] *= f;
+      for (int i = l; i < lend; i++) e[i] *= f;
+    } else if (anorm < ssfmin) {
+      iscale = 2;
+      const double f = ssfmin / anorm;
+      for (int i = l; i <= lend; i++) d[i] *= f;
+      for (int i = l; i < lend; i++) e[i] *= f;
+    }
+    for (int i = l; i < lend; i++) e[i] = e[i] * e[i];
 
-    while (l != -1) {
-      if (ql) {
-        if (l > lend) break;
+    // Orient so the sweep deflates at the small-|d| end, as dsterf does.
+    if (std::fabs(d[lend]) < std::fabs(d[l])) { lend = lsv; l = lendsv; }
+
+    double p, sigma, rte, r, c, s, gamma, oldc, oldgam, alpha, bb, rt1, rt2;
+    if (lend >= l) {
+      // -------------------------------------------------------------------------- QL
+      while (true) {
         int m = l;
-        while (m < lend) {
-          const double t = std::fabs(e[m]);
-          if (t * t <= (eps2 * std::fabs(d[m])) * std::fabs(d[m + 1]) + safmin) break;
-          m++;
+        if (l != lend) {
+          while (m < lend) {
+            if (std::fabs(e[m]) <= eps2 * std::fabs(d[m] * d[m + 1])) break;
+            m++;
+          }
         }
         if (m < lend) e[m] = 0.0;
         p = d[l];
-        if (m == l) { l++; continue; }
+        if (m == l) { d[l] = p; l++; if (l <= lend) continue; break; }
         if (m == l + 1) {
-          lae2(d[l], e[l], d[l + 1], &rt1, &rt2);
+          rte = std::sqrt(e[l]);
+          lae2(d[l], rte, d[l + 1], &rt1, &rt2);
           d[l] = rt1; d[l + 1] = rt2; e[l] = 0.0;
           l += 2;
-          continue;
+          if (l <= lend) continue;
+          break;
         }
-        if (++iter > maxit) return false;
-        g = (d[l + 1] - p) / (2.0 * e[l]);
-        r = lapy2(g, 1.0);
-        g = d[m] - p + (e[l] / (g + std::copysign(r, g)));
-        s = 1.0; c = 1.0; p = 0.0;
+        if (jtot == maxit) return false;
+        jtot++;
+        rte = std::sqrt(e[l]);
+        sigma = (d[l + 1] - p) / (2.0 * rte);
+        r = lapy2(sigma, 1.0);
+        sigma = p - (rte / (sigma + std::copysign(r, sigma)));
+        c = 1.0; s = 0.0;
+        gamma = d[m] - sigma;
+        p = gamma * gamma;
         for (int i = m - 1; i >= l; --i) {
-          f = s * e[i];
-          b = c * e[i];
-          lartg(g, f, &c, &s, &r);
-          if (i != m - 1) e[i + 1] = r;
-          g = d[i + 1] - p;
-          r = (d[i] - g) * s + 2.0 * c * b;
-          p = s * r;
-          d[i + 1] = g + p;
-          g = c * r - b;
+          bb = e[i];
+          r = p + bb;
+          if (i != m - 1) e[i + 1] = s * r;
+          oldc = c;
+          c = p / r;
+          s = bb / r;
+          oldgam = gamma;
+          alpha = d[i];
+          gamma = c * (alpha - sigma) - s * oldgam;
+          d[i + 1] = oldgam + (alpha - gamma);
+          p = (c != 0.0) ? (gamma * gamma) / c : oldc * bb;
         }
-        e[l] = g;
-        d[l] = d[l] - p;
-      } else {
-        if (l < lend) break;
+        e[l] = s * p;
+        d[l] = sigma + gamma;
+      }
+    } else {
+      // -------------------------------------------------------------------------- QR
+      while (true) {
         int m = l;
         while (m > lend) {
-          const double t = std::fabs(e[m - 1]);
-          if (t * t <= (eps2 * std::fabs(d[m])) * std::fabs(d[m - 1]) + safmin) break;
+          if (std::fabs(e[m - 1]) <= eps2 * std::fabs(d[m] * d[m - 1])) break;
           m--;
         }
         if (m > lend) e[m - 1] = 0.0;
         p = d[l];
-        if (m == l) { l--; continue; }
+        if (m == l) { d[l] = p; l--; if (l >= lend) continue; break; }
         if (m == l - 1) {
-          lae2(d[l - 1], e[l - 1], d[l], &rt1, &rt2);
-          d[l - 1] = rt1; d[l] = rt2; e[l - 1] = 0.0;
+          rte = std::sqrt(e[l - 1]);
+          lae2(d[l], rte, d[l - 1], &rt1, &rt2);
+          d[l] = rt1; d[l - 1] = rt2; e[l - 1] = 0.0;
           l -= 2;
-          continue;
+          if (l >= lend) continue;
+          break;
         }
-        if (++iter > maxit) return false;
-        g = (d[l - 1] - p) / (2.0 * e[l - 1]);
-        r = lapy2(g, 1.0);
-        g = d[m] - p + (e[l - 1] / (g + std::copysign(r, g)));
-        s = 1.0; c = 1.0; p = 0.0;
+        if (jtot == maxit) return false;
+        jtot++;
+        rte = std::sqrt(e[l - 1]);
+        sigma = (d[l - 1] - p) / (2.0 * rte);
+        r = lapy2(sigma, 1.0);
+        sigma = p - (rte / (sigma + std::copysign(r, sigma)));
+        c = 1.0; s = 0.0;
+        gamma = d[m] - sigma;
+        p = gamma * gamma;
         for (int i = m; i <= l - 1; ++i) {
-          f = s * e[i];
-          b = c * e[i];
-          lartg(g, f, &c, &s, &r);
-          if (i != m) e[i - 1] = r;
-          g = d[i] - p;
-          r = (d[i + 1] - g) * s + 2.0 * c * b;
-          p = s * r;
-          d[i] = g + p;
-          g = c * r - b;
+          bb = e[i];
+          r = p + bb;
+          if (i != m) e[i - 1] = s * r;
+          oldc = c;
+          c = p / r;
+          s = bb / r;
+          oldgam = gamma;
+          alpha = d[i + 1];
+          gamma = c * (alpha - sigma) - s * oldgam;
+          d[i] = oldgam + (alpha - gamma);
+          p = (c != 0.0) ? (gamma * gamma) / c : oldc * bb;
         }
-        e[l - 1] = g;
-        d[l] = d[l] - p;
+        e[l - 1] = s * p;
+        d[l] = sigma + gamma;
       }
+    }
+
+    if (iscale == 1) {
+      const double f = anorm / ssfmax;
+      for (int i = lsv; i <= lendsv; i++) d[i] *= f;
+    } else if (iscale == 2) {
+      const double f = anorm / ssfmin;
+      for (int i = lsv; i <= lendsv; i++) d[i] *= f;
     }
   }
 
+  // dsterf finishes with dlasrt. Only the two extremes are wanted, so one scan replaces the
+  // sort -- O(n) instead of O(n log n), and the caller never sees the difference.
   double mn = d[0], mx = d[0];
   for (int i = 1; i < n; i++) {
     if (d[i] < mn) mn = d[i];
@@ -357,6 +442,7 @@ inline bool sterf_min_max(int n, double *d, double *e, double *lo, double *hi) {
   *hi = mx;
   return true;
 }
+
 
 // ------------------------------------------------------------------ the one entry point
 //

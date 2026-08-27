@@ -9,8 +9,19 @@
 //
 //   ./bench_eigen verify [mols.txt]   max abs/rel deviation from Accelerate, per size bucket
 //   ./bench_eigen bench  [mols.txt]   three-way timing, bucketed, alternating-order pairs
-//   ./bench_eigen solo   [mols.txt]   eigen_small only -- the -march=native comparison
+//   ./bench_eigen march  [mols.txt]   -O3 vs -mcpu=apple-m1 vs -march=native, in one process
+//   ./bench_eigen solo   [mols.txt]   eigen_small only
+//   ./bench_eigen adv    [adv.txt]    per-molecule deviation on the adversarial set, named
 //   ./bench_eigen share  [mols.txt]   does the shared off-diagonal structure survive step 1?
+//
+// BUILD (the three variant objects exist only for `march` mode and are always linked):
+//   clang++ -O3               -std=c++17 -DVNS=v_plain  -DVFN=eig_plain  -c eigen_variant.cpp -o v_plain.o
+//   clang++ -O3 -mcpu=apple-m1 -std=c++17 -DVNS=v_m1     -DVFN=eig_m1     -c eigen_variant.cpp -o v_m1.o
+//   clang++ -O3 -march=native -std=c++17 -DVNS=v_native -DVFN=eig_native -c eigen_variant.cpp -o v_native.o
+//   clang++ -O3 -march=native -std=c++17 bench_eigen.cpp v_plain.o v_m1.o v_native.o \
+//           -o bench_eigen -framework Accelerate
+//
+// Usage: ./bench_eigen <mode> <mols.txt> [per-bucket sample cap] [timing cycles]
 //
 // The matrices are the REAL Burden matrices, built exactly as bcut_one builds them (heavy atoms
 // only, 0.001 off the sparsity pattern, 1/sqrt(bond order) on bonds, property on the diagonal),
@@ -34,6 +45,16 @@
 #include <vector>
 
 #include "eigen_small.h"
+
+// The same header compiled three ways (see eigen_variant.cpp), for `march` mode. These are
+// always linked in -- a weak reference was tried first and Mach-O does not support a weak
+// UNDEFINED symbol from a static object, only from a dylib, so the "build without the variants
+// and skip that mode" convenience is not available. Three extra objects is the cheaper answer.
+extern "C" {
+bool eig_plain(const double *, int, double *, double *);
+bool eig_m1(const double *, int, double *, double *);
+bool eig_native(const double *, int, double *, double *);
+}
 
 // Accelerate's, by direct linkage: the two stages bcut_one actually calls.
 extern "C" {
@@ -196,14 +217,28 @@ int main(int argc, char **argv) {
   // flat-sampled average as a corpus number is exactly the "single average hides it" failure.
   std::vector<size_t> pop(NB, 0);
   {
+    // Two passes. The first counts, the second takes every k-th matrix of each bucket so the
+    // sample spans the whole corpus rather than being a prefix of it -- the 71+ bucket runs
+    // from n = 71 to n = 245 and costs ~n^3, so a prefix sample can be 40% off on the one
+    // bucket that carries 46% of the time.
     Mat tmp;
     for (const Mol &m : ms) {
       const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
       for (int p = 0; p < 4; p++) {
         if (!burden(m, *props[p], tmp)) continue;
+        pop[bucket_of(tmp.n)]++;
+      }
+    }
+    std::vector<size_t> stride(NB, 1), seen(NB, 0);
+    for (int b = 0; b < NB; b++)
+      if (want[b] != (size_t)-1 && pop[b] > want[b]) stride[b] = pop[b] / want[b];
+    for (const Mol &m : ms) {
+      const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+      for (int p = 0; p < 4; p++) {
+        if (!burden(m, *props[p], tmp)) continue;
         const int b = bucket_of(tmp.n);
-        pop[b]++;
-        if (buck[b].size() >= want[b]) continue;
+        const size_t k = seen[b]++;
+        if (buck[b].size() >= want[b] || k % stride[b]) continue;
         buck[b].push_back(tmp);
       }
     }
@@ -255,6 +290,56 @@ int main(int argc, char **argv) {
     printf("max abs deviation %.3e is %s the atol floor of %.0e alone, so the gate cannot be\n"
            "broken by this solver at ANY value magnitude.\n", gabs,
            gabs < ATOL ? "BELOW" : "ABOVE", ATOL);
+    return 0;
+  }
+
+  // ------------------------------------------------------------------ adversarial, per molecule
+  //
+  // Aggregate maxima hide WHICH molecule is worst, and for this question that is the whole
+  // point: degenerate spectra from high-symmetry cages and near-degenerate frontier pairs from
+  // polyacenes and long polyenes are exactly where a QL sweep is supposed to struggle. Names
+  // come from the .smi written alongside the .txt by export_predict.py, so a row can be read
+  // rather than merely counted.
+  if (mode == "adv") {
+    std::string smipath(path);
+    const size_t dot = smipath.rfind('.');
+    if (dot != std::string::npos) smipath = smipath.substr(0, dot) + ".smi";
+    std::vector<std::string> smi;
+    { std::ifstream sf(smipath); std::string ln;
+      while (std::getline(sf, ln)) if (!ln.empty()) smi.push_back(ln); }
+    const double ATOL = 1e-12, RTOL = 1e-9;
+    printf("%-4s %5s %6s | %11s %11s %9s | %s\n", "#", "nheavy", "mats", "max abs", "max rel",
+           "max gate", "SMILES");
+    Mat tmp;
+    double gworst = 0;
+    for (size_t k = 0; k < ms.size(); k++) {
+      const Mol &m = ms[k];
+      const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+      double mabs = 0, mrel = 0, mgate = 0;
+      int nh = 0, nmat = 0;
+      for (int p = 0; p < 4; p++) {
+        if (!burden(m, *props[p], tmp)) continue;
+        nh = tmp.n; nmat++;
+        double alo, ahi, mlo, mhi;
+        lap_extremal(tmp, LW, dsytd2_, dsterf_, &alo, &ahi);
+        if (!hume_eig::extremal(tmp.a.data(), tmp.n, &mlo, &mhi, EW)) {
+          printf("%-4zu %5d %6d | NON-CONVERGENCE\n", k, tmp.n, nmat); continue;
+        }
+        const double dlo = std::fabs(mlo - alo), dhi = std::fabs(mhi - ahi);
+        mabs = std::max(mabs, std::max(dlo, dhi));
+        if (alo != 0) mrel = std::max(mrel, dlo / std::fabs(alo));
+        if (ahi != 0) mrel = std::max(mrel, dhi / std::fabs(ahi));
+        mgate = std::max(mgate, dlo / (ATOL + RTOL * std::fabs(alo)));
+        mgate = std::max(mgate, dhi / (ATOL + RTOL * std::fabs(ahi)));
+      }
+      gworst = std::max(gworst, mgate);
+      std::string lbl = k < smi.size() ? smi[k] : std::string("(no smi)");
+      if (lbl.size() > 58) lbl = lbl.substr(0, 55) + "...";
+      printf("%-4zu %5d %6d | %11.3e %11.3e %9.3e | %s\n", k, nh, nmat, mabs, mrel, mgate,
+             lbl.c_str());
+    }
+    printf("\nworst gate usage on the adversarial set: %.3e (1.0 = at verify_hume.py's limit)\n",
+           gworst);
     return 0;
   }
 
@@ -331,6 +416,70 @@ int main(int argc, char **argv) {
   };
   volatile double sink = 0;
 
+  if (mode == "march") {
+    typedef bool (*eig_fn)(const double *, int, double *, double *);
+    eig_fn fns[3] = {eig_plain, eig_m1, eig_native};
+    const char *fnm[3] = {"-O3", "-O3 -mcpu=apple-m1", "-O3 -march=native"};
+    auto run_v = [&](const std::vector<Mat> &v, eig_fn f) {
+      double s = 0, lo, hi;
+      for (const Mat &M : v) { f(M.a.data(), M.n, &lo, &hi); s += lo + hi; }
+      return s;
+    };
+    // Correctness first: three code generations of the same source must agree BIT FOR BIT, or
+    // -march=native is not a free speed knob, it is a second numerical path.
+    {
+      long long diff = 0, tot2 = 0;
+      double lo0, hi0, lo1, hi1, lo2, hi2;
+      for (int b = 0; b < NB; b++)
+        for (const Mat &M : buck[b]) {
+          eig_plain(M.a.data(), M.n, &lo0, &hi0);
+          eig_m1(M.a.data(), M.n, &lo1, &hi1);
+          eig_native(M.a.data(), M.n, &lo2, &hi2);
+          tot2++;
+          if (lo0 != lo1 || hi0 != hi1 || lo0 != lo2 || hi0 != hi2) diff++;
+        }
+      printf("bit-identical across the three builds: %lld of %lld matrices differ\n\n",
+             diff, tot2);
+    }
+    printf("%-8s %6s %6s | %10s %10s %10s | %11s %11s\n", "bucket", "mats", "mean n",
+           fnm[0], "apple-m1", "native", "m1/plain", "native/plain");
+    for (int b = 0; b < NB; b++) {
+      if (buck[b].empty()) continue;
+      double mean_n = 0;
+      for (const Mat &M : buck[b]) mean_n += M.n;
+      mean_n /= buck[b].size();
+      std::vector<double> t[3], r1, r2;
+      for (int c = 0; c < cycles; c++) {
+        double f[3], g[3], t0;
+        for (int i = 0; i < 3; i++) { t0 = now_us(); sink += run_v(buck[b], fns[i]); f[i] = now_us() - t0; }
+        for (int i = 2; i >= 0; i--) { t0 = now_us(); sink += run_v(buck[b], fns[i]); g[i] = now_us() - t0; }
+        const double d = 2.0 * buck[b].size();
+        for (int i = 0; i < 3; i++) t[i].push_back((f[i] + g[i]) / d);
+        r1.push_back(t[1].back() / t[0].back());
+        r2.push_back(t[2].back() / t[0].back());
+      }
+      std::sort(r1.begin(), r1.end());
+      std::sort(r2.begin(), r2.end());
+      printf("%-8s %6zu %6.1f | %10.3f %10.3f %10.3f | %5.2fx[%.2f-%.2f] %5.2fx[%.2f-%.2f]\n",
+             BNAME[b], buck[b].size(), mean_n, median(t[0]), median(t[1]), median(t[2]),
+             median(r1), r1.front(), r1.back(), median(r2), r2.front(), r2.back());
+    }
+    printf("\nRatios BELOW 1.00 mean the tuned build is FASTER than plain -O3. The bracket is\n"
+           "min-max over %d per-cycle ratios on a machine at load average ~28.\n\n", cycles);
+    printf("READ THIS AS A NULL EXPERIMENT. On arm64 macOS all three flag sets resolve to the\n"
+           "SAME -target-cpu (apple-m1 -- clang does not know the M4 Pro and falls back) and the\n"
+           "SAME 27 target features, and compiling eigen_variant.cpp three ways with identical\n"
+           "symbol names produces BYTE-IDENTICAL object files. So the three columns above are\n"
+           "three copies of one binary, and every difference in them is measurement noise.\n"
+           "That makes this table the harness's NOISE FLOOR: whatever spread appears here is\n"
+           "what `bench` mode cannot distinguish from zero. Treat any bench ratio inside this\n"
+           "band as a tie.\n"
+           "It also answers the portability question for this platform outright -- -march=native\n"
+           "buys nothing here and can be dropped. It says NOTHING about x86-64, where native\n"
+           "unlocks AVX2/AVX-512 and the answer may well differ; that has not been measured.\n");
+    return 0;
+  }
+
   if (mode == "solo") {
     printf("%-8s %8s %12s %12s\n", "bucket", "mats", "us/mat", "spread%");
     for (int b = 0; b < NB; b++) {
@@ -348,16 +497,35 @@ int main(int argc, char **argv) {
     return 0;
   }
 
-  // Three-way. Within one cycle the order is M,A,O then O,A,M -- a palindrome, so no
-  // implementation can be flattered by always running second on a warm cache or by a thermal
-  // ramp inside the cycle. The per-cycle number is the mean of the two positions; the reported
-  // number is the MEDIAN over cycles and the spread is min..max of those cycle medians.
-  printf("%-8s %8s %8s | %11s %10s %10s | %9s %11s | %s\n", "bucket", "mats", "corpus%",
-         "eigen_small", "Accel", "OpenBLAS", "vs Accel", "vs OpenBLAS", "cycle spread");
+  // Three-way. Within one cycle the order is M,A,O,O,A,M -- a palindrome, so no implementation
+  // can be flattered by always running second on a warm cache or by a thermal ramp inside the
+  // cycle.
+  //
+  // THE REPORTED NUMBER IS A MEDIAN OF PER-CYCLE RATIOS, NOT A RATIO OF MEDIANS. That is not
+  // pedantry on this box: load average during these runs was 28 on 12 cores, other people's
+  // jobs, and absolute microsecond figures move by 3-5x between minutes. A ratio formed from
+  // two timings taken MILLISECONDS APART survives that; a ratio formed from two medians taken
+  // across a run that spanned a load change does not. Absolute us/matrix is printed anyway
+  // because the shape across n is informative, but it is the ratio column that is evidence.
+  // TWO ESTIMATORS, because on a box at load average 31 neither is sufficient alone.
+  //   MIN   -- the fastest cycle each implementation ever achieved. Under contention the
+  //            distribution is a clean cost plus a one-sided delay, so the minimum estimates
+  //            the UNCONTENDED cost and is the standard estimator for a noisy machine. It is
+  //            not paired, so it can be fooled by one implementation happening to get the only
+  //            quiet window in the run.
+  //   PAIR  -- median of per-cycle ratios, each formed from two timings milliseconds apart.
+  //            Immune to slow drift, but every sample carries whatever noise hit that cycle.
+  // They are independent failure modes. Where the two agree the answer is real; where they
+  // disagree, nothing here resolves it and the report should say so rather than pick one.
+  printf("%-8s %6s %6s %7s | %9s %8s %8s | %6s %6s | %13s %13s\n", "bucket", "mats", "mean n",
+         "corpus%", "mine", "Accel", "OpenBL", "A/m", "O/m", "paired A/m", "paired O/m");
   double wm = 0, wa = 0, wo = 0;
   for (int b = 0; b < NB; b++) {
     if (buck[b].empty()) continue;
-    std::vector<double> tm, ta, to;
+    double mean_n = 0;
+    for (const Mat &M : buck[b]) mean_n += M.n;
+    mean_n /= buck[b].size();
+    std::vector<double> tm, ta, to, ra, ro;
     for (int c = 0; c < cycles; c++) {
       double t0, m1, a1, o1 = 0, m2, a2, o2 = 0;
       t0 = now_us(); sink += run_mine(buck[b]);                    m1 = now_us() - t0;
@@ -367,25 +535,33 @@ int main(int argc, char **argv) {
       t0 = now_us(); sink += run_lap(buck[b], dsytd2_, dsterf_);   a2 = now_us() - t0;
       t0 = now_us(); sink += run_mine(buck[b]);                    m2 = now_us() - t0;
       const double d = 2.0 * buck[b].size();
-      tm.push_back((m1 + m2) / d);
-      ta.push_back((a1 + a2) / d);
-      if (have_ob) to.push_back((o1 + o2) / d);
+      const double M = (m1 + m2) / d, A = (a1 + a2) / d, O = (o1 + o2) / d;
+      tm.push_back(M); ta.push_back(A); ra.push_back(A / M);
+      if (have_ob) { to.push_back(O); ro.push_back(O / M); }
     }
-    const double M = median(tm), A = median(ta), O = have_ob ? median(to) : 0.0;
+    const double M = *std::min_element(tm.begin(), tm.end());
+    const double A = *std::min_element(ta.begin(), ta.end());
+    const double O = have_ob ? *std::min_element(to.begin(), to.end()) : 0.0;
     wm += M * pop[b]; wa += A * pop[b]; wo += O * pop[b];
-    std::sort(tm.begin(), tm.end());
-    printf("%-8s %8zu %7.1f%% | %11.3f %10.3f %10.3f | %8.2fx %10.2fx | %+.0f%%/%+.0f%%\n",
-           BNAME[b], buck[b].size(), 100.0 * pop[b] / totpop, M, A, O, A / M,
-           have_ob ? O / M : 0.0, 100.0 * (tm.front() - M) / M, 100.0 * (tm.back() - M) / M);
+    std::sort(ra.begin(), ra.end());
+    if (have_ob) std::sort(ro.begin(), ro.end());
+    printf("%-8s %6zu %6.1f %6.1f%% | %9.3f %8.3f %8.3f | %5.2fx %5.2fx | %5.2fx[%.2f-%.2f] "
+           "%5.2fx[%.2f-%.2f]\n",
+           BNAME[b], buck[b].size(), mean_n, 100.0 * pop[b] / totpop, M, A, O, A / M,
+           have_ob ? O / M : 0.0, median(ra), ra.front(), ra.back(),
+           have_ob ? median(ro) : 0.0, have_ob ? ro.front() : 0.0, have_ob ? ro.back() : 0.0);
   }
-  printf("\nus per MATRIX; four matrices per molecule. Ratios > 1 mean eigen_small wins.\n");
-  printf("cycle spread is min/max of the %d per-cycle medians against the median -- this box is\n"
-         "SHARED, so treat anything inside that band as a tie.\n\n", cycles);
-  printf("CORPUS-WEIGHTED (bucket medians x true corpus bucket populations):\n");
+  printf("\nus per MATRIX (four per molecule), BEST of %d cycles. Ratio > 1 means eigen_small\n"
+         "WINS. A/m and O/m are ratios of those best times; `paired` is the median of the %d\n"
+         "per-cycle ratios with its min-max bracket. Absolute us are inflated ~4x by whatever\n"
+         "else this shared box was running -- hume's own tridiagscale read 526.74 us/mol during\n"
+         "these runs against the 128.65 recorded in its source. Read ratios, not microseconds.\n\n",
+         cycles, cycles);
+  printf("CORPUS-WEIGHTED (per-bucket best x true corpus bucket populations):\n");
   printf("  per matrix:   eigen_small %7.3f   Accel %7.3f   OpenBLAS %7.3f us\n",
          wm / totpop, wa / totpop, wo / totpop);
   printf("  per molecule: eigen_small %7.2f   Accel %7.2f   OpenBLAS %7.2f us   "
-         "(x4 matrices; this is the BCUT2D solve cost, excluding matrix fill)\n",
+         "(BCUT2D solve only, no matrix fill)\n",
          4.0 * wm / totpop, 4.0 * wa / totpop, 4.0 * wo / totpop);
   return 0;
 }
