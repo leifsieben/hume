@@ -109,3 +109,9 @@ cpp/vsa_mols.txt
 cpp/vsa_cpp.txt
 cpp/vsa
 cpp/vsa_stress.txt
+
+# InformationContent exchange files (5 numberings x boundary dumps + mordred oracles).
+# Regenerate with cpp/verify_ic.py; see its docstring for the two pinned environments.
+cpp/ic_*.txt
+cpp/ic_*.smi
+cpp/infocontent
