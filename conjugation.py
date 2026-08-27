@@ -101,7 +101,25 @@ def featurize(mol) -> np.ndarray:
         hets.append(int(het[idx].sum()))
         rings.append(int(arom[idx].sum()))
 
-    order = np.argsort(sizes)[::-1]
+    # kind="stable" is load-bearing, not decoration. When two pi systems tie on size, order[0]
+    # decides which one's diameter becomes `linearity` and which one's counts become
+    # `extra_arom_max` / `het_in_max` / `sys_max_rings` -- so the tie-break IS part of the
+    # feature definition and has to be a definition rather than an accident.
+    #
+    # np.argsort defaults to kind="quicksort", which is an introsort and is NOT stable. It
+    # insertion-sorts partitions of <= 15 elements, so for the fewer-than-16-systems molecules
+    # that are ~all of chemistry it is stable by accident and reversing it picks the LAST
+    # maximal system. Past that it partitions, and which of the tied systems survives to the
+    # end depends on where they happen to sit in the list -- i.e. on RDKit's atom numbering.
+    # Found on a 115-atom cyclic depsipeptide with 21 conjugated systems, two of size 9 (at
+    # positions 1 and 19) whose diameters are 4 and 5: quicksort returned the size-9 system
+    # with diameter 4, giving linearity 0.5, where every stable sort returns the other and
+    # gives 0.625. Nothing chemical distinguishes them; only the sort did.
+    #
+    # Pinning to "stable" keeps the LAST maximal system, which is what the unstable sort
+    # already did on 98,904 of 98,905 adversarial molecules, so this is the existing behaviour
+    # made total rather than a new convention.
+    order = np.argsort(sizes, kind="stable")[::-1]
     sizes = np.asarray(sizes, np.float64)
     smax = sizes[order[0]]
     s2nd = sizes[order[1]] if sizes.size > 1 else 0.0

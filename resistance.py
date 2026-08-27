@@ -34,7 +34,9 @@ whole molecule is already cheap, so the planned "invert only the ring systems" w
 dropped. And the eigendecomposition is **removed**: it cost 3.6x the resistance solve and paid
 for the least defensible features in the block (Fiedler value, spectral density), in a project
 where all 110 of Mordred's spectral scalars were already killed by the |rho|>=0.99 dedupe.
-Blocks 77 -> 65 features.
+Blocks 77 -> 65 features. Later 65 -> 60, when the five RATSC*_c columns were removed: the
+unity weight is a constant, and a constant centres to exactly zero, so those five were
+identically 0.0 by algebra. RPAIR{b} already carries the uncentred version of the same thing.
 """
 
 from __future__ import annotations
@@ -64,7 +66,22 @@ _POL = {1: 0.667, 5: 3.03, 6: 1.76, 7: 1.10, 8: 0.802, 9: 0.557, 14: 5.38, 15: 3
 # interesting range is decades wide and the lowest bin has to be tight to separate "barely
 # cyclic" from "genuinely fused".
 _DBINS = [(1e-6, 0.1), (0.1, 0.5), (0.5, 1.0), (1.0, 2.0), (2.0, np.inf)]
-_PROPS = ("c", "m", "e", "p", "v")          # unity, mass, electronegativity, polarizability, vdW volume
+# mass, electronegativity, polarizability, vdW volume.
+#
+# THE UNITY WEIGHT "c" USED TO BE HERE AND WAS REMOVED, on algebra rather than on measurement.
+# The autocorrelation is CENTRED (Pc = P - P.mean(0)), and a constant column centres to exactly
+# zero, so RATSC{0..4}_c was identically 0.0 for every molecule that can exist -- not merely for
+# every molecule in our corpus. Five columns carrying no information.
+#
+# Nothing is lost by removing it, because RPAIR{b} already IS the uncentred unity
+# autocorrelation: with a constant weight every pair product is 1 * 1 = 1, so the weighted sum
+# degenerates to the pair count, which is exactly what np.bincount(bk, minlength=_NB) computes.
+#
+# NAMING HAZARD, since the letter invites it: Mordred's ATSC0c means Gasteiger CHARGE, not
+# unity. Same letter, unrelated quantity. Do not "restore" a _c column by analogy with Mordred;
+# if a charge-weighted resistance autocorrelation is ever wanted it is a new property, and it
+# would need a real per-atom charge, not a column of ones.
+_PROPS = ("m", "e", "p", "v")
 _KSTEPS = (2, 3, 4, 6, 8, 12, 16)
 
 _PT = Chem.GetPeriodicTable()
@@ -72,20 +89,19 @@ _EDGES = np.array([lo for lo, _ in _DBINS] + [np.inf])
 _NB = len(_DBINS)
 
 # Property lookup tables indexed by atomic number. Building these once turns the per-atom
-# work into a single fancy-index instead of five Python calls per atom -- the sort of thing
+# work into a single fancy-index instead of four Python calls per atom -- the sort of thing
 # the C++ core does everywhere, previewed here because the glue dominated the maths.
 _ZMAX = 119
 _T = np.zeros((len(_PROPS), _ZMAX), np.float64)
-_T[0] = 1.0
 for _z in range(1, _ZMAX):
-    _T[1, _z] = _PT.GetAtomicWeight(_z)
-    _T[2, _z] = _EN.get(_z, _EN[6])
-    _T[3, _z] = _POL.get(_z, _POL[6])
-    _T[4, _z] = 4.0 / 3.0 * np.pi * _PT.GetRvdw(_z) ** 3
+    _T[0, _z] = _PT.GetAtomicWeight(_z)
+    _T[1, _z] = _EN.get(_z, _EN[6])
+    _T[2, _z] = _POL.get(_z, _POL[6])
+    _T[3, _z] = 4.0 / 3.0 * np.pi * _PT.GetRvdw(_z) ** 3
 
 
 def _atom_props(mol) -> np.ndarray:
-    """(n, 5) atom property matrix, columns ordered as _PROPS."""
+    """(n, 4) atom property matrix, columns ordered as _PROPS."""
     z = np.fromiter((a.GetAtomicNum() for a in mol.GetAtoms()), np.int64, mol.GetNumAtoms())
     return _T[:, np.clip(z, 0, _ZMAX - 1)].T.copy()
 

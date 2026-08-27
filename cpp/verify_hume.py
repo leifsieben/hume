@@ -4,15 +4,31 @@
 
 TWO REFERENCES, and conflating them would hide errors in both:
 
-  * chi (Chi2n..Chi4v) and BalabanJ  -> RDKIT is the reference. These are ports of somebody
-    else's descriptor and "our number" has no standing.
+  * chi (chi0n..chi4n, chi0v..chi4v) and both BalabanJ columns -> RDKIT is the reference.
+    These are ports of somebody else's descriptor and "our number" has no standing. chi.py
+    itself is now a reimplementation of RDKit's convention, so comparing the C++ against
+    chi.py for those ten would only prove it agrees with a second copy of our own code --
+    they are gated against RDKit directly, at the tighter tolerance.
   * cycles, resistance, conjugation, stereo -> OUR PYTHON MODULES are the reference. They are
     the definition of those blocks, and they are themselves already verified against RDKit /
     the 1M corpus where an external reference exists.
 
 Columns are matched BY NAME against each module's NAMES list rather than by position, so
 inserting a feature into a Python block cannot silently shift the comparison onto the wrong
-pair of numbers.
+pair of numbers. At 182 columns the whole "py" half of SPEC is GENERATED from the modules'
+own NAMES lists for the same reason -- a hand-written list of 165 entries is a transcription
+error waiting to happen, and one that would show up as a plausible-looking mismatch in the
+wrong descriptor.
+
+ONE PAIR OF COLUMNS SHARES A NAME AND IS NOT THE SAME DESCRIPTOR: BalabanJ and
+BalabanJ_mordred -- same formula, weighted against unweighted distance matrix. Both verified.
+
+There used to be a second such pair. Chi2n..Chi4v were emitted twice, once gated on RDKit and
+once on chi.py, because chi.py stripped explicit hydrogen with RemoveHs(removeIsotopes=True)
+and so normalised [2H]C(C)O onto plain ethanol -- a genuinely different descriptor that
+disagreed with RDKit on 468 of 468 explicit-H molecules, while its docstring claimed the
+opposite. chi.py now follows RDKit, the two became bit-identical on all 98,905 molecules
+(checked before removal, not assumed), and the duplicates are retired.
 
 TOLERANCE DEPENDS ON THE REFERENCE, because the two references have different precision:
 
@@ -46,23 +62,59 @@ TOL = {"rdkit": (1e-9, 1e-12), "py": (3e-6, 1e-6)}
 # (label, source) in the exact order ./hume verify writes them.
 #   ("rdkit", fn)        -> compare against RDKit
 #   ("py", module, name) -> compare against our module's feature of that name
-import conjugation, cycles, resistance, stereo                       # noqa: E402
+import chi, conjugation, cycles, resistance, stereo                  # noqa: E402
+
+# Columns C_sssr and C_redundancy are NOT emitted by the C++ and are deliberately absent here
+# rather than compared loosely. C_sssr is len(Chem.GetSymmSSSR(mol)), and the symmetrised SSSR
+# is NOT the cyclomatic number: it disagrees on 521 of 20,000 corpus molecules (2.6%), every one
+# a bridged polycyclic where the symmetrisation adds a ring the m - n + c basis does not have.
+# Reproducing it means reimplementing RDKit's ring perception, which is exactly the thing
+# export_predict.py's docstring refuses to do for hybridisation -- "a second implementation of
+# RDKit's perception rules and the first place an 'exact' claim would quietly stop being true".
+# The right fix is one more integer from the exporter; see the report. C_redundancy is
+# C_total / C_sssr and is blocked on the same value.
+_CYCLES_SKIP = ("C_sssr", "C_redundancy")
+
+# RDKit exposes Chi0n..Chi4n and Chi0v..Chi4v. Those ten chi.py columns are checked against it
+# at RDKit tolerance; the rest of the block (k = 5,6,7 and the path counts) has no external
+# counterpart and is checked against chi.py itself.
+_CHI_RDKIT = {f"chi{k}{s}": getattr(GD, f"Chi{k}{s}") for s in ("n", "v") for k in range(5)}
+
+
+def _chi_ref(nm):
+    fn = _CHI_RDKIT.get(nm)
+    return (nm, "rdkit", fn) if fn is not None else (nm, "py", chi, nm)
 
 SPEC = [
-    ("Chi2n", "rdkit", GD.Chi2n), ("Chi2v", "rdkit", GD.Chi2v),
-    ("Chi3n", "rdkit", GD.Chi3n), ("Chi3v", "rdkit", GD.Chi3v),
-    ("Chi4n", "rdkit", GD.Chi4n), ("Chi4v", "rdkit", GD.Chi4v),
     ("BalabanJ", "rdkit", GD.BalabanJ),
-    ("C3", "py", cycles, "C3"), ("C4", "py", cycles, "C4"), ("C5", "py", cycles, "C5"),
-    ("Kf", "py", resistance, "Kf"), ("DeltaMean", "py", resistance, "DeltaMean"),
-    ("n_sys", "py", conjugation, "n_sys"), ("conj_atoms", "py", conjugation, "conj_atoms"),
-    ("sys_max", "py", conjugation, "sys_max"), ("linearity", "py", conjugation, "linearity"),
-    ("branch_pts", "py", conjugation, "branch_pts"),
-    ("S_sum", "py", stereo, "S_sum"), ("S_absum", "py", stereo, "S_absum"),
-    ("S_sum_norm", "py", stereo, "S_sum_norm"),
-    ("T_sum", "py", stereo, "T_sum"), ("T_absum", "py", stereo, "T_absum"),
-] + [(f"SATS{k}", "py", stereo, f"SATS{k}") for k in range(1, 7)] + [
-    ("SATS_far", "py", stereo, "SATS_far"),
+    # The SECOND BalabanJ. HUME's column set carries both ('rdkit','BalabanJ') and
+    # ('mordred','BalabanJ') under the same name, and they are different numbers -- 2.888052
+    # against 1.925368 on naphthalene. mordred/BalabanJ.py calls RDKit's own function but hands
+    # it an UNWEIGHTED distance matrix, bypassing the useBO=1 weighting RDKit applies by default.
+    #
+    # The reference below reproduces that argument rather than importing mordred, so this
+    # harness keeps running under .venv/bin/python (mordred is not installed there, and a
+    # per-molecule mordred Calculator over 100k molecules costs more than the rest of the
+    # verify put together). That substitution is not taken on trust: cpp/spec_balaban.py pins
+    # it against MORDRED ITSELF over 4,000 molecules drawn from the adversarial corpus --
+    # salts, isotopes, explicit H, rare elements -- and agrees on 4,000 of 4,000. The reference
+    # here is still RDKit's implementation; only the matrix argument is reconstructed.
+    ("BalabanJ_mordred", "rdkit",
+     lambda m: GD.BalabanJ(m, dMat=Chem.GetDistanceMatrix(m, useBO=False, useAtomWts=False,
+                                                          force=True))),
+] + [
+    # WHOLE BLOCKS, GENERATED FROM THE MODULES' OWN NAMES LISTS. Writing these out by hand is
+    # what the position-matching hazard in the header warns about, and at 165 columns it stops
+    # being a hazard and becomes a certainty. The C++ emits each block in exactly this order.
+    #
+    # chi0n..chi4n and chi0v..chi4v are gated against RDKIT rather than against chi.py, at the
+    # tighter rtol 1e-9 -- RDKit defines those and chi.py is now a reimplementation of them, so
+    # comparing to chi.py would only prove the C++ agrees with a second copy of our own code.
+    # k = 5,6,7 have no RDKit counterpart and fall back to chi.py, as do the path* columns.
+    _chi_ref(nm) if mod is chi else (nm, "py", mod, nm)
+    for mod in (chi, cycles, conjugation, stereo, resistance)
+    for nm in mod.NAMES if not (mod is cycles and nm in _CYCLES_SKIP)
+] + [
     # merged in from predict.cpp -- same binary, same graph build, same BFS
     ("MaxEStateIndex", "rdkit", lambda m: max(EStateIndices(m))),
     ("MinEStateIndex", "rdkit", lambda m: min(EStateIndices(m))),

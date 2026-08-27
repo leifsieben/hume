@@ -19,20 +19,33 @@
 //   * GATS divides by 4*gsum, because the gmat sum double-counts each pair.
 //   * GATS normalises by (A - 1); MATS normalises by A. Two different denominators in one
 //     family.
+//
+// THE NINE WEIGHT VECTORS ARE NOW BUILT HERE, by ac_weights.h, not handed over by Python. The
+// export used to carry finished numbers because calling mordred's own getters was "cheap"; it
+// was 473.9 us/mol, twenty times the cost of the O(n^2) accumulation this file exists to do.
+// The export now carries the raw graph and only the Gasteiger charge survives from RDKit.
+//
+// A WEIGHT WITH A NON-FINITE ATOM IS NaN FOR ITS 54 COLUMNS, NOT A DROPPED MOLECULE. mordred
+// fails one AtomicProperty at a time, so a selenium molecule loses the 54 `se` columns and keeps
+// the other 432. The exporter used to skip such molecules outright, which hid every rare element
+// in the corpus from the verifier; they are carried now and gated here.
 
 #include <chrono>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <string>
 #include <vector>
 
-static const int NW = 9;      // weights: c d dv i p v se pe are
+#include "ac_weights.h"       // the nine getters; also defines NW = 9 and struct AtomRec
+
 static const int NL = 9;      // lags 0..8
 static const int BIG = 1 << 20;
 
 struct MolH {
   int n = 0, nb = 0;
+  std::vector<AtomRec> at;
   std::vector<double> w;                       // n * NW, atom-major
   std::vector<int> bu, bv;
   std::vector<std::vector<int>> adj;
@@ -46,9 +59,8 @@ static std::vector<MolH> load(const char *path) {
   for (int k = 0; k < nm; k++) {
     MolH &m = ms[k];
     f >> m.n >> m.nb;
-    m.w.resize((size_t)m.n * NW);
-    for (int i = 0; i < m.n; i++)
-      for (int j = 0; j < NW; j++) f >> m.w[(size_t)i * NW + j];
+    m.at.resize(m.n);
+    for (int i = 0; i < m.n; i++) f >> m.at[i].z >> m.at[i].fc >> m.at[i].nh >> m.at[i].c;
     m.adj.assign(m.n, {});
     m.bu.resize(m.nb);
     m.bv.resize(m.nb);
@@ -57,6 +69,10 @@ static std::vector<MolH> load(const char *path) {
       m.adj[m.bu[b]].push_back(m.bv[b]);
       m.adj[m.bv[b]].push_back(m.bu[b]);
     }
+    // The nan/inf export desync cost a silently wrong 19.9-atom mean on a 30.6-atom corpus
+    // once. Four tokens an atom, checked every molecule, so a bad field stops the run here
+    // instead of shifting every number after it.
+    if (!f) { fprintf(stderr, "PARSE FAILED at molecule %d -- reader desynced\n", k); exit(1); }
   }
   return ms;
 }
@@ -80,10 +96,23 @@ static void distances(const MolH &m, std::vector<int> &D) {
 // out is laid out [variant][lag][weight], variants in the order
 // ATS, AATS, ATSC, AATSC, MATS, GATS. NaN where Mordred returns NaN.
 static const int NVAR = 6;
-static void autocorr(const MolH &m, std::vector<int> &D, std::vector<double> &mean,
-                     double *out) {
+static void autocorr(MolH &m, std::vector<int> &D, std::vector<double> &mean, double *out) {
   const int n = m.n;
   distances(m, D);
+  ac_weights(m.at, m.adj, m.w);
+
+  // Per-weight availability, mordred's AtomicProperty.calculate() fail path. One non-finite
+  // atom kills that weight's 54 columns and nothing else.
+  bool okw[NW];
+  for (int j = 0; j < NW; j++) okw[j] = true;
+  for (int i = 0; i < n; i++)
+    for (int j = 0; j < NW; j++)
+      if (!std::isfinite(m.w[(size_t)i * NW + j])) okw[j] = false;
+  // Substitute zero so a dead weight cannot make the arithmetic below NaN-bound; the columns
+  // are independent per weight, and every cell of a dead one is overwritten with NaN at the end.
+  for (int j = 0; j < NW; j++)
+    if (!okw[j])
+      for (int i = 0; i < n; i++) m.w[(size_t)i * NW + j] = 0.0;
 
   mean.assign(NW, 0.0);
   for (int i = 0; i < n; i++)
@@ -136,6 +165,10 @@ static void autocorr(const MolH &m, std::vector<int> &D, std::vector<double> &me
       double den_g = (n > 1) ? csq[q] / (n - 1) : 0.0;
       double aatsc = gsum > 0 ? C / gsum : NaN;
       int base = (k * NW + q);
+      if (!okw[q]) {
+        for (int v = 0; v < NVAR; v++) out[v * NL * NW + base] = NaN;
+        continue;
+      }
       out[0 * NL * NW + base] = A;
       out[1 * NL * NW + base] = gsum > 0 ? A / gsum : NaN;
       out[2 * NL * NW + base] = C;

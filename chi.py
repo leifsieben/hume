@@ -72,19 +72,29 @@ def _ring_closures(adj, n, lo: int = 3, hi: int = PMAX + 1):
     Same enumerator as `cycles.py`: start from the lowest-indexed member and restrict the
     walk to higher indices, so a cycle is found twice (once per direction) and every second
     discovery is dropped.
+
+    A CYCLE IS NOT ITS VERTEX SET, and de-duplicating on `tuple(sorted(path))` -- which this
+    did until 2026-08-26 -- is therefore wrong. In K4, the complete graph on four vertices
+    (tetrahedrane), the three distinct 4-cycles a-b-c-d, a-b-d-c and a-c-b-d all have vertex
+    set {a,b,c,d}, so two of the three were silently dropped. RDKit's
+    FindAllPathsOfLengthN(K4, 4, useBonds=True) returns 15 four-bond paths (3 cycles + 12
+    lollipops); the old key returned 13, and Chi4n on bare tetrahedrane came out 0.880911
+    against RDKit's 1.103134.
+
+    The walk is already pinned to the cycle's lowest-indexed member, so each cycle arrives
+    exactly twice -- as [s, a, ..., b] and [s, b, ..., a]. Keeping `path[1] < path[-1]` keeps
+    exactly one of the two in O(1), and drops the per-discovery sort and set insert with it.
     """
     on = bytearray(n)
     path: list[int] = []
-    seen = set()
 
     def dfs(u, start, depth):
         for v in adj[u]:
             if v == start:
-                if depth >= lo:
-                    key = tuple(sorted(path))
-                    if key not in seen:
-                        seen.add(key)
-                        yield path.copy()
+                # depth >= lo guarantees path[1] and path[-1] are two DISTINCT neighbours
+                # of start within the cycle, so the comparison is always decisive.
+                if depth >= lo and path[1] < path[-1]:
+                    yield path.copy()
             elif v > start and not on[v] and depth < hi:
                 on[v] = 1
                 path.append(v)
@@ -183,56 +193,61 @@ def _walk(adj, dv, n):
     return chi, cnt
 
 
-_RMH = Chem.RemoveHsParameters()
-_RMH.removeIsotopes = True
-_RMH.removeDefiningBondStereo = True
-
-
-def strip_explicit_h(mol):
-    """Chi is defined on the heavy-atom graph. Normalise explicit H (and D) away.
-
-    Found by `verify.py --corpus` on 612 of 1,000,000 molecules (0.061%) -- invisible at the
-    3,000-molecule sample the earlier checks used. Every failure carried explicit deuterium.
-
-    The cause is not deuterium itself: **RDKit's own Chi variants disagree with each other**
-    about explicit hydrogens. `Chi0n` and `Chi1n` reach the atoms through `_nVal` over
-    `mol.GetAtoms()` and so *include* explicit H; `Chi0v` goes through `_hkDeltas`, which has
-    `skipHs=1` and *excludes* them; `Chi2n` and above go through `FindAllPathsOfLengthN`, which
-    defaults to `useHs=False` and also excludes them. On a C14-perdeuterated chain the
-    Chi0n/Chi0v gap is exactly 29 x 1/sqrt(1) and the Chi1n/Chi1v gap exactly 29 x 0.5 -- one
-    term per deuterium, and per C-D bond, respectively.
-
-    Reproducing that inconsistency would be worse engineering than removing its cause. Stripping
-    explicit H makes our values agree with every RDKit variant simultaneously, because with no
-    explicit H in the graph all three of RDKit's routes compute the same thing.
-
-    Isotope information is not lost from HUME: ECFP carries isotope in its atom invariant. Only
-    Chi, a pure connectivity index with no isotope term, is normalised.
-    """
-    if any(a.GetAtomicNum() == 1 for a in mol.GetAtoms()):
-        try:
-            return Chem.RemoveHs(mol, _RMH)
-        except Exception:
-            return mol
-    return mol
+# EXPLICIT HYDROGEN: RDKIT'S CONVENTION, INCLUDING ITS INCONSISTENCY.
+#
+# This module used to call RemoveHs(removeIsotopes=True) here and featurise the stripped
+# molecule, so that [2H]C(C)O came out as plain ethanol. The docstring justified it by claiming
+# stripping "makes our values agree with every RDKit variant simultaneously". THAT CLAIM WAS
+# FALSE, and it is worth recording why, because the reasoning is seductive.
+#
+# RemoveHs does not merely delete the hydrogen. It ALSO increments the neighbour's hydrogen
+# count -- GetTotalNumHs on the carbon of [2H]C(C)O goes 1 -> 2 -- which changes the Kier-Hall
+# delta and therefore changes every chi value that atom participates in. So stripping made this
+# module internally consistent and simultaneously moved it AWAY from RDKit: measured, it
+# disagreed with GD.Chi2n on 468 of 468 explicit-H molecules, not on a subset.
+#
+# Chi is somebody else's descriptor and our number has no standing on it, so we now reproduce
+# RDKit exactly, inconsistency and all. Measured against RDKit on eight explicit-H molecules:
+#
+#   Chi0n, Chi1n  ALL atoms / ALL bonds. An explicit H is a vertex of delta = 1, contributing
+#                 1/sqrt(1) = 1 to Chi0n and 1/sqrt(delta_nbr) to Chi1n.
+#   Chi0v, Chi1v  HEAVY atoms / heavy-heavy bonds only (these route through _hkDeltas, skipHs=1).
+#   k >= 2        HEAVY only in BOTH variants (FindAllPathsOfLengthN, useHs=False).
+#
+# Hence Chi0n - Chi0v is exactly the explicit-hydrogen count, and the variants agree from k = 2
+# up. CC[13CH3] gives 2.707107 for both, so the trigger is an explicit H ATOM, not an isotope
+# label -- isotope information was never in chi and still is not.
+#
+# The path COUNTS stay on the heavy graph at every k including k = 1. They are ours, they have
+# no RDKit counterpart, and one graph for one family is the consistent choice; only chi0n/chi1n
+# straddle the H boundary, because only those are RDKit's to define.
 
 
 def featurize(mol) -> np.ndarray:
     if mol is None or mol.GetNumAtoms() < 2:
         return np.full(NDIM, np.nan, np.float32)
-    mol = strip_explicit_h(mol)
-    if mol.GetNumAtoms() < 2:
-        return np.full(NDIM, np.nan, np.float32)
     n = mol.GetNumAtoms()
     A = rdmolops.GetAdjacencyMatrix(mol)
-    adj = [list(np.flatnonzero(A[i])) for i in range(n)]
+    heavy = np.fromiter((a.GetAtomicNum() != 1 for a in mol.GetAtoms()), bool, n)
+    # The walk runs on the HEAVY subgraph. Explicit H are left in the numbering as isolated
+    # vertices rather than renumbered away, so an index is an index everywhere in this function
+    # -- and an isolated vertex contributes nothing at k >= 1, which is exactly what is wanted.
+    adj = [list(np.flatnonzero(A[i] * heavy)) if heavy[i] else [] for i in range(n)]
 
-    chin, cnt = _walk(adj, deltas(mol, "n"), n)
-    chiv, _ = _walk(adj, deltas(mol, "v"), n)
-    # chi0 is the atom sum, not a path sum -- RDKit defines it over atoms.
     dn, dv = deltas(mol, "n"), deltas(mol, "v")
-    chin[0] = float(np.sum(1.0 / np.sqrt(np.where(dn > 0, dn, np.inf))))
-    chiv[0] = float(np.sum(1.0 / np.sqrt(np.where(dv > 0, dv, np.inf))))
+    chin, cnt = _walk(adj, dn, n)
+    chiv, _ = _walk(adj, dv, n)
+    invn = 1.0 / np.sqrt(np.where(dn > 0, dn, np.inf))
+    invv = 1.0 / np.sqrt(np.where(dv > 0, dv, np.inf))
+    # k = 0 is an atom sum, not a path sum: n over every atom, v over heavy atoms only.
+    chin[0] = float(invn.sum())
+    chiv[0] = float(invv[heavy].sum())
+    # k = 1 is a bond sum. The walk above already gave the heavy-heavy part, which is Chi1v;
+    # Chi1n additionally takes every bond with a hydrogen at one end.
+    for b in mol.GetBonds():
+        i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+        if not (heavy[i] and heavy[j]):
+            chin[1] += float(invn[i] * invn[j])
 
     paths = cnt[1:]
     tot = float(sum(paths))

@@ -33,11 +33,14 @@ _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def main(n_want: int = 10_000) -> None:
-    d = np.load(ROOT / "data" / "surrogate" / "bench.npz", allow_pickle=True)
-    smi = list(d["smiles"])
-    rng = np.random.default_rng(1)
-    picks = [smi[i] for i in rng.choice(len(smi), min(len(smi), n_want * 3), replace=False)]
+def main(n_want: int = 10_000, src: str | None = None) -> None:
+    if src:
+        picks = Path(src).read_text().split()          # a .smi file, taken in order
+    else:
+        d = np.load(ROOT / "data" / "surrogate" / "bench.npz", allow_pickle=True)
+        smi = list(d["smiles"])
+        rng = np.random.default_rng(1)
+        picks = [smi[i] for i in rng.choice(len(smi), min(len(smi), n_want * 3), replace=False)]
 
     out, kept = [], []
     for s in picks:
@@ -100,4 +103,5 @@ def main(n_want: int = 10_000) -> None:
 
 
 if __name__ == "__main__":
-    main(int(sys.argv[1]) if len(sys.argv) > 1 else 10_000)
+    main(int(sys.argv[1]) if len(sys.argv) > 1 else 10_000,
+         sys.argv[2] if len(sys.argv) > 2 else None)
