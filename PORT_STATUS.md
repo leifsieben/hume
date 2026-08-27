@@ -10,8 +10,8 @@ Regenerate this census with the snippet at the bottom. Do not hand-edit the coun
 
 | | columns |
 |---|---|
-| ported and verified in C++ | **561** |
-| in flight | **~180** |
+| ported and verified in C++ | **642** |
+| in flight | **~99** |
 | still Python | **~124** |
 | (already native, counted under an RDKit-family label) | ~22 |
 
@@ -29,6 +29,7 @@ and `src/hume_core/estate_typer.h` computes **50** E-state columns.
 | Autocorrelation | 419 | `cpp/ac.cpp`, `cpp/ac_weights.h`, `cpp/ac_tables.h` | ATS/AATS/ATSC/AATSC/MATS/GATS × 9 weights. The nine weight vectors are computed in C++, not handed in — that removed 473.9 µs/mol, the single largest item in the pipeline. |
 | EState | 50 | `src/hume_core/estate_typer.h`, `cpp/estate_tables.h` | 2,868,290 / 2,868,290 atoms exact on `cpp/hard.smi`; 100,000/100,000 column values vs mordred 1.2.0. 0.834 µs/mol vs 636. |
 | VSA binning | 59 | `src/hume_core/vsa_bins.h`, `cpp/vsa_tables.h` | **66/66 columns bit-exact vs RDKit** over 100,000 molecules, **5/5 vs mordred**, and all four per-atom vectors exact on 2,868,290 atoms. Labute ASA was the real work. |
+| RingCount + TopologicalCharge + PathCount | 81 | `src/hume_core/{ringcount,topocharge,pathcount}.h` | RingCount 49/49 and PathCount 11/11 bit-exact on 100,000. TopologicalCharge 12/21 bit-exact, the other 9 within 6.661e-16 relative — mordred disagrees with *itself* there on 21–70% of the corpus. **20.2 µs/mol against mordred's 11,602 (~575×).** |
 | InformationContent | 33 | `src/hume_core/infocontent.h`, `cpp/ic_tables.h` | Not exact-vs-mordred — mordred is ill-posed here. **42 columns bit-identical under renumbering**, order-0 control passes. `Ipc` has an open bug; see the header. |
 
 Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), RDKit `Chi*` (9),
@@ -38,9 +39,7 @@ Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), R
 
 | family | n | agent |
 |---|---|---|
-| RingCount | 49 | topology port |
-| TopologicalCharge | 21 | topology port |
-| PathCount | 11 | topology port |
+| `rdkit_core` | 99 | needs a general SMARTS engine; stereo perception split off |
 
 ## Still to port
 
@@ -86,10 +85,24 @@ large *n*.
    pick. There is nothing there to be exact against, and "we reproduce Mordred" would be a claim
    about a coin flip.
 
-   **How to tell, mechanically: permute the atom numbering and recompute.** Renumber with a
-   random permutation (`Chem.RenumberAtoms`), or round-trip through canonical SMILES, and compare.
-   Any column that moves is ill-posed. Do this for every family you port, before you start
-   optimising anything — it is cheap and it changes what the target even is.
+   **How to tell, mechanically: perturb the input ordering and recompute.** Any column that moves
+   is ill-posed. Do this for every family you port, before you start optimising anything — it is
+   cheap and it changes what the target even is.
+
+   **THE SCREEN MUST SHUFFLE BONDS, NOT ONLY ATOMS. An atom-only screen is too weak and this
+   repo shipped it for a while.** `Chem.RenumberAtoms` permutes atoms and **leaves the bond list
+   order alone**, and RDKit's ring perception reads the bond list — so an atom-only screen
+   under-samples the very axis the answer depends on. Demonstrated:
+   `O=C1c2cc(ccc2-n2nccn2)CCCCc2ccc3cc(ccc3c2)N2CCCN1CC2` is stable across **201** atom
+   renumberings and yields two different ring sets the moment bond order is shuffled too. Of the
+   32 molecules the RingCount repair changes, **every one** gives 2–4 distinct RDKit answers
+   under atom+bond shuffling and appears perfectly stable under atom shuffling alone.
+
+   A canonical-SMILES round trip is a **control that should show zero**, not a second probe: it
+   reproduces the canonical numbering, so it is not a perturbation. (It has its own use — it is
+   how RDKit re-perception shows up, and it moves aromaticity on 19 corpus molecules.)
+
+   Any determinism claim made against the atom-only screen is provisional and must be re-run.
 
    When a column is ill-posed: pick the well-posed definition that the upstream code was evidently
    reaching for, implement THAT, make it deterministic, and document the divergence loudly with
@@ -114,6 +127,28 @@ large *n*.
    RDKit and Mordred" is true for the well-posed columns and must carry a named exception for the
    ill-posed ones. The right claim for those is *deterministic and documented*, which is strictly
    stronger than what Mordred offers, and it should be presented that way rather than buried.
+
+   * **`RingCount` (25 of 100,000 molecules)** — `nARing`, `nG12Ring`, `n6Ring`, `n7Ring`,
+     `n6ARing`. The SSSR *basis* is stable; what flips is whether `symmetrizeSSSR` finds one
+     symmetry-equivalent extra ring of a size already present. `C1=CC2C3C(C=C1)C23` gives ring
+     sizes (3,3,7) on 33 of 60 numberings and (3,3,7,7) on the other 27. Brute force over every
+     simple cycle confirms the larger answer is the **relevant-cycle set** — the object
+     `symmetrizeSSSR` is reaching for and reaches only sometimes.
+
+     **My first prescribed repair for this was WRONG, and the record should say so.** I specified
+     "canonical atom ranks, rings compared by (size, sorted canonical-rank vector)". Implemented
+     exactly, it left **3 of 100,000 still moving and made those 3 worse than doing nothing** —
+     because canonical ranks fix the atom numbering and not the bond order, which is the axis
+     that actually decides. `Chem.CanonicalRankAtoms(breakTies=True)` is also not a graph
+     invariant on symmetric molecules (it varies by an automorphism on e.g. 1,4-disubstituted
+     cyclohexanes).
+
+     **The repair that works:** perceive rings on a **skeleton rebuilt from scratch** — *n*
+     carbons in canonical-rank order, bonds added in sorted `(rank_u, rank_v)` order. Ring
+     perception reads only the graph, so the skeleton asks exactly the right question and puts
+     bond order under canonical control too. 100,000 × 49 columns × 5 numberings: 22 molecules
+     move before, **0 after**; it changes RDKit's answer on 32 molecules, all 32 independently
+     confirmed unstable.
 
 1b. **Aromaticity perception, two repairs** — relevant to any port that does its own ring or
    aromaticity reasoning rather than inheriting the `arom` flag from the boundary:
