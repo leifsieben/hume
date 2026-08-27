@@ -2,8 +2,11 @@
 
 Produces, for both the training corpus and the locked benchmark:
 
-    X  = log1p(ECFP-2048 counts) + 639 CORE descriptors     (2687 cols, free at inference)
-    Y  = the 226 PREDICT descriptors                        (targets)
+    X  = log1p(ECFP-2048 counts) + 767 CORE descriptors     (2815 cols, free at inference)
+    Y  = the 98 PREDICT descriptors                         (targets)
+
+Counts follow the 2026-08-27 boundary redraw in blocks.py; they are printed at run time from
+blocks.split(), so treat the numbers above as documentation, not as a contract.
 
 Mordred is reused from existing caches (uma100k targets for training, gate1 cache for the
 benchmark); only the 217 RDKit descriptors are recomputed, which is a few minutes.

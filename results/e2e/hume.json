@@ -1,0 +1,108 @@
+{
+ "arm": "hume",
+ "n_mols": 2000,
+ "steps": {
+  "extract_pickles_boundary": {
+   "us_mean": 100.287,
+   "us_sd": 0.458,
+   "us_min": 99.696,
+   "n_reps": 7
+  },
+  "ecfp_r3_2048": {
+   "us_mean": 30.355,
+   "us_sd": 1.002,
+   "us_min": 29.414,
+   "n_reps": 7
+  },
+  "smiles_parse": {
+   "us_mean": 59.65,
+   "us_sd": 0.506,
+   "us_min": 59.124,
+   "n_reps": 7
+  },
+  "cpp_all_columns": {
+   "us_mean": 635.266,
+   "us_sd": 3.125,
+   "us_min": 629.465,
+   "n_reps": 7,
+   "columns": 529
+  }
+ },
+ "detail": {
+  "per_family": {
+   "blocks_182": {
+    "us_mean": 199.788,
+    "us_sd": 1.801,
+    "columns": 182
+   },
+   "vsa": {
+    "us_mean": 12.576,
+    "us_sd": 1.965,
+    "columns": 66
+   },
+   "estate": {
+    "us_mean": 2.48,
+    "us_sd": 2.067,
+    "columns": 158
+   },
+   "ringcount": {
+    "us_mean": 0.985,
+    "us_sd": 2.262,
+    "columns": 49
+   },
+   "pathcount": {
+    "us_mean": 11.956,
+    "us_sd": 2.179,
+    "columns": 11
+   },
+   "topocharge": {
+    "us_mean": 11.125,
+    "us_sd": 4.502,
+    "columns": 21
+   },
+   "infocontent": {
+    "us_mean": 399.858,
+    "us_sd": 2.517,
+    "columns": 42
+   }
+  },
+  "cpp_blocks_182_only": {
+   "us_mean": 198.694,
+   "us_sd": 0.806,
+   "us_min": 197.872,
+   "n_reps": 7,
+   "columns": 182
+  },
+  "extract_api_boundary": {
+   "us_mean": 151.86,
+   "us_sd": 1.369,
+   "us_min": 150.462,
+   "n_reps": 7
+  },
+  "offsets": {
+   "blocks": 0,
+   "vsa": 182,
+   "estate": 248,
+   "ringcount": 406,
+   "pathcount": 455,
+   "topocharge": 466,
+   "infocontent": 487,
+   "end": 529
+  }
+ },
+ "columns_descriptors": 248,
+ "columns_emitted": 529,
+ "columns_ecfp": 2048,
+ "machine": {
+  "platform": "darwin arm64",
+  "cpu_count": 12,
+  "load1": 5.05,
+  "contended": true,
+  "python": "3.12.13"
+ },
+ "versions": {
+  "rdkit": "2025.09.2",
+  "numpy": "2.4.6",
+  "mordred": null
+ }
+}

@@ -271,6 +271,17 @@ struct Sink {
   // `ring_at`. Both must be given together or not at all.
   std::vector<int32_t> *ring_at = nullptr;
   std::vector<int32_t> *ring_len = nullptr;
+  // OPTIONAL, and a DIFFERENT QUANTITY from atom_d's charge column: mordred's Autocorrelation
+  // `c` getter, which is
+  //     (_GasteigerCharge + _GasteigerHCharge) if HasProp("_GasteigerHCharge") else 0.0
+  // -- the sum is INSIDE the conditional, so an atom with no H-charge property contributes 0.0
+  // rather than its own charge. Reproducing that here rather than in the caller is what makes it
+  // a matter of construction instead of an argument about what RDKit "always" sets.
+  //
+  // It is also RAW: the non-finite contract that zeroes atom_d's charge column and clears
+  // chg_ok is NOT applied. mordred maps a non-finite weight to a dead 54-column block, which is
+  // what autocorr.h's isfinite screen does, and zeroing here would hide it.
+  double *ac_charge = nullptr;
 };
 
 inline void peek_sizes(const std::uint8_t *buf, std::size_t len, int &n_atoms, int &n_bonds) {
@@ -481,7 +492,8 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
         if (blk < 0) throw Error("negative atom-property block length");
         const std::size_t end = r.pos() + (std::size_t)blk;
         for (int i = 0; i < n_atoms; i++) {
-          bool got_charge = false;
+          bool got_charge = false, got_hcharge = false;
+          double q_raw = 0.0, q_h = 0.0;
           const std::uint16_t count = r.u16();
           for (std::uint16_t k = 0; k < count; k++) {
             std::uint32_t klen;
@@ -490,6 +502,7 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
             if (klen == 16 && std::memcmp(key, "_GasteigerCharge", 16) == 0) {
               if (dt != D_DOUBLE) throw Error("_GasteigerCharge is not a double");
               const double q = r.f64();
+              q_raw = q;
               if (std::isfinite(q)) {
                 AD[(std::size_t)i * 2 + 1] = q;
               } else {
@@ -497,6 +510,10 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
                 chg_ok = 0;
               }
               got_charge = true;
+            } else if (klen == 17 && std::memcmp(key, "_GasteigerHCharge", 17) == 0) {
+              if (dt != D_DOUBLE) throw Error("_GasteigerHCharge is not a double");
+              q_h = r.f64();
+              got_hcharge = true;
             } else if (klen == 8 && std::memcmp(key, "_CIPCode", 8) == 0) {
               if (dt != D_STRING) throw Error("_CIPCode is not a string");
               std::uint32_t vlen;
@@ -515,6 +532,9 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
             if (bp & (1 << k)) r.skip(2);
           }
           if (!got_charge) chg_missing = true;
+          // mordred's getter, conditional and all. `got_hcharge` is HasProp; the sum only
+          // happens when it is true.
+          if (out.ac_charge) out.ac_charge[i] = got_hcharge ? q_raw + q_h : 0.0;
         }
         if (r.pos() != end) throw Error("atom-property block length disagrees with its content");
         if (r.u8() != T_ENDPROPS) throw Error("expected ENDPROPS after the atom properties");

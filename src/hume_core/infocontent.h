@@ -315,6 +315,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -349,6 +350,15 @@ inline const char *const *columnNames() {
       "Ipc",   "AvgIpc", "Log2Ipc"};
   return n;
 }
+
+// Optional instrumentation. `nullptr` in production and the pointer is only tested once per
+// section, so the normal path pays nothing measurable; the profiling path pays ~18 chrono reads
+// per molecule, which is under 1% of the figure being measured. Used by `infocontent profile`.
+struct Profile {
+  double build = 0, ipc = 0;
+  double codes[N_ORDERS] = {}, group[N_ORDERS] = {}, entropy[N_ORDERS] = {};
+  long long paths[N_ORDERS] = {}, classes[N_ORDERS] = {}, mols = 0, atoms = 0;
+};
 
 struct Row {
   double v[N_COLS];
@@ -708,7 +718,109 @@ inline void charPolyScaled(const Mol &m, std::vector<double> &out, int &E, int &
   maxbits = 0;
   if (n == 0) { out[0] = 1.0; return; }
 
-  for (int W = 1; W <= 32; W *= 2) {
+  // ------------------------------------------------------------------------------------------
+  // FAST PATH: every value still fits in one int64, which is the case for 99%+ of a drug-like
+  // corpus. This is the SAME arithmetic as the multiword path below and produces the same exact
+  // integers -- it is not an approximation and it does not weaken determinism. What it avoids is
+  // calling a carry-propagating routine once per matrix ELEMENT, which is what made the general
+  // path cost 305 us/mol: at W = 1 that call does the work of a single `+=` and defeats
+  // vectorisation of the row addition completely.
+  //
+  // Three things make it quick, in order of what they were worth:
+  //   * plain `int64_t` row additions, which the compiler vectorises;
+  //   * T = A M written as COPY the first neighbour's row then ADD the rest, instead of zeroing
+  //     T and adding all of them -- the zero pass was a whole extra O(n^2) per step;
+  //   * a CSR adjacency built once instead of walking the bond list per step.
+  //
+  // OVERFLOW IS RULED OUT BEFORE IT CAN HAPPEN, not detected after. `mx` is the exact maximum
+  // magnitude in M, measured each step; the next step cannot produce anything larger than
+  // maxdeg * (mx + |c|), so if that bound reaches 2^62 we abandon the fast path and redo the
+  // whole molecule in multiword. Bailing is conservative and rare, and the two paths are checked
+  // against each other and against exact Python integers by cpp/verify_ic.py.
+  // ------------------------------------------------------------------------------------------
+  std::vector<int32_t> astart(n + 1, 0), anbr(2 * (size_t)m.nb);
+  for (int b = 0; b < m.nb; b++) { astart[m.bu[b] + 1]++; astart[m.bv[b] + 1]++; }
+  for (int i = 0; i < n; i++) astart[i + 1] += astart[i];
+  {
+    std::vector<int32_t> cur(astart.begin(), astart.end() - 1);
+    for (int b = 0; b < m.nb; b++) { anbr[cur[m.bu[b]]++] = m.bv[b]; anbr[cur[m.bv[b]]++] = m.bu[b]; }
+  }
+  int maxdeg = 1;
+  for (int i = 0; i < n; i++) maxdeg = std::max(maxdeg, astart[i + 1] - astart[i]);
+
+  {
+    const int64_t GUARD = (int64_t)1 << 62;
+    std::vector<int64_t> M((size_t)n * n, 0), T((size_t)n * n, 0), C(n + 1, 0);
+    for (int b = 0; b < m.nb; b++) {
+      M[(size_t)m.bu[b] * n + m.bv[b]] = 1;
+      M[(size_t)m.bv[b] * n + m.bu[b]] = 1;
+    }
+    C[0] = 1;
+    int64_t cprev = 0;
+    for (int i = 0; i < n; i++) cprev -= M[(size_t)i * n + i];
+    C[1] = cprev;
+    int64_t mx = m.nb ? 1 : 0;
+    bool ok = true;
+    for (int k = 2; k <= n && ok; k++) {
+      const int64_t room = mx + (cprev < 0 ? -cprev : cprev);
+      if (room >= GUARD / maxdeg) { ok = false; break; }        // cannot overflow if we proceed
+      for (int i = 0; i < n; i++) M[(size_t)i * n + i] += cprev;
+      int64_t nmx = 0;
+      for (int u = 0; u < n; u++) {
+        int64_t *tu = &T[(size_t)u * n];
+        const int e0 = astart[u], e1 = astart[u + 1];
+        // The running maximum is folded into the LAST neighbour's pass rather than taken in a
+        // pass of its own: a separate |max| sweep is another full O(n^2) per step, which on a
+        // matrix that no longer fits in L1 costs about as much as the additions it is guarding.
+        if (e0 == e1) {
+          for (int j = 0; j < n; j++) tu[j] = 0;
+        } else if (e1 - e0 == 1) {
+          const int64_t *m0 = &M[(size_t)anbr[e0] * n];
+          for (int j = 0; j < n; j++) {
+            const int64_t x = m0[j];
+            tu[j] = x;
+            const int64_t a = x < 0 ? -x : x;
+            if (a > nmx) nmx = a;
+          }
+        } else {
+          const int64_t *m0 = &M[(size_t)anbr[e0] * n];
+          for (int j = 0; j < n; j++) tu[j] = m0[j];
+          for (int e = e0 + 1; e < e1 - 1; e++) {
+            const int64_t *mv = &M[(size_t)anbr[e] * n];
+            for (int j = 0; j < n; j++) tu[j] += mv[j];
+          }
+          const int64_t *ml = &M[(size_t)anbr[e1 - 1] * n];
+          for (int j = 0; j < n; j++) {
+            const int64_t x = tu[j] + ml[j];
+            tu[j] = x;
+            const int64_t a = x < 0 ? -x : x;
+            if (a > nmx) nmx = a;
+          }
+        }
+      }
+      M.swap(T);
+      mx = nmx;
+      int64_t tr = 0;
+      for (int i = 0; i < n; i++) tr += M[(size_t)i * n + i];
+      cprev = -tr / (int64_t)k;                                 // exact: k divides tr(A M_k)
+      C[k] = cprev;
+    }
+    if (ok) {
+      maxbits = 0;
+      for (int k = 0; k <= n; k++) {
+        const uint64_t a = (uint64_t)(C[k] < 0 ? -C[k] : C[k]);
+        int b = 0;
+        for (uint64_t t = a; t; t >>= 1) b++;
+        maxbits = std::max(maxbits, b);
+      }
+      E = std::max(0, maxbits - 60);
+      for (int k = 0; k <= n; k++)
+        out[k] = std::ldexp((double)(C[k] < 0 ? -C[k] : C[k]), -E);
+      return;
+    }
+  }
+
+  for (int W = 2; W <= 32; W *= 2) {
     const size_t stride = (size_t)W;
     const size_t rowlen = (size_t)n * stride;
     std::vector<uint64_t> M(rowlen * n, 0), T(rowlen * n, 0), C((size_t)(n + 1) * stride, 0);
@@ -784,7 +896,17 @@ inline double infoEntropy(const std::vector<double> &v, double &total) {
 // --------------------------------------------------------------------------------------------
 // The whole row.
 // --------------------------------------------------------------------------------------------
-inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr) {
+inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *prof = nullptr) {
+  using Clock = std::chrono::steady_clock;
+  auto tick = [](Clock::time_point &t) {
+    const auto n = Clock::now();
+    const double us = std::chrono::duration<double, std::micro>(n - t).count();
+    t = n;
+    return us;
+  };
+  Clock::time_point tp;
+  if (prof) { tp = Clock::now(); prof->mols++; }
+
   for (int c = 0; c < N_COLS; c++) row.v[c] = std::numeric_limits<double>::quiet_NaN();
   row.ipcOverflow = false;
 
@@ -804,6 +926,7 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr) {
   std::vector<uint8_t> arena;
   std::vector<int32_t> off(A + 1, 0);
   std::vector<double> cnt, wmass, wz, scratch;
+  if (prof) { prof->build += tick(tp); prof->atoms += A; }
 
   for (int order = 0; order <= MAX_ORDER; order++) {
     arena.clear();
@@ -817,8 +940,10 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr) {
         bld.codeFor(i, order, paths);
         for (const Key &k : paths) arena.insert(arena.end(), k.b, k.b + KEY_BYTES);
         off[i + 1] = (int32_t)arena.size();
+        if (prof) prof->paths[order] += (long long)paths.size();
       }
     }
+    if (prof) prof->codes[order] += tick(tp);
     for (int i = 0; i < A; i++) ordIdx[i] = i;
     const uint8_t *ar = arena.data();
     const int32_t *of = off.data();
@@ -847,15 +972,28 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr) {
       a = b;
     }
     const size_t k = cnt.size();
+    if (prof) { prof->group[order] += tick(tp); prof->classes[order] += (long long)k; }
     scratch.assign(k, 0.0);
     const double ic = shannonEntropy(cnt.data(), nullptr, k, scratch.data());
     row.v[F_IC * N_ORDERS + order] = ic;
     row.v[F_TIC * N_ORDERS + order] = (double)A * ic;
-    row.v[F_SIC * N_ORDERS + order] = ic / log2A;      // IEEE, as mordred's numpy division is
-    row.v[F_BIC * N_ORDERS + order] = ic / log2B;
+    // SIC and BIC are NaN when their denominator is zero, and this is a QUIRK REPRODUCED, not a
+    // choice. mordred wraps both divisions in `rethrow_zerodiv`, which is
+    // `np.errstate(divide="raise", invalid="raise")` -- so where IEEE would hand back an
+    // infinity, numpy RAISES and mordred records a missing value instead. Plain `ic / log2B`
+    // gives +inf and disagrees; `Cl[Se]` is the one molecule in cpp/hard.smi that discriminates
+    // them (A = 2, B = 1, so log2 B = 0, IC0 = 1: ours was +inf, mordred's is missing). The
+    // 0/0 cases already agree because IEEE also calls those NaN -- it is only x/0 that differs.
+    row.v[F_SIC * N_ORDERS + order] = log2A == 0.0 || !std::isfinite(log2A)
+                                          ? std::numeric_limits<double>::quiet_NaN()
+                                          : ic / log2A;
+    row.v[F_BIC * N_ORDERS + order] = log2B == 0.0 || !std::isfinite(log2B)
+                                          ? std::numeric_limits<double>::quiet_NaN()
+                                          : ic / log2B;
     row.v[F_CIC * N_ORDERS + order] = log2A - ic;
     row.v[F_MIC * N_ORDERS + order] = shannonEntropy(cnt.data(), wmass.data(), k, scratch.data());
     row.v[F_ZMIC * N_ORDERS + order] = shannonEntropy(cnt.data(), wz.data(), k, scratch.data());
+    if (prof) prof->entropy[order] += tick(tp);
   }
 
   // ---- Ipc: exact integer coefficients, then RDKit's own entropy formula ----------------
@@ -879,6 +1017,7 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr) {
       row.ipcOverflow = true;                              // never a silent inf
     }
   }
+  if (prof) prof->ipc += tick(tp);
 }
 
 // --------------------------------------------------------------------------------------------

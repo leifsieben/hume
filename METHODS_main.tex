@@ -1,0 +1,41 @@
+\section{Methods}
+
+\subsection{Descriptors}
+
+We compute 865 molecular descriptors, obtained by deduplicating the union of RDKit's 217 and
+Mordred's 1{,}613 two-dimensional descriptors. Over 20{,}000 ChEMBL molecules we discard columns
+that are constant or largely undefined, then greedily drop any descriptor that is a
+near-duplicate ($|\rho| \geq 0.99$) of one already kept, preferring the cheaper member of each
+redundant group. All 865 are computed exactly; none is approximated or predicted.
+
+The descriptors are re-implemented in C++, which for most of them is a direct port. Two things
+are not. First, we treat the reference implementation's source code, rather than its
+documentation, as the specification, and therefore reproduce a number of upstream defects rather
+than repairing them; we diverge from the reference only for the two descriptors whose published
+definition turns out not to be a function of the molecule. Second, we replace the vendor
+linear-algebra routines with our own, because otherwise a descriptor's value depends on which
+numerical library happens to be installed on the machine. The individual cases are given in the
+SI, together with the verification protocol.
+
+\subsection{Fingerprint}
+
+Morgan fingerprints, folded to 2048 bits, with chirality included and radius $r = 3$. The
+wider-than-conventional radius resolves ring-size changes better than $r = 2$, at the cost of
+slightly more hash collisions.
+
+\subsection{Novel descriptors}
+
+We add 140 further columns in four blocks. The motivation is not that the fingerprint lacks
+information --- it is near-injective on real molecules --- but that it holds that information in
+a form a gradient-boosted tree cannot cheaply construct: sums over atom pairs, ratios, and
+cycles. The blocks cover effective resistance, exact cycle counts, the topology of conjugated
+$\pi$-systems, and stereochemical parity. Each is identically zero when the corresponding
+feature is absent, so a block can neither help nor hurt a molecule it does not describe.
+
+\subsection{Prediction head}
+
+All downstream evaluation uses a deliberately untuned XGBoost, so that differences in
+performance are attributable to the embedding rather than to the head. The single exception is
+XGBoost's \texttt{feature\_weights}, which we do recommend tuning: it sets how strongly the model
+samples fingerprint bits against descriptors, and the best value differs between potency and
+physicochemical endpoints.

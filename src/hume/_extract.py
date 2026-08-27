@@ -370,9 +370,25 @@ class Pickles:
 
     `rings` is here for the same reason it is on `Batch`, from the same `rings_for()`, and the
     two are trivially equal by construction -- which cpp/verify_molpickle.py asserts anyway.
+
+    `h_blobs` IS A SECOND MOLECULE, NOT A SECOND VIEW. mordred sets `explicit_hydrogens = True`
+    for Autocorrelation, so its 486 columns describe `Chem.AddHs(m)` -- 55 atoms where the rest
+    of the pipeline sees 29. The TOPOLOGY of that graph is derivable in C++ from `nH` (which is
+    exactly what infocontent.h's `HGraph` does, and it is not shared with this: infocontent needs
+    the H graph and no charges, so deriving is free for it and would buy nothing here). What is
+    NOT derivable is the CHARGE, because mordred's `c` weight wants Gasteiger run ON the H-added
+    molecule, and PEOE is not invariant to making hydrogens explicit. Measured on 1,500 corpus
+    molecules: 5,221 of 42,359 heavy atoms get a different `_GasteigerCharge` from `AddHs(m)`
+    than from `m`, and 7,395 of 38,326 hydrogen charges differ from `_GasteigerHCharge / nH`
+    (max 7.7e-16 relative -- last bit, but this repo grades autocorrelation bitwise). So the
+    second molecule is charged and serialised for real. It costs 84.7 +/- 0.7 us/mol; the
+    alternative that reads those charges per atom in Python costs 68.4 and puts an atom-wrapper
+    pass back in the path, and the alternative that derives them costs nothing and puts 419
+    columns permanently on a tolerance. See cpp/bench_molpickle.py.
     """
     blobs: list
     rings: Rings
+    h_blobs: list
 
     def __len__(self) -> int:
         return len(self.blobs)
@@ -386,10 +402,20 @@ def extract_pickles(mols) -> Pickles:
     inputs the blob has to carry.
     """
     mols = list(mols)
-    out = []
+    out, hout = [], []
     for k, m in enumerate(mols):
         if m is None:
             raise ValueError(f"molecule {k} is None; parse before calling extract_pickles()")
+        # The Autocorrelation molecule, first, because AddHs copies and must not inherit the
+        # heavy-atom charges we are about to compute -- it needs its own. `nIter` is left at
+        # RDKit's default here and not 12, because cpp/export_ac.py calls it that way and that
+        # is the call the 486 columns were verified against.
+        mh = Chem.AddHs(m)
+        try:
+            rdPartialCharges.ComputeGasteigerCharges(mh)
+        except Exception:
+            mh.ClearComputedProps()     # no `_GasteigerHCharge` -> mordred's getter yields 0.0
+        hout.append(_to_binary(mh, _PICKLE_FLAGS))
         try:
             rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
         except Exception:
@@ -400,7 +426,7 @@ def extract_pickles(mols) -> Pickles:
             m.ClearComputedProps()
         Chem.AssignStereochemistry(m, cleanIt=True, force=True)
         out.append(_to_binary(m, _PICKLE_FLAGS))
-    return Pickles(out, _rings_csr(mols))
+    return Pickles(out, _rings_csr(mols), hout)
 
 
 def _check_pickle_version() -> None:

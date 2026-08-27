@@ -221,7 +221,7 @@ def arm_hume(n_mols: int, n_reps: int) -> dict:
     rings = (pk.rings.ring_moff, pk.rings.ring_ptr, pk.rings.ring_at)
 
     def _all(sel=None):
-        return _core.all_from_pickles(pk.blobs, *rings, sel)
+        return _core.all_from_pickles(pk.blobs, *rings, pk.h_blobs, sel)
 
     res["cpp_all_columns"] = _timed(lambda _b: _all(), lambda: None)
     res["cpp_all_columns"]["columns"] = len(cols)

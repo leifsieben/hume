@@ -180,6 +180,48 @@ static void bench(const char *path) {
   if (sink == 12345.6789) std::printf("");
 }
 
+// WHERE THE TIME GOES, per ORDER and per PHASE. Asked for before optimising, because "make the
+// 400 us smaller" is a different job depending on whether it is one order or all six, and on
+// whether it is building the codes or sorting them.
+//
+// The instrumentation is ~18 steady_clock reads per molecule. That is well under 1% of the
+// number being measured, but it is not zero, so the TOTAL printed here runs slightly above what
+// `bench` reports and the breakdown is the point rather than the absolute.
+static void profile(const char *path) {
+  load(path);
+  infoic::CodeBuilder cb;
+  infoic::Profile p;
+  Row r;
+  auto t0 = std::chrono::steady_clock::now();
+  for (const Mol &m : g_mols) infoic::compute(m, r, &cb, &p);
+  const double wall =
+      std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+  const double nm = (double)g_mols.size();
+  double codes = 0, group = 0, ent = 0;
+  for (int o = 0; o < infoic::N_ORDERS; o++) { codes += p.codes[o]; group += p.group[o]; ent += p.entropy[o]; }
+  long long heavy = 0;
+  for (const Mol &m : g_mols) heavy += m.n;
+  std::printf("\nWHERE THE TIME GOES  |  %zu molecules, mean %.1f heavy atoms, %.1f with H added"
+              "  |  CONTENDED MACHINE\n", g_mols.size(), heavy / nm, p.atoms / nm);
+  std::printf("  wall %.1f us/mol (instrumented; `bench` is the uninstrumented figure)\n\n", wall / nm);
+  std::printf("  %-22s %10s %8s\n", "phase", "us/mol", "%");
+  std::printf("  %-22s %10.2f %7.1f%%\n", "H-graph build + B", p.build / nm, 100 * p.build / wall);
+  std::printf("  %-22s %10.2f %7.1f%%\n", "code construction", codes / nm, 100 * codes / wall);
+  std::printf("  %-22s %10.2f %7.1f%%\n", "sort + class grouping", group / nm, 100 * group / wall);
+  std::printf("  %-22s %10.2f %7.1f%%\n", "entropies (7 x 6 cols)", ent / nm, 100 * ent / wall);
+  std::printf("  %-22s %10.2f %7.1f%%\n", "Ipc exact char poly", p.ipc / nm, 100 * p.ipc / wall);
+  std::printf("\n  %-7s %9s %9s %9s %9s %8s %9s %9s\n", "order", "codes", "group", "entropy",
+              "total", "%", "paths/mol", "classes");
+  for (int o = 0; o < infoic::N_ORDERS; o++) {
+    const double tot = p.codes[o] + p.group[o] + p.entropy[o];
+    std::printf("  %-7d %9.2f %9.2f %9.2f %9.2f %7.1f%% %9.1f %9.1f\n", o, p.codes[o] / nm,
+                p.group[o] / nm, p.entropy[o] / nm, tot / nm, 100 * tot / wall,
+                (double)p.paths[o] / nm, (double)p.classes[o] / nm);
+  }
+  std::printf("\n  paths/mol is the number of root-to-leaf paths the layered tree enumerates --\n"
+              "  the quantity that decides both the code cost and the bytes the sort moves.\n");
+}
+
 int main(int argc, char **argv) {
   infoic::selfCheck();
   const char *cmd = argc > 1 ? argv[1] : "flip";
@@ -187,6 +229,7 @@ int main(int argc, char **argv) {
   if (!std::strcmp(cmd, "values"))
     return values(argc > 2 ? argv[2] : "cpp/ic_in0.txt", argc > 3 ? argv[3] : "cpp/ic_out0.txt");
   if (!std::strcmp(cmd, "bench")) { bench(argc > 2 ? argv[2] : "cpp/ic_in0.txt"); return 0; }
-  std::fprintf(stderr, "usage: infocontent [values IN OUT | bench IN | flip]\n");
+  if (!std::strcmp(cmd, "profile")) { profile(argc > 2 ? argv[2] : "cpp/ic_in0.txt"); return 0; }
+  std::fprintf(stderr, "usage: infocontent [values IN OUT | bench IN | profile IN | flip]\n");
   return 1;
 }

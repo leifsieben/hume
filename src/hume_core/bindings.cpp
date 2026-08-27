@@ -23,6 +23,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "autocorr.h"
 #include "crippen_typer.h"
 #include "estate_typer.h"
 #include "hume_blocks.h"
@@ -219,6 +220,9 @@ static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, Arr
 struct Flat {
   std::vector<int> atom_off, bond_off, chg_ok, atom_i, bond_i, bond_s;
   std::vector<double> atom_d, bond_d;
+  // Only filled when the caller asks for it -- the Autocorrelation `c` weight, which is a
+  // different quantity from atom_d's charge column. See molpickle::Sink::ac_charge.
+  std::vector<double> ac_charge;
 };
 
 //! Borrowed views of the caller's bytes objects. Gathered under the GIL, used without it; the
@@ -248,7 +252,7 @@ static Blobs borrow(const py::sequence &pickles) {
 
 //! Two passes: peek every header for its atom/bond counts to build the offsets, then parse.
 //! The peek is 28 bytes per molecule and is what lets the flat arrays be allocated exactly once.
-static void fill_from_pickles(const Blobs &b, Flat &f) {
+static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = false) {
   const ssize_t nm = (ssize_t)b.ptr.size();
   f.atom_off.resize(nm + 1);
   f.bond_off.resize(nm + 1);
@@ -266,6 +270,7 @@ static void fill_from_pickles(const Blobs &b, Flat &f) {
   f.bond_i.resize((std::size_t)n_bonds * N_BOND_INT);
   f.bond_s.resize(n_bonds);
   f.bond_d.resize(n_bonds);
+  if (want_ac_charge) f.ac_charge.resize(n_atoms);
 
   molpickle::Work w;
   for (ssize_t k = 0; k < nm; k++) {
@@ -273,7 +278,8 @@ static void fill_from_pickles(const Blobs &b, Flat &f) {
     molpickle::Sink s{f.atom_i.data() + (std::size_t)a0 * N_ATOM_INT,
                       f.atom_d.data() + (std::size_t)a0 * N_ATOM_DBL,
                       f.bond_i.data() + (std::size_t)b0 * N_BOND_INT,
-                      f.bond_s.data() + b0, f.bond_d.data() + b0};
+                      f.bond_s.data() + b0, f.bond_d.data() + b0, nullptr, nullptr,
+                      want_ac_charge ? f.ac_charge.data() + a0 : nullptr};
     f.chg_ok[k] = molpickle::parse(b.ptr[k], b.len[k], f.atom_off[k + 1] - a0,
                                    f.bond_off[k + 1] - b0, s, w);
   }
@@ -378,7 +384,8 @@ enum {
   // src/hume_core/infocontent.h -- and an ill-posed column is worse than a missing one because
   // it looks like a value. The 42 IC/TIC/SIC/BIC/CIC/MIC/ZMIC columns below it are bit-identical
   // under renumbering and are wired.
-  N_ALL_COLS = OFF_IC + infoic::N_IC,
+  OFF_AC     = OFF_IC + infoic::N_IC,
+  N_ALL_COLS = OFF_AC + autocorr::N_COLS,
 };
 
 //! Scratch for every family, allocated once per batch rather than once per molecule.
@@ -400,6 +407,8 @@ struct AllWork {
   topocharge::Scratch ts;
   infoic::Mol im;
   infoic::Row irow;
+  autocorr::Mol am;
+  autocorr::Work aw;
   AllWork() : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES) {}
 };
 
@@ -413,13 +422,15 @@ struct AllWork {
 // molecule's index, so the flag is forced on rather than left as a trap.
 enum : unsigned {
   F_BLOCKS = 1u, F_VSA = 2u, F_ESTATE = 4u, F_RING = 8u, F_PATH = 16u, F_TOPO = 32u, F_IC = 64u,
-  F_ALL = 127u,
+  F_AC = 128u,
+  F_ALL = 255u,
 };
 
 static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, const int *BS,
                     const double *BD, int a0, int b0, int n, int nb, int chg_ok,
-                    const int *ring_ptr, const int *ring_at, int n_rings, unsigned fams,
-                    double *out) {
+                    const int *ring_ptr, const int *ring_at, int n_rings,
+                    const int *HAI, const int *HBI, const double *HAC, int ha0, int hb0,
+                    int hn, int hnb, unsigned fams, double *out) {
   const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
   const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
@@ -525,13 +536,46 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   infoic::compute(W.im, W.irow);
   for (int c = 0; c < infoic::N_IC; c++) out[OFF_IC + c] = W.irow.v[c];
   }
+
+  // ---- Autocorrelation: 486 columns, on the HYDROGEN-ADDED graph ----
+  // Every field here comes from the second blob, parsed by the same molpickle.h reader into the
+  // same boundary layout -- `nh` is `GetTotalNumHs()` AFTER AddHs (normally 0, but `dv` adds it
+  // to the explicit-H neighbour count and mordred reads it, so it is carried rather than
+  // assumed), and `HAC` is mordred's `c` getter with its conditional already applied.
+  if (fams & F_AC) {
+    const int *hai = HAI + (std::size_t)ha0 * N_ATOM_INT;
+    const int *hbi = HBI + (std::size_t)hb0 * N_BOND_INT;
+    W.am.n = hn;
+    W.am.nb = hnb;
+    W.am.at.resize(hn);
+    for (int i = 0; i < hn; i++) {
+      const int *r = hai + (std::size_t)i * N_ATOM_INT;
+      AtomRec &a = W.am.at[i];
+      a.z = r[A_Z];
+      a.fc = r[A_FCHG];
+      a.nh = r[A_NH];
+      a.c = HAC[ha0 + i];
+    }
+    W.am.bu.resize(hnb);
+    W.am.bv.resize(hnb);
+    W.am.adj.assign(hn, {});
+    for (int b = 0; b < hnb; b++) {
+      const int *r = hbi + (std::size_t)b * N_BOND_INT;
+      W.am.bu[b] = r[B_U];
+      W.am.bv[b] = r[B_V];
+      W.am.adj[r[B_U]].push_back(r[B_V]);
+      W.am.adj[r[B_V]].push_back(r[B_U]);
+    }
+    autocorr::row(W.am, W.aw, out + OFF_AC);
+  }
 }
 
 static unsigned family_mask(const py::object &families) {
   if (families.is_none()) return F_ALL;
   static const std::pair<const char *, unsigned> NAMED[] = {
       {"blocks", F_BLOCKS}, {"vsa", F_VSA}, {"estate", F_ESTATE}, {"ringcount", F_RING},
-      {"pathcount", F_PATH}, {"topocharge", F_TOPO}, {"infocontent", F_IC}};
+      {"pathcount", F_PATH}, {"topocharge", F_TOPO}, {"infocontent", F_IC},
+      {"autocorr", F_AC}};
   unsigned mask = F_BLOCKS;   // never optional; see the note on the enum
   for (auto h : families) {
     const std::string want = py::cast<std::string>(h);
@@ -545,8 +589,12 @@ static unsigned family_mask(const py::object &families) {
 }
 
 static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff, ArrI ring_ptr,
-                                            ArrI ring_at, py::object families) {
+                                            ArrI ring_at, py::sequence h_pickles,
+                                            py::object families) {
   Blobs b = borrow(pickles);
+  Blobs hb = borrow(h_pickles);
+  need((ssize_t)hb.ptr.size() == (ssize_t)b.ptr.size(),
+       "h_pickles must have one hydrogen-added blob per molecule");
   const unsigned fams = family_mask(families);
   const ssize_t nm = (ssize_t)b.ptr.size();
   need(ring_moff.ndim() == 1 && ring_ptr.ndim() == 1 && ring_at.ndim() == 1,
@@ -565,12 +613,19 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // null on purpose; see the note at the top of this section for why the rings come across as
     // a boundary array instead.
     fill_from_pickles(b, f);
+    Flat h;
+    if (fams & F_AC) fill_from_pickles(hb, h, /*want_ac_charge=*/true);
     AllWork W;
     for (ssize_t k = 0; k < nm; k++) {
       const int r0 = RM[k], nr = RM[k + 1] - r0;
+      const int ha0 = (fams & F_AC) ? h.atom_off[k] : 0;
+      const int hb0 = (fams & F_AC) ? h.bond_off[k] : 0;
       all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
               f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
-              f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr, fams,
+              f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
+              h.atom_i.data(), h.bond_i.data(), h.ac_charge.data(), ha0, hb0,
+              (fams & F_AC) ? h.atom_off[k + 1] - ha0 : 0,
+              (fams & F_AC) ? h.bond_off[k + 1] - hb0 : 0, fams,
               O + (ssize_t)k * N_ALL_COLS);
     }
   }
@@ -592,6 +647,7 @@ static py::list all_column_names_tail() {
   for (int c = 0; c < pathcount::N_COLS; c++) out.append(py::str(pathcount::COLS[c].name));
   for (int c = 0; c < topocharge::N_COLS; c++) out.append(py::str(topocharge::col_name(c)));
   for (int c = 0; c < infoic::N_IC; c++) out.append(py::str(infoic::columnNames()[c]));
+  for (int c = 0; c < autocorr::N_COLS; c++) out.append(py::str(autocorr::col_name(c)));
   return out;
 }
 
@@ -671,9 +727,11 @@ PYBIND11_MODULE(_core, mod) {
       py::arg("blocks") = (int)OFF_BLOCKS, py::arg("vsa") = (int)OFF_VSA,
       py::arg("estate") = (int)OFF_ESTATE, py::arg("ringcount") = (int)OFF_RING,
       py::arg("pathcount") = (int)OFF_PATH, py::arg("topocharge") = (int)OFF_TOPO,
-      py::arg("infocontent") = (int)OFF_IC, py::arg("end") = (int)N_ALL_COLS);
+      py::arg("infocontent") = (int)OFF_IC, py::arg("autocorr") = (int)OFF_AC,
+      py::arg("end") = (int)N_ALL_COLS);
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
-          py::arg("ring_ptr"), py::arg("ring_at"), py::arg("families") = py::none(),
+          py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"),
+          py::arg("families") = py::none(),
           "Every natively computed column for a batch of ToBinary() blobs, as "
           "(n_mol, N_ALL_COLS). Pickle-only: RingCount needs the SSSR ring lists, which are in "
           "the pickle and not in the extract() boundary arrays. `families` restricts which "

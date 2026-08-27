@@ -82,6 +82,23 @@ def a_rings_only(mols):
     _rings_csr(mols)
 
 
+def a_hgraph_only(mols):
+    """The Autocorrelation molecule alone: AddHs, its OWN Gasteiger charges, its own blob.
+
+    486 of the 1,015 columns describe `Chem.AddHs(m)`, and its charges are not derivable from the
+    heavy-atom molecule's -- PEOE is not invariant to making hydrogens explicit (5,221 of 42,359
+    heavy atoms move, and 7,395 of 38,326 hydrogen charges differ from `_GasteigerHCharge / nH`).
+    So a second molecule is charged and serialised. This is what that costs.
+    """
+    for m in mols:
+        mh = Chem.AddHs(m)
+        try:
+            rdPartialCharges.ComputeGasteigerCharges(mh)
+        except Exception:
+            mh.ClearComputedProps()
+        mh.ToBinary(_PICKLE_FLAGS)
+
+
 def a_pickle_boundary(mols):
     """The new boundary end to end -- serialise, parse, and materialise the SAME eight arrays.
 
@@ -133,6 +150,7 @@ ARMS = [
     ("extract_pickles()            python half", a_pickles_only),
     ("  of which: ToBinary, no rings", a_pickles_no_rings),
     ("  of which: the ring CSR alone", a_rings_only),
+    ("  of which: the H-added pickle", a_hgraph_only),
     ("extract_pickles + parse      BOUNDARY, new", a_pickle_boundary),
     ("lean pickle + python charges  NOT TAKEN", a_hybrid),
     ("featurize_blocks reader=api  END TO END", a_blocks_api),
@@ -175,8 +193,8 @@ def main() -> int:
     print(f"  {'(MolFromSmiles, not in any arm)':44s} {p.mean():9.2f} {p.std(ddof=1):8.2f}")
 
     mean = {name: float(np.asarray(times[name]).mean()) for name, _ in ARMS}
-    old, new = mean[ARMS[0][0]], mean[ARMS[4][0]]
-    e_old, e_new = mean[ARMS[6][0]], mean[ARMS[7][0]]
+    old, new = mean[ARMS[0][0]], mean[ARMS[5][0]]
+    e_old, e_new = mean[ARMS[7][0]], mean[ARMS[8][0]]
     print(f"\n  boundary   {old:7.2f} -> {new:7.2f} us/mol   ({old / new:.2f}x)")
     print(f"  end to end {e_old:7.2f} -> {e_new:7.2f} us/mol   ({e_old / e_new:.2f}x)")
 

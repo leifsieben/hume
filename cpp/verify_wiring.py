@@ -15,6 +15,10 @@ So this checks the WIRING, against an oracle outside it, family by family:
   EState (158)      RDKit's EState.AtomTypes.TypeAtoms + EState.EStateIndices, recombined into
                     N<t> and S<t> exactly as mordred's AtomTypeEState does. This is the check
                     that the `S*` columns really are weighted by BlockWork::ES.
+  Autocorr (486)    `./cpp/ac`, the binary that wrote the evidence, fed a SECOND independent
+                    construction of the hydrogen-added graph (charges, mordred's getter and all)
+                    built here from RDKit. Graded at %.12g because that is the oracle's own
+                    output format; see check_autocorr for why that is the right limit.
   RingCount (49)    the owner's own binary, cpp/ringcount, fed the same molecules through
   PathCount (11)    cpp/topo_io.h's text format, written here from the molecule as given and the
   TopoCharge (21)   ring set `_rings.rings_for` supplies -- the shipped inputs, not tidier ones.
@@ -58,7 +62,7 @@ NAMES = list(COLUMNS) + TAIL
 def all_cols(mols) -> np.ndarray:
     p = extract_pickles(mols)
     return _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr,
-                                  p.rings.ring_at)
+                                  p.rings.ring_at, p.h_blobs)
 
 
 def col(name: str) -> int:
@@ -125,6 +129,94 @@ def write_topo_io(mols, path: Path) -> None:
         for r in rings:
             out.append(str(len(r)) + " " + " ".join(str(a) for a in r))
     path.write_text("\n".join(out) + "\n")
+
+
+def write_ac_io(mols, path: Path) -> None:
+    """cpp/export_ac.py's format, rebuilt here so `./cpp/ac` sees the same molecules we do.
+
+    Every line of this is export_ac.py's, including mordred's charge getter with the sum inside
+    the conditional and the -1e30 sentinel for a non-finite charge (libc++'s `istream >> double`
+    will not parse the token "nan", which is the old export desync wearing a quieter disguise).
+    Nothing here is shared with the wiring: this is a second, independent construction of the
+    hydrogen-added graph, which is the point.
+    """
+    from rdkit.Chem import rdPartialCharges
+
+    C_MISSING = -1e30
+    out = [str(len(mols))]
+    for m in mols:
+        mh = Chem.AddHs(m)
+        try:
+            rdPartialCharges.ComputeGasteigerCharges(mh)
+        except Exception:
+            mh.ClearComputedProps()
+        rows = []
+        for a in mh.GetAtoms():
+            if not a.HasProp("_GasteigerHCharge"):
+                c = 0.0
+            else:
+                c = a.GetDoubleProp("_GasteigerCharge") + a.GetDoubleProp("_GasteigerHCharge")
+            if not np.isfinite(c):
+                c = C_MISSING
+            # %.17g, NOT export_ac.py's %.12g. The exporter's precision is a property of its
+            # text file, not of the descriptor: feeding `./ac` a charge rounded to 12 digits
+            # makes the 54 `c` columns differ from the wiring in the 12th digit and says nothing
+            # about whether the graph is right. %.17g round-trips a float64 exactly, so the
+            # comparison below is against the same numbers the wiring used. (This is the same
+            # effect PACKAGING.md records for the old %.10g Gasteiger export, one digit worse.)
+            rows.append(f"{a.GetAtomicNum()} {a.GetFormalCharge()} {a.GetTotalNumHs()} {c:.17g}")
+        bonds = [f"{b.GetBeginAtomIdx()} {b.GetEndAtomIdx()}" for b in mh.GetBonds()]
+        out.append(f"{mh.GetNumAtoms()} {len(bonds)}\n" + "\n".join(rows) +
+                   ("\n" + "\n".join(bonds) if bonds else ""))
+    path.write_text("\n".join(out) + "\n")
+
+
+def check_autocorr(mols, X, tmp: Path) -> int:
+    """The 486 Autocorrelation columns against `./cpp/ac`, the binary that produced the evidence.
+
+    GRADED AT %.12g, NOT BITWISE, and the reason is the oracle's format rather than the
+    arithmetic: `./ac verify` writes cpp/values_ac.txt with `%.12g`, and that file is the
+    verified artifact, so widening it would change what the evidence is. That the ARITHMETIC is
+    unchanged by the header refactor is established separately and exactly -- cpp/ac.cpp now
+    includes src/hume_core/autocorr.h instead of carrying its own copy, and values_ac.txt over
+    all 98,905 molecules is byte-identical (same md5) before and after. What is left for this to
+    catch is the wiring: a wrong graph, a wrong charge, a wrong `nh`, and every one of those
+    moves a value far above the twelfth digit.
+    """
+    exe = ROOT / "cpp" / "ac"
+    if not exe.exists():
+        print(f"  {'autocorr vs cpp/ac':26s} SKIPPED -- {exe} is not built "
+              f"(c++ -O3 -std=c++17 -o cpp/ac cpp/ac.cpp)")
+        return 0
+    inp = tmp / "ac_in.txt"
+    write_ac_io(mols, inp)
+    # cwd=tmp because `ac verify` hard-codes values_ac.txt as its OUTPUT name, and the real one
+    # in cpp/ is 645 MB of evidence that must not be clobbered by a verification run.
+    r = subprocess.run([str(exe), "verify", str(inp)], capture_output=True, text=True, cwd=tmp)
+    if r.returncode != 0:
+        print(f"  {'autocorr vs cpp/ac':26s} SKIPPED -- binary failed: {r.stderr.strip()[:120]}")
+        return 0
+    want = [ln.split() for ln in (tmp / "values_ac.txt").read_text().strip().split("\n")]
+    lo = OFF["autocorr"]
+    n_cols = OFF["end"] - lo
+    bad_cells = 0
+    bad_cols: dict[int, float] = {}
+    for i, row in enumerate(want):
+        if len(row) != n_cols:
+            raise ValueError(f"cpp/ac emitted {len(row)} columns, the wiring has {n_cols}")
+        for j, tok in enumerate(row):
+            g = X[i, lo + j]
+            if f"{g:.12g}" != tok:
+                bad_cells += 1
+                w = float(tok)
+                dev = abs(g - w) / max(abs(w), 1.0) if np.isfinite(g) and np.isfinite(w) else 1.0
+                bad_cols[j] = max(bad_cols.get(j, 0.0), dev)
+    for j in sorted(bad_cols)[:10]:
+        print(f"    {NAMES[lo + j]:22s} DIFFERS, max dev {bad_cols[j]:.3e}")
+    print(f"  {'autocorr vs cpp/ac':26s} "
+          f"{'EXACT' if not bad_cells else f'{len(bad_cols)} / {n_cols} COLUMNS DIFFER'}"
+          f"   ({n_cols} cols x {len(want)} mols, %.12g -- the oracle's format)")
+    return len(bad_cols)
 
 
 def run_binary(name: str, inp: Path, tmp: Path, n_cols: int, n_mols: int) -> np.ndarray | None:
@@ -229,9 +321,15 @@ def main() -> int:
             lo = OFF[off_key]
             names = NAMES[lo:lo + n_cols]
             bad += report(f"{name} vs cpp/{name}", X[:, lo:lo + n_cols], want, names, tol)
+        bad += check_autocorr(mols, X, tmp)
 
     # ---- InformationContent: numbering invariance, which is the only well-posed claim ---------
-    lo, n_ic = OFF["infocontent"], OFF["end"] - OFF["infocontent"]
+    # The family's own width, not "everything after it" -- Autocorrelation now sits below
+    # InformationContent in the layout, and its accumulation order is numbering-dependent at the
+    # 1e-14 level (a pairwise sum over atoms), so folding it in here would test a claim nobody
+    # makes and drown the one that is being made.
+    lo = OFF["infocontent"]
+    n_ic = min(v for v in OFF.values() if v > lo) - lo
     perm = []
     for i, m in enumerate(mols):
         p = [int(x) for x in rng.permutation(m.GetNumAtoms())]

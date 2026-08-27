@@ -1,0 +1,235 @@
+\section{Methods}
+
+% ---------------------------------------------------------------------------------------------
+\subsection{Descriptor selection}
+% ---------------------------------------------------------------------------------------------
+
+The descriptor set is the union of RDKit's 217 \texttt{Descriptors.\_descList} entries and
+Mordred's 1{,}613 two-dimensional descriptors, 1{,}830 columns in total. Mordred's 3D block is
+excluded throughout: it requires conformer generation, which is two orders of magnitude more
+expensive. Selection is based on a run of 20{,}000 ChEMBL molecules where columns that are
+constant or less than 95\% finite are dropped first. A descriptor is then kept unless it
+correlates $|\rho| \geq 0.99$ with one already kept, yielding \textbf{865 descriptors}.
+
+% ---------------------------------------------------------------------------------------------
+\subsection{Fingerprint}
+% ---------------------------------------------------------------------------------------------
+
+Morgan fingerprints are generated from RDKit's \texttt{rdFingerprintGenerator}, folded to 2048
+bits, with \texttt{includeChirality=True} and radius $r=3$, which is slightly better at
+resolving similar rings, the classical cyclopentane versus cyclohexane problem \cite{morgan}.
+This does lead to slightly more hash collisions. Widening to 4096 bits halves the loss and
+doubles the memory, which we judged not worth it.
+
+% ---------------------------------------------------------------------------------------------
+\subsection{Optimized descriptor implementations}
+% ---------------------------------------------------------------------------------------------
+
+Most descriptors are re-implemented in C++ in the obvious way, and only the departures are
+described here. The specification is the reference source code, not its documentation, and three
+upstream defects are reproduced rather than repaired, because a descriptor that silently
+disagrees with the library everyone else uses is worse than one that is consistently odd: five
+E-state SMARTS rows are written \texttt{[N,nD2H0]} without a semicolon, so the aliphatic
+alternative carries no degree or hydrogen constraint at all, while the neighbouring carbon rows
+use \texttt{[C,c;D2H0]} and do not; \texttt{[SeD2H0]} and its equivalents for Li, Be, Si, Ge, As,
+Sn and Pb parse to element-\emph{number} queries with no aromaticity constraint, so
+\texttt{aaSe} does fire on selenophene's aromatic selenium; and RDKit's shipped
+\texttt{Data/Crippen.txt} is stale relative to the table compiled into the library, two of whose
+110 rows negate by element rather than by aliphatic symbol, which we pin with behavioural probes
+so that a future release fixing the text file leaves the port unaffected. The dividing test is
+whether the upstream quantity is a function of the molecule at all; two are not, and we diverge
+from them by design. Mordred's \texttt{InformationContent} mutates a visited set while iterating
+over it, leaving roughly 20\% of molecules with an atom-equivalence code that depends on input
+atom ordering, and \texttt{ExtendedTopochemicalAtom} scores a pyrrole nitrogen 0 where a pyridine
+nitrogen scores 2, with the outcome turning on atom numbering.
+
+Two descriptors are both named \texttt{BalabanJ} and are not the same quantity --- RDKit's uses a
+bond-order-weighted distance matrix, Mordred's passes RDKit's own formula an unweighted one, and
+on naphthalene they are 2.888052 and 1.925368 --- so both are emitted under distinct names.
+RDKit's $\chi$ is internally inconsistent in the same way: \texttt{Chi0n}/\texttt{Chi1n} count
+all atoms and bonds while \texttt{Chi0v}/\texttt{Chi1v} are heavy-atom only, so
+\texttt{Chi0n}\,$-$\,\texttt{Chi0v} is exactly the explicit-hydrogen count while the variants
+agree identically at $k \geq 2$, and its path finder counts rings as paths by its own documented
+design. We match RDKit throughout, which makes explicit hydrogens value-changing rather than
+cosmetic ($d_3$-ethanol has $\chi_{2n} = 0.158114$ against ethanol's $0.316228$) and is why no
+hydrogen stripping is applied. Crippen and E-state typing dominated cost, being a generic
+subgraph search answering a question that for most rows concerns an atom and its immediate
+neighbours; both are replaced by a dispatch on (element, aromaticity) and a per-row predicate
+over the atom's own properties, with branch specifications resolved by bounded backtracking as a
+\emph{system of distinct representatives} rather than a tally of bond types, since SMARTS maps
+distinct query atoms to distinct molecule atoms and the two readings diverge as soon as two
+branch specifications overlap. Multi-typing is preserved, since an atom legitimately receives a
+tuple of type names rather than a best match. This takes Crippen from roughly 78 to
+1.53~$\mu$s/molecule and E-state from 636 to 0.834~$\mu$s, bit-exactly.
+
+Two numerical kernels are written out rather than called from BLAS/LAPACK, because identical
+source measured 138.09 against 218.93~$\mu$s/molecule depending purely on which BLAS the host
+supplied, and a released package cannot have its values decided by the machine it was built on.
+BCUT2D's extremal eigenvalues use Householder tridiagonalization followed by a
+Pal--Walker--Kahan QL/QR sweep, precisely the two stages \texttt{dsytd2} and \texttt{dsterf}
+perform and in the same order, so agreement is structural rather than tuned --- maximum deviation
+$4.26 \times 10^{-13}$ over all 395{,}620 Burden matrices --- and faster than the vendor library
+at 27 heavy atoms, where a tuned library is mostly wrapper. The resistance solve is a reference
+LU factorization with partial pivoting rather than the shorter, better-conditioned Cholesky that
+$L + J/k$ admits, because the reference is \texttt{numpy.linalg.inv}, which is LU with partial
+pivoting, and matching the algorithm is what makes the arithmetic identical rather than merely
+close; bit-identity is the binding constraint because resistance bin edges sit at $0.1$, $0.5$,
+$1.0$ and $2.0$ and real molecular values land exactly on them --- on tetra-\emph{tert}-butyl
+tetrahedrane every atom pair has $\Omega = 0.5$ --- so values within $10^{-9}$ of an edge are
+snapped before binning and all three solvers then produce identical bin vectors on all 98{,}905
+molecules. Sentinels are propagated rather than tidied away: RDKit writes $10^8$ for unreachable
+pairs and \texttt{BalabanJ} sums those rows, and skipping them instead gives a finite, plausible
+and wrong answer on 16\% of an adversarial corpus but on roughly one molecule of a drug-like one.
+Verification is per-decision rather than per-column, since a count such as \texttt{NsCH3} lets
+two opposite mistypings cancel, so we check the atom's type tuple and the Crippen row index over
+2{,}868{,}290 and 2{,}869{,}048 atoms respectively, and 98{,}905 molecules for the block columns,
+against RDKit 2025.9.2 and Mordred 1.2.0. Exactness is version-relative: the E-state and Crippen
+data are byte-identical between RDKit 2025.9.2 and 2026.3.5 and our C++ scores 100\% against
+both, yet 19 of 100{,}000 molecules receive different E-state atom types because furans fused
+into large macrocycles stop being perceived as aromatic, so the RDKit version is part of the
+released column specification.
+
+% ---------------------------------------------------------------------------------------------
+\subsection{Novel descriptors}
+% ---------------------------------------------------------------------------------------------
+
+We add four blocks, 140 columns, that no descriptor in either library computes. The generating
+question is deliberately not ``what information is ECFP missing?'' --- by the data-processing
+inequality, and because ECFP is near-injective on real molecules, the answer is essentially
+nothing. It is instead: \emph{what is present in the fingerprint but not in a form a
+gradient-boosted tree can construct?} Three shapes fail that test. Pairwise sums
+$\sum_{ij} f(i,j)$ need quadratic interaction across 2048 hashed bits; ratios need division,
+which trees cannot do; and cyclic patterns are outside colour refinement altogether, since
+WL-1 distinguishes exactly the graphs that homomorphism counts \emph{from trees} distinguish.
+Only the third is an expressivity limit in the theorem sense --- the other two are conditioning
+--- and the blocks are shaped accordingly.
+
+\paragraph{Resistance (60 columns).} Treat every bond as a unit resistor and let $\Omega_{ij}$
+be the effective resistance between atoms $i$ and $j$, computed from the Moore--Penrose
+pseudo-inverse of the graph Laplacian, taken per connected component. The block is built around
+$\Delta_{ij} = d_{ij} - \Omega_{ij}$, the gap between shortest-path and resistance distance.
+On a tree there is exactly one route between any two atoms, so $\Omega = d$ and $\Delta \equiv 0$:
+the quantity measures path multiplicity --- ring fusion --- and \emph{cannot} proxy for size,
+weight or atom count. We emit centred autocorrelations of four atomic properties binned by
+$\Delta$, the Kirchhoff index and its normalisations, and pooled random-walk return
+probabilities $\mathrm{diag}(S^k)$ for $k \in \{2,3,4,6,8,12,16\}$ with
+$S = D^{-1/2} A D^{-1/2}$. To be precise about the orthogonality claim: the 30 $\Delta$-derived
+columns are identically zero on acyclic molecules, while the Kirchhoff and random-walk columns
+are not (on a tree $K_f$ equals the Wiener index).
+
+\paragraph{Cycles (33 columns).} Exact counts of simple cycles of length 3 to 8, per-atom
+participation, and hetero/aromatic ring typing. This is the block that targets the WL-1 gap
+directly. It is also not \texttt{RingCount}: the SSSR is a \emph{basis} for the cycle space, not
+a list of cycles, and the two diverge sharply --- cubane's cycle space has dimension 5, yet the
+molecule contains 16 distinct six-membered cycles and 28 cycles of length $\leq 8$ in total.
+Lengths 3--5 are obtained in closed form from traces of $A^3$, $A^4$, $A^5$; 6--8 by bounded
+depth-first search from each cycle's lowest-indexed vertex.
+
+\paragraph{Conjugation (24 columns).} Union-find over RDKit's conjugated-bond flags recovers the
+$\pi$-system connected components, then their count, sizes, size histogram, topological
+diameter, branch points (cross-conjugation), heteroatom content and non-aromatic extent.
+Coverage of conjugated-system \emph{topology} in both libraries is zero. The motivating case is
+that anthracene and a C$_{14}$ polyene are both a single conjugated system of 14 atoms and are
+separated only by shape: linearity (diameter over size) is 0.54 against 1.00.
+
+\paragraph{Stereo (23 columns).} Signed CIP parities $s_i \in \{-1,0,+1\}$, combined at two
+orders. Odd-order terms such as $\sum_i s_i$ flip sign under reflection and therefore separate
+enantiomers; even-order terms $\sum_{d(i,j)=k} s_i s_j$ are mirror-invariant and separate
+diastereomers. Analogous terms and cross terms are built on E/Z bond parities. The motivation
+is a measurement: the descriptor union is \emph{completely} stereo-blind --- zero of RDKit's 217
+and zero of Mordred's 1{,}613 descriptors change value across any enantiomer pair. This block is
+therefore conditioning rather than new information, since ECFP with chirality enabled already
+carries stereo in 4--10 bits, and we report it as such.
+
+Cycles, conjugation and stereo each return exactly zero when their axis is absent: an acyclic
+molecule gets 33 zeros, a molecule with no conjugated bond gets 24, a molecule with no
+stereocentre and no E/Z bond gets 23. Resistance is zero only on its 30 $\Delta$-derived
+columns, as noted above. That is orthogonality by construction rather than by hope.
+
+\paragraph{Two implementation details that changed values.} First, \emph{a cycle is not its
+vertex set}. In $K_4$ three distinct 4-cycles share a single vertex set, so de-duplicating
+enumerated cycles on their sorted vertex tuple silently merges two of the three. On a
+tetrahedrane derivative this removed exactly $0.125$ from both $\chi_{4n}$ and $\chi_{4v}$
+(8.787913 against RDKit's 8.912913). Cycles are canonicalised on
+$\mathrm{path}[1] < \mathrm{path}[-1]$ instead. Second, $\Omega$ is a rational function of the
+graph, so $\Delta$ lands \emph{exactly} on bin edges for symmetric molecules, and the binned
+columns are then decided by floating-point noise: two LAPACK implementations on the same machine
+disagreed on 9.00\% of a 98{,}905-molecule corpus. Values within $10^{-9}$ of an edge are snapped
+to it before binning, which changed 13.17\% of molecules and makes the columns
+implementation-independent.
+
+% ---------------------------------------------------------------------------------------------
+\subsection{XGBoost implementation}
+% ---------------------------------------------------------------------------------------------
+
+% AUTHOR NOTE -- resolve before submission. The repo currently contains two XGBoost
+% configurations: vendor/chemtfm/models/xgb.py (used by the LOCKED-suite scripts) sets
+% subsample=0.8 and colsample_bytree=0.8; gpu/dev_grid_v2.py does NOT set either. The two
+% also use different scaffold_folds implementations. The text below describes the vendored
+% config. Either unify them or say which result used which -- "the same XGBoost throughout"
+% is not currently true.
+
+The downstream head is a deliberately \emph{untuned} XGBoost: 300 rounds, \texttt{max\_depth} 6,
+$\eta = 0.1$, \texttt{subsample} 0.8, \texttt{colsample\_bytree} 0.8,
+\texttt{min\_child\_weight} 1, \texttt{tree\_method="hist"}. No hyperparameter search, no early
+stopping, no validation set. The head is a measuring instrument for the representation, and
+per-dataset tuning would move the bar between arms and make the comparison unreproducible.
+Missing values are passed to XGBoost unimputed --- NaN is a first-class input, and the learned
+default split direction is more informative than a median. Fingerprint counts enter as
+$\log(1+x)$, since raw counts are heavy-tailed. No feature standardisation is applied to the
+model input.
+
+Evaluation is 5-fold Bemis--Murcko \textbf{scaffold} cross-validation, never random: random
+splits put near-identical analogues on both sides of the split. Folds are computed once per
+dataset and shared by every arm, so fold difficulty cancels in the paired differences. Results
+are aggregated by mean rank and win-rate rather than by averaging raw RMSE across datasets
+whose scales differ by two- to three-fold.
+
+\paragraph{One extra hyperparameter is required, and it is not a standard one.} XGBoost's
+\texttt{colsample\_by*} samples columns \emph{uniformly}. That is the wrong prior for a matrix
+that is half sparse fingerprint bits and half dense descriptors: a descriptor takes an
+informative value on nearly every molecule, while a given ECFP bit is set in roughly 2\% of
+them, so descriptors win the column-sampling lottery on \emph{availability} rather than on merit
+for the task. We therefore set XGBoost's \texttt{feature\_weights} to a single scalar $w$ on the
+2048 fingerprint columns and $1$ on the descriptors, which converts ``descriptors on or off''
+into a continuous knob. Two implementation details matter: \texttt{feature\_weights} does
+nothing unless \texttt{colsample\_by*} $< 1$, and it must be applied through
+\texttt{colsample\_bynode} (we use $0.3$) rather than \texttt{colsample\_bytree}, because
+weights act at each sampling event and per-node sampling gives the reweighting far more chances
+to bite.
+
+Measured over 34 datasets under scaffold folds (RMSE, lower is better):
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+arm & ACE all & ACE cliff & ACE non-cliff & MoleculeNet \\
+\midrule
+fingerprint only     & 0.7854 & 0.8610 & 0.7338 & 0.9487 \\
+descriptors only     & 0.8460 & 0.9065 & 0.8055 & 0.9358 \\
+$w = 1$ (XGBoost default) & 0.8080 & 0.8752 & 0.7626 & 0.8901 \\
+$w = 10$             & 0.7882 & 0.8605 & 0.7389 & \textbf{0.8712} \\
+$w = 100$            & \textbf{0.7721} & 0.8464 & 0.7214 & 0.8931 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The XGBoost default, $w = 1$, is \emph{dominated on both suites}. We recommend tuning $w$ in the
+inner cross-validation loop alongside the other head hyperparameters; if it is not tuned,
+$w = 10$ rather than $1$. The two curves have different shapes, which is the substantive result:
+the potency suite improves monotonically out to $w = 100$, where the reweighted model beats a
+pure fingerprint, whereas the physicochemical suite has an interior optimum near $w \approx 10$
+and degrades by $w = 100$.
+
+\paragraph{The mechanism is not the one we tested for.} The sweep was run to test the
+hypothesis that descriptors cannot resolve \emph{activity cliffs}, being smooth functions of
+structure, so up-weighting fingerprints should help specifically on cliff compounds. That
+prediction failed: going from $w = 1$ to $w = 100$ improves non-cliff RMSE by 5.4\% and cliff
+RMSE by only 3.3\%, so the gain is \emph{larger} on the molecules that are not cliffs. The
+surviving explanation is a task-family effect rather than a cliff effect --- MoleculeACE
+datasets are congeneric series, so descriptors vary little across the whole dataset, not merely
+across cliff pairs.
+
+% AUTHOR NOTE: the sweep above is n_repeats=1, fold_seed=0, xgb_seed=0 -- a single seed with no
+% error bars, and several gaps are 0.01-0.04. The 3.3%-vs-5.4% cliff comparison in particular is
+% exactly the size that needs replicates. Re-run multi-seed before this table goes in.

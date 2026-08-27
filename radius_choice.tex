@@ -1,0 +1,49 @@
+ECFP is Weisfeiler--Leman colour refinement followed by hashing, so folding a fingerprint at
+radius $r$ into $B$ bits incurs exactly two losses, and both can be measured directly. The
+\emph{truncation} loss is the fraction of WL-1 colour classes still unresolved after $r$ rounds,
+relative to the stable partition obtained by refining to convergence; we compute it by running
+refinement on the molecular graph, using the same initial invariant as the fingerprint
+(atomic number, degree, attached hydrogens, formal charge, isotope, ring membership, chiral tag),
+until the partition stops becoming finer. The \emph{collision} loss is
+$1 - (\text{on-bits})/(\text{distinct environments})$, the fraction of distinct environments that
+share a bit after folding. Table~\ref{tab:radius} reports both, pooled over 20{,}000 molecules
+drawn from our corpus (22.2 heavy atoms mean), together with the fraction of molecules whose
+WL-1 partition is already stable at that radius.
+
+\begin{table}[h]
+\centering
+\begin{tabular}{crrrr}
+\toprule
+& \multicolumn{2}{c}{truncation} & \multicolumn{2}{c}{collision} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+$r$ & loss & WL-stable & 2048 bits & 4096 bits \\
+\midrule
+1 & 22.50\% & 12.0\% & 1.21\% & 0.14\% \\
+2 &  7.75\% & 52.9\% & 1.34\% & 0.35\% \\
+\textbf{3} & \textbf{3.23\%} & \textbf{80.0\%} & \textbf{1.61\%} & 0.56\% \\
+4 &  1.63\% & 90.6\% & 1.85\% & 0.71\% \\
+5 &  0.87\% & 95.6\% & 2.02\% & 0.82\% \\
+\bottomrule
+\end{tabular}
+\caption{The two losses of a folded Morgan fingerprint relative to exact WL-1 refinement, pooled
+over 20{,}000 molecules. Truncation falls steeply with radius while collisions rise slowly, and
+$r = 3$ is where the two become comparable.}
+\label{tab:radius}
+\end{table}
+
+The two losses run in opposite directions, which is what makes the radius a genuine trade-off
+rather than a convention. Truncation falls steeply --- a radius-1 fingerprint leaves more than a
+fifth of the WL-1 partition unresolved and only 12\% of molecules fully refined --- while
+collisions rise slowly, since a wider radius adds environments faster than it exhausts the bit
+space. Moving from $r = 2$ to $r = 3$ removes 4.5 points of truncation at a cost of 0.27 points
+of collision, a return of roughly 17 to 1, and takes the fraction of molecules whose colour
+partition is already stable from 53\% to 80\%. The next step, $r = 3$ to $r = 4$, returns only
+6.7 to 1, and $r = 4$ to $r = 5$ just 4.5 to 1. We therefore adopt $r = 3$: it is the last radius
+at which truncation is the dominant loss, and beyond it the fingerprint pays increasing collision
+for distinctions most molecules no longer have. Widening to 4096 bits would cut the collision
+term by roughly two thirds at every radius, but doubles the memory of the representation for a
+loss that is already the smaller of the two, so we retain 2048 bits.
+
+Note that both quantities are representational rather than predictive. They bound how much of the
+WL-1 colouring the fingerprint fails to carry; they do not establish that the missing
+distinctions matter for any particular endpoint.

@@ -28,3 +28,14 @@ From these two define best CLM and best GNN.
 
 Then in the end we need to package everything up, have it be very user friendly with python API etc, set up pip install, set up documentation, write extensive methodology. 
 Show in the SI that the descriptors we compute are bit-identical with RDKit or Mordred implementation on 1M (100M?) SMILES 
+
+
+. Novelty — honest read
+
+Split the claim into three parts. They have very different novelty status.
+
+Claim	Novel?	Closest prior art
+"XGBoost on ECFP+descriptors is a near-unbeatable baseline; pretrained encoders don't beat it"	No. Well-trodden.	Jiang 2021, Deng 2023, van Tilborg 2022 (MoleculeACE), Praski 2025 — all already in your notes. Also Sun et al. NeurIPS 2022, "Does GNN pretraining help molecular representation?", which found pretraining gains vanish against properly tuned baselines.
+"Descriptors are fast if implemented well in C++"	Weakly. Asserted before, rarely quantified.	alvaDesc (commercial C++, Dragon lineage) is the incumbent speed claim. Dalke's chemfp is the canonical "cheminformatics done properly in C". Descriptastorus (Kelley — who also wrote BCUT.cpp). Mordred's own paper benchmarks against PaDEL. scikit-fingerprints (2024/25) benchmarks parallel FP generation.
+"Co-generate ECFP and descriptors from one traversal, sharing intermediates"	Yes, as far as I know.	I'm not aware of a published dependency-DAG-over-shared-intermediates design. This is the actual contribution.
+"DL descriptor prediction is slower than exact computation at matched accuracy"	Yes, as a quantified negative result.	The genre exists; this specific measurement doesn't, to my knowledge.

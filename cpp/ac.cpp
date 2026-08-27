@@ -38,18 +38,16 @@
 #include <string>
 #include <vector>
 
-#include "ac_weights.h"       // the nine getters; also defines NW = 9 and struct AtomRec
+// THE COMPUTATION NOW LIVES IN A HEADER, so the package and this harness run the SAME code
+// rather than two copies of it. This file keeps its main(), its mols_h.txt loader and its
+// verify/bench modes -- it is the evidence, and `./ac verify` still writes values_ac.txt
+// from exactly the arithmetic src/hume/__init__.py now calls. ac_weights.h (the nine
+// getters, NW and struct AtomRec) comes in through it.
+#include "../src/hume_core/autocorr.h"
 
-static const int NL = 9;      // lags 0..8
-static const int BIG = 1 << 20;
-
-struct MolH {
-  int n = 0, nb = 0;
-  std::vector<AtomRec> at;
-  std::vector<double> w;                       // n * NW, atom-major
-  std::vector<int> bu, bv;
-  std::vector<std::vector<int>> adj;
-};
+using autocorr::NL;
+using autocorr::NVAR;
+using MolH = autocorr::Mol;
 
 static std::vector<MolH> load(const char *path) {
   std::ifstream f(path);
@@ -77,111 +75,6 @@ static std::vector<MolH> load(const char *path) {
   return ms;
 }
 
-static void distances(const MolH &m, std::vector<int> &D) {
-  D.assign((size_t)m.n * m.n, BIG);
-  std::vector<int> q(m.n);
-  for (int s = 0; s < m.n; s++) {
-    int *d = &D[(size_t)s * m.n];
-    d[s] = 0;
-    int head = 0, tail = 0;
-    q[tail++] = s;
-    while (head < tail) {
-      int u = q[head++];
-      for (int v : m.adj[u])
-        if (d[v] == BIG) { d[v] = d[u] + 1; q[tail++] = v; }
-    }
-  }
-}
-
-// out is laid out [variant][lag][weight], variants in the order
-// ATS, AATS, ATSC, AATSC, MATS, GATS. NaN where Mordred returns NaN.
-static const int NVAR = 6;
-static void autocorr(MolH &m, std::vector<int> &D, std::vector<double> &mean, double *out) {
-  const int n = m.n;
-  distances(m, D);
-  ac_weights(m.at, m.adj, m.w);
-
-  // Per-weight availability, mordred's AtomicProperty.calculate() fail path. One non-finite
-  // atom kills that weight's 54 columns and nothing else.
-  bool okw[NW];
-  for (int j = 0; j < NW; j++) okw[j] = true;
-  for (int i = 0; i < n; i++)
-    for (int j = 0; j < NW; j++)
-      if (!std::isfinite(m.w[(size_t)i * NW + j])) okw[j] = false;
-  // Substitute zero so a dead weight cannot make the arithmetic below NaN-bound; the columns
-  // are independent per weight, and every cell of a dead one is overwritten with NaN at the end.
-  for (int j = 0; j < NW; j++)
-    if (!okw[j])
-      for (int i = 0; i < n; i++) m.w[(size_t)i * NW + j] = 0.0;
-
-  mean.assign(NW, 0.0);
-  for (int i = 0; i < n; i++)
-    for (int j = 0; j < NW; j++) mean[j] += m.w[(size_t)i * NW + j];
-  for (int j = 0; j < NW; j++) mean[j] /= n;
-
-  // sum of centred squares, per weight -- the denominator both MATS and GATS are built on
-  std::vector<double> csq(NW, 0.0);
-  for (int i = 0; i < n; i++)
-    for (int j = 0; j < NW; j++) {
-      double c = m.w[(size_t)i * NW + j] - mean[j];
-      csq[j] += c * c;
-    }
-
-  std::vector<double> ats((size_t)NL * NW, 0.0), atsc((size_t)NL * NW, 0.0),
-      gea((size_t)NL * NW, 0.0);
-  std::vector<double> cnt(NL, 0.0);
-
-  // lag 0: the self-pairs. Not halved, and Delta_0 = A.
-  cnt[0] = n;
-  for (int i = 0; i < n; i++)
-    for (int j = 0; j < NW; j++) {
-      double v = m.w[(size_t)i * NW + j], c = v - mean[j];
-      ats[(size_t)0 * NW + j] += v * v;
-      atsc[(size_t)0 * NW + j] += c * c;
-    }
-
-  for (int i = 0; i < n; i++)
-    for (int j = i + 1; j < n; j++) {
-      int d = D[(size_t)i * n + j];
-      if (d <= 0 || d >= NL) continue;
-      cnt[d] += 1.0;
-      const double *wi = &m.w[(size_t)i * NW], *wj = &m.w[(size_t)j * NW];
-      double *a = &ats[(size_t)d * NW], *ac = &atsc[(size_t)d * NW], *g = &gea[(size_t)d * NW];
-      for (int q = 0; q < NW; q++) {
-        double vi = wi[q], vj = wj[q];
-        a[q] += vi * vj;
-        ac[q] += (vi - mean[q]) * (vj - mean[q]);
-        double df = vi - vj;
-        g[q] += df * df;
-      }
-    }
-
-  const double NaN = std::nan("");
-  for (int k = 0; k < NL; k++)
-    for (int q = 0; q < NW; q++) {
-      double gsum = cnt[k];                       // already the UNORDERED pair count
-      double A = ats[(size_t)k * NW + q], C = atsc[(size_t)k * NW + q];
-      double den_m = csq[q] / n;
-      double den_g = (n > 1) ? csq[q] / (n - 1) : 0.0;
-      double aatsc = gsum > 0 ? C / gsum : NaN;
-      int base = (k * NW + q);
-      if (!okw[q]) {
-        for (int v = 0; v < NVAR; v++) out[v * NL * NW + base] = NaN;
-        continue;
-      }
-      out[0 * NL * NW + base] = A;
-      out[1 * NL * NW + base] = gsum > 0 ? A / gsum : NaN;
-      out[2 * NL * NW + base] = C;
-      out[3 * NL * NW + base] = aatsc;
-      out[4 * NL * NW + base] = (den_m != 0.0) ? aatsc / den_m : NaN;
-      // GATS numerator: sum over ORDERED pairs / (4 gsum) == sum over unordered / (2 gsum)
-      out[5 * NL * NW + base] =
-          (n > 1 && gsum > 0 && den_g != 0.0)
-              ? (gea[(size_t)k * NW + q] / (2.0 * gsum)) / den_g
-              : NaN;
-    }
-}
-
 int main(int argc, char **argv) {
   std::string mode = argc > 1 ? argv[1] : "bench";
   auto ms = load(argc > 2 ? argv[2] : "mols_h.txt");
@@ -189,14 +82,13 @@ int main(int argc, char **argv) {
   for (auto &m : ms) na += m.n;
   fprintf(stderr, "%zu molecules, mean %.1f atoms (with H)\n", ms.size(), na / ms.size());
 
-  std::vector<int> D;
-  std::vector<double> mean;
-  std::vector<double> out((size_t)NVAR * NL * NW);
+  autocorr::Work W;
+  std::vector<double> out(autocorr::N_COLS);
 
   if (mode == "verify") {
     FILE *f = fopen("values_ac.txt", "w");
     for (auto &m : ms) {
-      autocorr(m, D, mean, out.data());
+      autocorr::row(m, W, out.data());
       for (size_t i = 0; i < out.size(); i++)
         fprintf(f, i ? " %.12g" : "%.12g", out[i]);
       fputc('\n', f);
@@ -210,7 +102,7 @@ int main(int argc, char **argv) {
   auto t0 = std::chrono::steady_clock::now();
   const int REPS = 20;
   for (int r = 0; r < REPS; r++)
-    for (auto &m : ms) { autocorr(m, D, mean, out.data()); sink += out[0]; }
+    for (auto &m : ms) { autocorr::row(m, W, out.data()); sink += out[0]; }
   auto t1 = std::chrono::steady_clock::now();
   double us = std::chrono::duration<double, std::micro>(t1 - t0).count() / (REPS * ms.size());
   printf("  %-46s %8.2f us/mol\n", "Autocorrelation, 486 cols (6x9x9)", us);

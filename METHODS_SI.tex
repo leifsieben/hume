@@ -1,0 +1,178 @@
+\section{Supplementary Methods}
+
+Implementation details are given where they are not recoverable from the source: the reasons for
+a choice, the measurements behind it, and the traps that produced silently wrong numbers.
+
+\subsection{Descriptor selection}
+
+RDKit's 217 descriptors and Mordred's 1{,}613 two-dimensional descriptors give a union of
+1{,}830 columns; the 3D block needs conformers and is excluded throughout. Over 20{,}000 ChEMBL
+molecules we drop columns that are constant or less than 95\% finite (452 sparse, 104 constant;
+1{,}275 remain), rank-transform the rest so that redundancy is detected up to any monotone
+reparametrisation rather than only linear ones, and keep a descriptor unless it correlates
+$|\rho| \geq 0.99$ with one already kept. Candidates are visited cheapest-first, so the survivor
+of each redundant group is its cheapest member; Mordred descriptors are charged their family
+cost divided by family size, since that is what one costs once its family's shared intermediate
+exists. The threshold is a real choice rather than a plateau: 1{,}197 columns survive at
+$|\rho| = 1.0$, 865 at $0.99$, and 632 at $0.95$.
+
+Fifteen Mordred families lose every column. The largest casualty is the matrix-spectral block:
+all 121 \texttt{SpMax}/\texttt{SpDiam}/\texttt{SpAD}/\texttt{SpMAD}/\texttt{SpAbs}/\texttt{VE*}/\texttt{VR*}
+scalars over the adjacency, Barysz, distance and detour matrices have zero survivors. Because
+the cover runs cheapest-first, each had a \emph{cheaper} non-spectral correlate; collapsing an
+$n \times n$ matrix to one spectral scalar discards whatever was new about the matrix.
+Autocorrelation contributes 419 of the surviving 865 and E-state 50.
+
+\subsection{Fingerprint}
+
+On 3{,}000 molecules averaging 28.9 heavy atoms, $r = 3$ yields 66.4 distinct environments per
+molecule against 64.8 on-bits --- a 2.4\% loss to hash collisions, versus 1.8\% at $r = 2$.
+Widening to 4096 bits reduces the $r = 3$ loss to 1.0\%. The chirality flag is load-bearing
+rather than decorative: the descriptor union is completely stereo-blind, with zero of RDKit's
+217 and zero of Mordred's 1{,}613 descriptors changing value across any enantiomer or E/Z pair,
+so fingerprint and descriptors are non-overlapping on this axis by construction.
+
+\subsection{Implementation departures}
+
+The specification is the reference source code --- not its documentation, and not always its
+data files. Three upstream defects are reproduced rather than repaired, because a descriptor
+that silently disagrees with the library everyone else uses is worse than one that is
+consistently odd. Five E-state SMARTS rows are written \texttt{[N,nD2H0]} without a semicolon,
+parsing as \texttt{N} \emph{or} (\texttt{n} and \texttt{D2} and \texttt{H0}), so the aliphatic
+alternative carries no degree or hydrogen constraint at all, while the neighbouring carbon rows
+use \texttt{[C,c;D2H0]} and do not. \texttt{[SeD2H0]} and its equivalents for Li, Be, Si, Ge,
+As, Sn and Pb parse to element-\emph{number} queries with no aromaticity constraint, so
+\texttt{aaSe} does fire on selenophene's aromatic selenium. RDKit's shipped
+\texttt{Data/Crippen.txt} is stale relative to the table compiled into the library: two of its
+110 rows negate by element rather than by aliphatic symbol, which is why an explicit hydrogen on
+an aromatic nitrogen types as H3. We implement the compiled behaviour and pin it with
+behavioural probes, so a future release fixing the text file leaves the port unaffected.
+
+The test for whether to reproduce a quirk is whether the upstream quantity is a function of the
+molecule at all. Two are not, and we diverge by design: Mordred's \texttt{InformationContent}
+mutates a visited set while iterating over it, leaving roughly 20\% of molecules with an
+atom-equivalence code that depends on input atom ordering, and
+\texttt{ExtendedTopochemicalAtom} scores a pyrrole nitrogen 0 where a pyridine nitrogen scores
+2, with the outcome turning on atom numbering.
+
+Two descriptors are both named \texttt{BalabanJ} and are different quantities --- RDKit's uses a
+bond-order-weighted distance matrix, Mordred's passes RDKit's own formula an unweighted one. On
+naphthalene they are 2.888052 and 1.925368, and they agree exactly on molecules with only single
+bonds, so a spot check on saturated structures would miss it; both are emitted under distinct
+names. RDKit's $\chi$ is internally inconsistent in the same way: \texttt{Chi0n} and
+\texttt{Chi1n} count all atoms and bonds while \texttt{Chi0v} and \texttt{Chi1v} are heavy-atom
+only, so \texttt{Chi0n}\,$-$\,\texttt{Chi0v} is exactly the explicit-hydrogen count, and its
+path finder counts rings as paths by documented design. We match RDKit throughout, which makes
+explicit hydrogens value-changing rather than cosmetic ($d_3$-ethanol has
+$\chi_{2n} = 0.158114$ against ethanol's $0.316228$) and is why no hydrogen stripping is applied.
+
+Crippen and E-state typing dominated cost, being a generic subgraph search answering a question
+that for most rows concerns an atom and its immediate neighbours. Both are replaced by a
+dispatch on element and aromaticity plus a per-row predicate, with branch specifications
+resolved by bounded backtracking as a system of distinct representatives rather than a tally of
+bond types --- SMARTS maps distinct query atoms to distinct molecule atoms, and the two readings
+diverge as soon as two branch specifications overlap. Multi-typing is preserved, since an atom
+legitimately receives a tuple of type names rather than a best match. Crippen falls from roughly
+78 to 1.53~$\mu$s/molecule and E-state from 636 to 0.834~$\mu$s, bit-exactly.
+
+Two numerical kernels are written out rather than called from BLAS/LAPACK. Identical source
+measured 138.09 against 218.93~$\mu$s/molecule depending only on which BLAS the host supplied,
+and a released package cannot have its values decided by the machine it was built on. BCUT2D's
+extremal eigenvalues use Householder tridiagonalization then a Pal--Walker--Kahan QL/QR sweep,
+precisely the stages \texttt{dsytd2} and \texttt{dsterf} perform and in the same order, so
+agreement is structural rather than tuned: maximum deviation $4.26 \times 10^{-13}$ over all
+395{,}620 Burden matrices, and faster than the vendor library at 27 heavy atoms, where a tuned
+library is mostly wrapper. The resistance solve uses reference LU with partial pivoting rather
+than the shorter, better-conditioned Cholesky that $L + J/k$ admits, because the reference is
+\texttt{numpy.linalg.inv} --- itself LU with partial pivoting --- and matching the algorithm is
+what makes the arithmetic identical rather than merely close. Bit-identity is the binding
+constraint: resistance bin edges sit at $0.1$, $0.5$, $1.0$ and $2.0$ and real values land
+exactly on them (on tetra-\emph{tert}-butyl tetrahedrane every atom pair has $\Omega = 0.5$), so
+one ulp moves a pair between bins and takes four further columns with it. Values within
+$10^{-9}$ of an edge are snapped before binning, after which all three solvers agree on all
+98{,}905 molecules. This supersedes our earlier values for those columns, which were an artefact
+of one vendor's summation order.
+
+Sentinels are propagated rather than tidied away. RDKit writes $10^8$ for unreachable pairs and
+\texttt{BalabanJ} sums those rows, so $J$ legitimately collapses on a disconnected molecule;
+skipping unreachable pairs instead gives a finite, plausible and wrong answer on 16\% of an
+adversarial corpus but on about one molecule of a drug-like one, which is how such a bug
+survives.
+
+Verification is per-decision rather than per-column, since a count such as \texttt{NsCH3} lets
+two opposite mistypings cancel: we check the atom's type tuple and the Crippen row index over
+2{,}868{,}290 and 2{,}869{,}048 atoms respectively, and 98{,}905 molecules for the block
+columns, against RDKit 2025.9.2 and Mordred 1.2.0 on a corpus loaded with salts, mixtures,
+cages, fullerenes, macrocycles and rare elements. Exactness is version-relative: the E-state and
+Crippen data are byte-identical between RDKit 2025.9.2 and 2026.3.5 and we score 100\% against
+both, yet 19 of 100{,}000 molecules receive different E-state types because furans fused into
+large macrocycles stop being perceived as aromatic. The RDKit version is therefore part of the
+released column specification.
+
+\subsection{Novel descriptor blocks}
+
+Pairwise sums $\sum_{ij} f(i,j)$ require quadratic interaction across 2048 hashed bits, ratios
+require division, and cyclic patterns lie outside colour refinement entirely, since WL-1
+distinguishes exactly the graphs that homomorphism counts \emph{from trees} distinguish. Only
+the third is an expressivity limit in the theorem sense; the other two are conditioning.
+
+\emph{Resistance}, 60 columns, is built on $\Delta_{ij} = d_{ij} - \Omega_{ij}$, where $\Omega$
+is effective resistance from the Laplacian pseudo-inverse taken per connected component. On a
+tree $\Omega = d$, so $\Delta \equiv 0$ and the block measures path multiplicity alone, unable
+to proxy for size or atom count. Only the 30 $\Delta$-derived columns vanish on acyclic
+molecules; the Kirchhoff and random-walk columns do not, since $K_f$ on a tree is the Wiener
+index. \emph{Cycles}, 33 columns, counts simple cycles of length 3 to 8 and is not
+\texttt{RingCount}: the SSSR is a basis for the cycle space, not a list of cycles, and cubane's
+cycle space has dimension 5 while the molecule contains 16 distinct six-membered cycles.
+\emph{Conjugation}, 24 columns, recovers $\pi$-system components by union-find over RDKit's
+conjugated-bond flags; coverage of conjugated-system topology in both libraries is zero, and
+anthracene and a C$_{14}$ polyene are both one system of 14 atoms separated only by shape
+(linearity 0.54 against 1.00). \emph{Stereo}, 23 columns, combines signed CIP parities at odd
+order, which flips under reflection and separates enantiomers, and even order, which is
+mirror-invariant and separates diastereomers; it is conditioning rather than new information,
+since the fingerprint already carries stereo.
+
+One trap is worth recording: \emph{a cycle is not its vertex set}. In $K_4$ three distinct
+4-cycles share one vertex set, so de-duplicating enumerated cycles on their sorted vertex tuple
+merges two of the three, which on a tetrahedrane derivative removed exactly $0.125$ from both
+$\chi_{4n}$ and $\chi_{4v}$ (8.787913 against RDKit's 8.912913).
+
+\subsection{Prediction head}
+
+Hyperparameters are fixed and conservative, and evaluation is 5-fold Bemis--Murcko scaffold
+cross-validation, never random. Folds are computed once per dataset and shared by every arm, so
+fold difficulty cancels in the paired differences; results aggregate by mean rank and win-rate
+rather than by averaging raw RMSE across datasets whose scales differ several-fold. Missing
+values are passed in unimputed, NaN being a first-class input to XGBoost.
+
+The one parameter worth tuning is \texttt{feature\_weights}. \texttt{colsample\_by*} samples
+columns uniformly, which is the wrong prior for a matrix that is half sparse fingerprint bits
+and half dense descriptors: a descriptor is informative on nearly every molecule while a given
+fingerprint bit is set in roughly 2\% of them, so descriptors win the sampling lottery on
+availability rather than on merit. A weight $w$ on the 2048 fingerprint columns against $1$ on
+the descriptors turns this into a continuous knob. It does nothing unless
+\texttt{colsample\_by*} $< 1$, and must act through \texttt{colsample\_bynode} rather than
+\texttt{colsample\_bytree}, since weights apply at each sampling event.
+
+\begin{center}
+\begin{tabular}{lrrrr}
+\toprule
+arm & ACE all & ACE cliff & ACE non-cliff & MoleculeNet \\
+\midrule
+fingerprint only & 0.7854 & 0.8610 & 0.7338 & 0.9487 \\
+descriptors only & 0.8460 & 0.9065 & 0.8055 & 0.9358 \\
+$w = 1$ (default) & 0.8080 & 0.8752 & 0.7626 & 0.8901 \\
+$w = 10$ & 0.7882 & 0.8605 & 0.7389 & \textbf{0.8712} \\
+$w = 100$ & \textbf{0.7721} & 0.8464 & 0.7214 & 0.8931 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+The default $w = 1$ is dominated on both suites, and the curves differ in shape: potency
+improves monotonically to $w = 100$, where the reweighted model beats a pure fingerprint, while
+the physicochemical suite has an interior optimum near $w \approx 10$. The sweep was run to test
+the hypothesis that descriptors cannot resolve activity cliffs, and that prediction failed:
+moving from $w = 1$ to $w = 100$ improves non-cliff RMSE by 5.4\% and cliff RMSE by only 3.3\%,
+so the gain is larger on the molecules that are \emph{not} cliffs. The surviving explanation is
+a task-family effect --- MoleculeACE datasets are congeneric series, so descriptors vary little
+across the whole dataset rather than merely across cliff pairs.

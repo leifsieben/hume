@@ -88,7 +88,7 @@ def canon_rings(mol):
     return sorted(rings, key=lambda r: (len(r), sorted(rank[i] for i in r)))
 
 
-def gate(mol) -> bool:
+def gate(mol, arings=None) -> bool:
     """Should `canon_rings` be paid for this molecule? A DELIBERATE OVER-APPROXIMATION.
 
     `canon_rings` costs 104 us/mol against 5.1 for reading `RingInfo`, and it changes the answer
@@ -123,43 +123,85 @@ def gate(mol) -> bool:
 
     The provably sound alternative -- "any ring system with 2+ independent cycles" -- is every
     fused aromatic: 50.8% of the corpus, 55.4 us/mol. Measured, and rejected as too dear.
+
+    O(#RINGS), NOT O(#BONDS), and that is the whole of the second version of this function. The
+    first one walked `mol.GetBonds()` on EVERY molecule to rebuild the ring-bond subgraph, and
+    measured 25.7 us/mol to save 35.7 -- a predicate costing 72% of what it bought. Every clause
+    is answerable from `RingInfo` alone, and #rings is tiny where #bonds is not:
+
+      * ring size          max over `AtomRings()` lengths.
+      * atom in 3+ rings   count occurrences across those same lists, rather than asking
+                           `NumAtomRings(i)` for every atom in the molecule.
+      * 3+ independent cycles in a ring system
+                           union-find over RINGS that share an atom, then mu = |E| - |V| + 1 per
+                           component from the union of its rings' `BondRings()` and `AtomRings()`.
+
+    The third clause used to be defined over ring-bond-connected components and now is defined
+    over atom-sharing-ring components; those are the SAME partition. Two ring bonds that share an
+    atom lie in rings that share that atom, and every ring bond belongs to some ring, so
+    connectivity by ring bonds and connectivity by shared ring atoms generate the same components
+    -- and the union of a component's rings' bonds is exactly that component's ring bonds.
+    Argument aside, `cpp/verify_topo3.py gatecheck` still runs the repair unconditionally over
+    all 100,000 molecules and compares VALUES, which is what actually holds this honest.
     """
     ri = mol.GetRingInfo()
-    if ri.NumRings() < 2:
+    if arings is None:
+        arings = ri.AtomRings()
+    n_rings = len(arings)
+    if n_rings < 2:
         return False                      # at most one cycle: there is nothing to choose between
-    for r in ri.AtomRings():
+    count: dict[int, int] = {}
+    for r in arings:
         if len(r) >= 7:
             return True
-    for i in range(mol.GetNumAtoms()):
-        if ri.NumAtomRings(i) >= 3:
-            return True
-    # cyclomatic number of each ring-bond-connected component: |E| - |V| + 1
-    rb = [(b.GetBeginAtomIdx(), b.GetEndAtomIdx()) for b in mol.GetBonds() if b.IsInRing()]
-    adj: dict[int, list[int]] = {}
-    for u, v in rb:
-        adj.setdefault(u, []).append(v)
-        adj.setdefault(v, []).append(u)
-    seen: set[int] = set()
-    for s in adj:
-        if s in seen:
-            continue
-        comp, st = [], [s]
-        seen.add(s)
-        while st:
-            u = st.pop()
-            comp.append(u)
-            for v in adj[u]:
-                if v not in seen:
-                    seen.add(v)
-                    st.append(v)
-        cs = set(comp)
-        if sum(1 for u, _ in rb if u in cs) - len(comp) + 1 >= 3:
+        for a in r:
+            count[a] = count.get(a, 0) + 1
+            if count[a] >= 3:
+                return True
+
+    # Clause 3 cannot fire below three rings: the ring set spans the cycle space, so a
+    # component's mu is at most the number of rings in it. Free, and it skips the union-find and
+    # the second Boost.Python conversion (`BondRings()`) for every small fused system.
+    if n_rings < 3:
+        return False
+
+    parent = list(range(n_rings))
+
+    def find(x: int) -> int:
+        while parent[x] != x:
+            parent[x] = parent[parent[x]]
+            x = parent[x]
+        return x
+
+    owner: dict[int, int] = {}
+    for i, r in enumerate(arings):
+        for a in r:
+            j = owner.setdefault(a, i)
+            ri_, rj = find(i), find(j)
+            if ri_ != rj:
+                parent[ri_] = rj
+
+    brings = ri.BondRings()
+    atoms: dict[int, set] = {}
+    bonds: dict[int, set] = {}
+    for i in range(n_rings):
+        c = find(i)
+        atoms.setdefault(c, set()).update(arings[i])
+        bonds.setdefault(c, set()).update(brings[i])
+    for c, av in atoms.items():
+        if len(bonds[c]) - len(av) + 1 >= 3:
             return True
     return False
 
 
 def rings_for(mol):
-    """The ring list to hand the C++: repaired where it can matter, RDKit's own otherwise."""
-    if gate(mol):
+    """The ring list to hand the C++: repaired where it can matter, RDKit's own otherwise.
+
+    `AtomRings()` is fetched ONCE and handed to the gate, rather than converted out of
+    Boost.Python twice. On the ~79% of molecules the gate does not fire on it was the single
+    largest item left in this function -- 4.6 us of the 10.3 the predicate cost.
+    """
+    arings = mol.GetRingInfo().AtomRings()
+    if gate(mol, arings):
         return canon_rings(mol)
-    return [list(r) for r in mol.GetRingInfo().AtomRings()]
+    return [list(r) for r in arings]

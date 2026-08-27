@@ -114,12 +114,12 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     two agree bit-for-bit on the 182 they share; there is no `reader` here only because nothing
     has asked for one yet, not because the arrays could not be filled the other way.
 
-    WHAT IS NOT IN X, stated here because a column count invites the opposite assumption:
-    Autocorrelation, 419 of the 865 deduplicated columns and the largest single family. It is
-    verified, but it lives in `cpp/ac.cpp` as a standalone over a text file and descriptors the
-    HYDROGEN-ADDED graph, so wiring it is a port rather than a call. `bench_e2e.py` counts how
-    many of the 865 these columns actually cover and prints it next to the timing, so the ratio
-    and the coverage are never read apart.
+    WHAT IS NOT IN X, stated here because a column count invites the opposite assumption: the 52
+    Autocorrelation columns built on mordred's `Z` weight. The other nine weights are here (486
+    columns, on the hydrogen-added molecule `extract_pickles` serialises alongside), but
+    `cpp/ac_weights.h` implements nine of mordred's ten and the tenth is a bare atomic number.
+    `bench_e2e.py` counts how many of the 865 these columns actually cover and prints it next to
+    the timing, so the ratio and the coverage are never read apart.
     """
     from rdkit.Chem import rdFingerprintGenerator as rfg
 
@@ -134,7 +134,7 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         chunk = mols[lo:lo + batch_size]
         p = extract_pickles(chunk)
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
-            p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at)
+            p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs)
         for i, m in enumerate(chunk):
             fp[lo + i] = gen.GetFingerprintAsNumPy(m)
     return fp, X, ALL_COLUMNS
