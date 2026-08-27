@@ -258,10 +258,20 @@ open bug, see the header.
 
 ## Open bugs and debts
 
-* **`Ipc` is numbering-dependent on 56/2000 and OURS is the wrong one.** RDKit is stable (6
-  numberings, one value) and correct (exact integer Faddeev–Le Verrier agrees to ~1e-15). The
-  overflow argument does not apply: largest coefficient on the failing molecule is 9 digits.
-  Disconnected-graph path is the prime suspect. Full diagnosis in `infocontent.h`'s header.
+* **`Ipc` — the direction of this bug REVERSED, and it needs one more check before it is closed.**
+  The accuracy side now looks settled and in our favour: over all 100,000, of the 96,244
+  molecules whose largest coefficient needs ≤40 bits, 96,221 match RDKit to the last bit; in the
+  41–53 bit band only 638 of 1,271 match, and there **RDKit is the inaccurate one** (ours within
+  ~1e-15 of exact integer arithmetic, RDKit out by up to 1e-2). Coefficient width is not the
+  right predictor — RDKit's Faddeev *iterate matrix* crosses 2^53 well before the final
+  coefficients do.
+
+  **But the determinism evidence has a hole.** `cpp/ic_out0..5.txt` are six byte-identical
+  full-corpus outputs, which would settle it — except the matching `cpp/ic_in*.txt` dumps are no
+  longer on disk, so it cannot be confirmed those runs were fed *different numberings* rather
+  than the same input six times. Six identical outputs prove nothing without distinct inputs.
+  **Re-run the determinism table (dump the perturbed inputs, keep them, compare) before quoting
+  any of it.** `Ipc`/`AvgIpc`/`Log2Ipc` stay unwired until then.
 * **FIXED — the `gate()` predicate.** Rewritten O(#rings) from `RingInfo` alone: 25.7 → 10.2
   ± 0.15 µs/mol, of which 4.7 is the `AtomRings()` call `rings_for` needs anyway, so the
   predicate itself went 21.1 → 5.5. Identical on all 100,000 (0 disagreements with the old gate,
