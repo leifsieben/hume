@@ -10,8 +10,37 @@ gpu/PROXY
 gpu/grid_out/
 gpu/graphs.txt
 cpp/graphs.txt
-cpp/bench
 models_hf/
+
+# C++ exchange files and build products. These are REGENERABLE and they are enormous at the
+# 100k scale the exactness runs use: mols.txt 178 MB, mols_h.txt 144 MB, values_ac.txt 615 MB,
+# values_hume.txt 145 MB -- over a gigabyte between them, and each one individually past
+# GitHub's hard 100 MB blob limit. They were tracked while the dev sets were 2,000 molecules
+# and quietly became unpushable when the corpus grew; untracked in the commit that added
+# these lines. Regenerate with cpp/export_predict.py / cpp/export_ac.py / cpp/export_crippen.py
+# and the matching `./<binary> verify`.
+#
+# cpp/hard.smi is DELIBERATELY NOT IGNORED. At 4 MB it is small enough to track, and unlike
+# everything above it is not reproducible from this repo -- build_hard_corpus.py sweeps a
+# 10M-molecule PubChem file that lives outside it. It is the corpus every exactness claim in
+# this project rests on, so it travels with the code.
+cpp/mols.txt
+cpp/mols_h.txt
+cpp/mols.smi
+cpp/mols_h.smi
+cpp/values*.txt
+cpp/crip_*.txt
+cpp/crip_*.smi
+cpp/mismatch.txt
+
+# Compiled binaries -- rebuilt by the clang++ line in each source file's header comment.
+cpp/bench
+cpp/hume
+cpp/hume_ob
+cpp/hume_split
+cpp/ac
+cpp/predict
+cpp/crippen
 backups/
 logs/
 __pycache__/
