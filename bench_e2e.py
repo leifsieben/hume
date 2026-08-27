@@ -146,46 +146,128 @@ def _ecfp_step(mols):
 # arm: HUME
 # --------------------------------------------------------------------------------------------
 
+def _survivors_covered(cols) -> int:
+    """How many of the 865 deduplicated columns these names actually are.
+
+    THE COLUMN COUNT AND THE RATIO MUST NOT BE READ APART. `hume.ALL_COLUMNS` has 529 entries but
+    they are not 529 of the 865: about 160 of them are HUME-specific (`SATS*`, `RW*`, `conj_*`)
+    or are EState types the r>0.99 dedupe threw away, and one family the baseline computes --
+    Autocorrelation, 419 columns -- is not in there at all. Counting the emitted columns instead
+    of the covered ones would overstate the position by roughly a factor of two, which is exactly
+    the error PORT_STATUS.md's "warning about the number 182" is about.
+
+    THE MATCH IS CASE-INSENSITIVE, and that is a fix for exactly one family rather than a general
+    loosening. `_columns.py` names RDKit's connectivity indices `chi0n`..`chi4v` (lower case, as
+    HUME's own chi.py did) while the 865 carry RDKit's `Chi0n`..`Chi4v`. Those nine are the same
+    nine numbers. Checked: case-insensitivity adds those nine and NOTHING else, so it cannot be
+    quietly inflating the count with a near-miss.
+    """
+    sys.path.insert(0, str(ROOT))
+    import blocks
+    fam = json.loads((ROOT / "fam.json").read_text())
+    sp = blocks.split(fam)
+    surv = {n for _s, n, _f in sp["core"] + sp["predict"]}
+    have = {c.lower() for c in cols}
+    return sum(1 for n in surv if n.lower() in have)
+
+
 def arm_hume(n_mols: int, n_reps: int) -> dict:
-    """SMILES -> ECFP + whatever HUME computes natively TODAY.
+    """SMILES -> ECFP + whatever HUME computes natively TODAY, through the PICKLE boundary.
+
+    THE BOUNDARY IS `extract_pickles`, not `extract`. One `m.ToBinary()` per molecule, parsed in
+    C++ by src/hume_core/molpickle.h; there is no per-atom Python call left in the path. The old
+    boundary is still measured, as `extract_api_boundary`, because a step table that only shows
+    the arm that won is not a measurement. It is reported OUTSIDE `steps` so it cannot be summed
+    into the total by accident.
 
     The column count is reported alongside the time and is NOT assumed to be 865 -- the port is
     in progress, and a step table that silently covers fewer columns than the baseline would be
     the most flattering possible error. `report` compares column counts and says so.
     """
     import hume
-    from hume._extract import extract
+    from hume._extract import extract, extract_pickles
+    from hume import _core
 
     smis = load_smiles(n_mols)
-    _, cols = hume.featurize_blocks(smis[:1])
+    cols = hume.ALL_COLUMNS
     steps = [
-        ("extract_rdkit_to_arrays", lambda mols: extract(mols)),
+        ("extract_pickles_boundary", lambda mols: extract_pickles(mols)),
         ("ecfp_r3_2048", _ecfp_step),
     ]
     res = time_steps(steps, smis, n_reps)
     res["smiles_parse"] = time_parse(smis, n_reps)
 
-    # The C++ compute, timed separately: it takes the extracted arrays, not molecules, so it does
-    # not fit time_steps' signature. Extraction is done once outside the timed region -- that is
-    # correct here and NOT a warm-cache error, because the arrays are plain numpy and cache
-    # nothing. The RDKit-side caching hazard lives in extract(), which is timed cold above.
+    # The C++ compute, timed separately: it takes the serialised molecules, not molecule objects,
+    # so it does not fit time_steps' signature. The pickles are built once outside the timed
+    # region -- correct here and NOT a warm-cache error, because a `bytes` caches nothing. The
+    # RDKit-side caching hazard lives in extract_pickles(), which is timed cold above.
     from rdkit import Chem
     mols = [Chem.MolFromSmiles(s) for s in smis]
     mols = [m for m in mols if m is not None]
-    arrays = extract(mols)
-    xs = []
-    for _ in range(n_reps):
-        t0 = _cpu()
-        hume.compute(arrays)
-        t1 = _cpu()
-        xs.append((t1 - t0) / len(mols) * 1e6)
-    res["cpp_blocks"] = {"us_mean": round(statistics.mean(xs), 3),
-                         "us_sd": round(statistics.stdev(xs), 3) if len(xs) > 1 else None,
-                         "us_min": round(min(xs), 3), "n_reps": len(xs),
-                         "columns": len(cols)}
-    return {"arm": "hume", "n_mols": len(smis), "steps": res,
-            "columns_descriptors": len(cols), "columns_ecfp": 2048,
-            "machine": _machine(), "versions": _versions()}
+
+    def _timed(fn, prep):
+        xs = []
+        for _ in range(n_reps):
+            arg = prep()
+            t0 = _cpu()
+            fn(arg)
+            t1 = _cpu()
+            xs.append((t1 - t0) / len(mols) * 1e6)
+        return {"us_mean": round(statistics.mean(xs), 3),
+                "us_sd": round(statistics.stdev(xs), 3) if len(xs) > 1 else None,
+                "us_min": round(min(xs), 3), "n_reps": len(xs)}
+
+    pk = extract_pickles(mols)
+    rings = (pk.rings.ring_moff, pk.rings.ring_ptr, pk.rings.ring_at)
+
+    def _all(sel=None):
+        return _core.all_from_pickles(pk.blobs, *rings, sel)
+
+    res["cpp_all_columns"] = _timed(lambda _b: _all(), lambda: None)
+    res["cpp_all_columns"]["columns"] = len(cols)
+
+    # PER FAMILY, PAIRED AND DIFFERENCED PER REPETITION. `all_from_pickles(blobs, [f])` runs the
+    # 182 blocks plus family f -- the blocks are not optional, they are what fills the EState
+    # index -- so a family's own cost is that minus the blocks-only arm. The subtraction is done
+    # WITHIN each repetition and the SD taken over the differences, not over the two arms
+    # separately: on a contended box the two arms move together, and differencing the means
+    # would throw away exactly the pairing that makes the number mean anything.
+    fam_names = [k for k in hume.FAMILY_OFFSETS if k not in ("blocks", "end")]
+    per_rep: dict[str, list[float]] = {k: [] for k in ["blocks_only"] + fam_names}
+    arms = ["blocks_only"] + fam_names
+    for cyc in range(n_reps):
+        for name in arms[cyc % len(arms):] + arms[:cyc % len(arms)]:
+            sel = [] if name == "blocks_only" else [name]
+            t0 = _cpu()
+            _all(sel)
+            t1 = _cpu()
+            per_rep[name].append((t1 - t0) / len(mols) * 1e6)
+    base = per_rep["blocks_only"]
+    fams = {"blocks_182": {"us_mean": round(statistics.mean(base), 3),
+                           "us_sd": round(statistics.stdev(base), 3) if len(base) > 1 else None,
+                           "columns": hume.N_COLS}}
+    for name in fam_names:
+        d = [a - b for a, b in zip(per_rep[name], base)]
+        lo = hume.FAMILY_OFFSETS[name]
+        hi = min([v for v in hume.FAMILY_OFFSETS.values() if v > lo], default=hume.N_ALL_COLS)
+        fams[name] = {"us_mean": round(statistics.mean(d), 3),
+                      "us_sd": round(statistics.stdev(d), 3) if len(d) > 1 else None,
+                      "columns": hi - lo}
+
+    # Diagnostics, deliberately outside `steps`: what each family costs, what the original 182
+    # cost alone, and what the boundary they replaced still costs. None of it belongs in the
+    # total -- the first two are subsets of cpp_all_columns and the last is the road not taken.
+    detail = {"per_family": fams,
+              "cpp_blocks_182_only": _timed(_core.blocks_from_pickles, lambda: pk.blobs),
+              "extract_api_boundary": _timed(extract, lambda: [Chem.MolFromSmiles(s)
+                                                               for s in smis])}
+    detail["cpp_blocks_182_only"]["columns"] = hume.N_COLS
+    detail["offsets"] = {k: v for k, v in hume.FAMILY_OFFSETS.items()}
+
+    covered = _survivors_covered(cols)
+    return {"arm": "hume", "n_mols": len(smis), "steps": res, "detail": detail,
+            "columns_descriptors": covered, "columns_emitted": len(cols),
+            "columns_ecfp": 2048, "machine": _machine(), "versions": _versions()}
 
 
 # --------------------------------------------------------------------------------------------
@@ -275,7 +357,22 @@ def report() -> None:
             sd = f"{s['us_sd']:.2f}" if s.get("us_sd") is not None else "-"
             print(f"  {name:28s} {s['us_mean']:9.1f} {sd:>8s} {s.get('columns', ''):>6}")
             tot += s["us_mean"]
-        print(f"  {'TOTAL':28s} {tot:9.1f}\n")
+        print(f"  {'TOTAL':28s} {tot:9.1f}")
+        if r.get("columns_emitted"):
+            print(f"  {len(r['steps'])} steps; {r['columns_emitted']} columns emitted, "
+                  f"{r['columns_descriptors']} of them members of the 865")
+        for name, s in sorted(r.get("detail", {}).items()):
+            if not isinstance(s, dict) or "us_mean" not in s:
+                continue
+            sd = f"{s['us_sd']:.2f}" if s.get("us_sd") is not None else "-"
+            print(f"  ({name:26s} {s['us_mean']:9.1f} {sd:>8s}   not in the total)")
+        fams = r.get("detail", {}).get("per_family")
+        if fams:
+            print(f"\n  {'  where the C++ time goes':28s} {'us/mol':>9s} {'SD':>8s} {'cols':>6s}")
+            for name, s in sorted(fams.items(), key=lambda kv: -kv[1]["us_mean"]):
+                sd = f"{s['us_sd']:.2f}" if s.get("us_sd") is not None else "-"
+                print(f"    {name:26s} {s['us_mean']:9.1f} {sd:>8s} {s.get('columns', ''):>6}")
+        print()
 
     # Cross-check the shared steps before composing anything from two processes.
     bad = [n for n in SHARED

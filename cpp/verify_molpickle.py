@@ -51,6 +51,11 @@ FIELDS = [
     (5, 0, "bond u"), (5, 1, "bond v"), (5, 2, "bond conjugated"), (5, 3, "bond in-ring"),
     (5, 4, "bond SMARTS code"),
     (6, -1, "bond E/Z"), (7, -1, "bond order"),
+    # THE RING CSR. Under the dense design both boundaries fill these from the same
+    # src/hume/_rings.py, so they are equal by construction and this is a standing assertion
+    # that they still are -- cheap, and the thing that would break first if anyone ever swapped
+    # the pickle path back to reading rings out of the blob.
+    (8, -1, "ring_moff"), (9, -1, "ring_ptr"), (10, -1, "ring_at"),
 ]
 
 
@@ -109,10 +114,13 @@ def verify(src: Path, n_want: int) -> int:
         # The pickle path FIRST, on molecules neither path has touched, then extract() on the
         # very same objects. Order matters only for honesty about RDKit's caches, and either
         # order gives the same arrays; this one makes the new path the one paying cold cost.
-        got = _core.pickle_extract(extract_pickles(mols))
+        p = extract_pickles(mols)
+        got = tuple(_core.pickle_extract(p.blobs)) + (p.rings.ring_moff, p.rings.ring_ptr,
+                                                      p.rings.ring_at)
         want = extract(mols)
         want_t = (want.atom_off, want.bond_off, want.chg_ok, want.atom_i, want.atom_d,
-                  want.bond_i, want.bond_s, want.bond_d)
+                  want.bond_i, want.bond_s, want.bond_d, want.rings.ring_moff,
+                  want.rings.ring_ptr, want.rings.ring_at)
 
         for ai, col, label in FIELDS:
             g, w = got[ai], want_t[ai]
@@ -122,7 +130,7 @@ def verify(src: Path, n_want: int) -> int:
                 n_bad[label] = n_bad.get(label, 0) + int(
                     (g.shape != w.shape) or int(np.count_nonzero(raw(g) != raw(w))))
 
-        Xp = _core.blocks_from_pickles(extract_pickles(mols))
+        Xp = _core.blocks_from_pickles(p.blobs)
         Xa = _core.blocks(want.atom_off, want.bond_off, want.chg_ok, want.atom_i, want.atom_d,
                           want.bond_i, want.bond_s, want.bond_d)
         n_col_bad += int(np.count_nonzero(raw(Xp) != raw(Xa)))

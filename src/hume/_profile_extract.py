@@ -16,15 +16,15 @@ Python entirely: src/hume_core/crippen_typer.h now answers it inside the extensi
 Everything else was the first case and is now bulk-extracted. Extraction went 231 -> 92 us/mol,
 verified bit-identical on all 182 columns over the 98,905-molecule corpus.
 
-WHAT IS LEFT AND WHAT IT WOULD TAKE. The two `wrapper list, no reads` rows below build the atom
-and bond object lists and read NOTHING off them; they are the floor for any approach that
-touches an RDKit object from Python, and the per-column passes on top are within a small factor
-of it. The only remaining lever is not to touch RDKit objects from Python at all:
-`m.ToBinary(PrivateProps | AtomProps)` serialises the whole molecule -- graph, aromaticity,
-hybridisation, ring info, CIP codes and Gasteiger charges -- in 9.8 us/mol and 455 bytes, which
-would replace essentially all 92. What it costs is a hand-written parser for RDKit's pickle
-format inside the extension, pinned to a format version that RDKit does not promise to keep.
-That is a different kind of decision from this one and has not been taken.
+THAT LEVER HAS NOW BEEN TAKEN, and this file profiles the path it replaced. The two `wrapper
+list, no reads` rows below build the atom and bond object lists and read NOTHING off them; they
+are the floor for any approach that touches an RDKit object from Python. `extract_pickles` does
+not touch one: `m.ToBinary(PrivateProps | AtomProps | ComputedProps)` serialises the molecule and
+src/hume_core/molpickle.h parses it, bit-identically on both corpora (cpp/verify_molpickle.py).
+extract() stays as the reference implementation and this stays its profile -- and the two now
+share one line that neither used to have, the ring CSR, which is a Python cost on BOTH paths.
+ComputedProps is not optional there: `_GasteigerCharge` is a computed property, so the obvious
+`PrivateProps | AtomProps` pair pickles CIP codes and silently no charges at all.
 
 METHOD. Each component is timed in its own pass over the same molecules, in-process, with the
 order rotated across cycles so machine drift is common-mode. CPU time, not wall: the bridge work
@@ -52,7 +52,7 @@ from rdkit.Chem import rdMolDescriptors, rdPartialCharges
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from hume._extract import extract  # noqa: E402
+from hume._extract import _rings_csr, extract  # noqa: E402
 
 RDLogger.DisableLog("rdApp.*")
 ROOT = Path(__file__).resolve().parents[2]
@@ -145,6 +145,14 @@ def c_crippen_rdkit(mols):
         rdMolDescriptors._CalcCrippenContribs(m, force=True)
 
 
+def c_rings(mols):
+    """The ring CSR, which extract() now also builds. It is NOT a read of RDKit properties: it
+    runs src/hume/_rings.py's gate on every molecule and its canonical re-perception on the ~20%
+    the gate fires on, so it belongs in the table on its own line rather than inside the residual.
+    See the note on `Rings` in _extract.py for why the ring SET is carried at all."""
+    _rings_csr(mols)
+
+
 def c_extract(mols):
     extract(mols)
 
@@ -175,7 +183,8 @@ def main() -> None:
              ("Gasteiger charge read pass", c_charge_read, "PYTHON", (GAS, ATL)),
              ("CIP HasProp pass", c_cip, "PYTHON", (ATL,)),
              (BOL, c_bond_list, "FLOOR", ()),
-             ("per-bond loop, 7 reads", c_bond_loop, "PYTHON", (BOL,))]
+             ("per-bond loop, 7 reads", c_bond_loop, "PYTHON", (BOL,)),
+             ("ring CSR (_rings.rings_for)", c_rings, "PYTHON", ())]
 
     tot = {}
     for cyc in range(3):

@@ -25,17 +25,20 @@ from __future__ import annotations
 
 import sys
 import time
+from itertools import repeat
 from pathlib import Path
 
 import numpy as np
 import rdkit
 from rdkit import Chem, RDLogger
+from rdkit.Chem import rdPartialCharges
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from hume import _core                                       # noqa: E402
-from hume._extract import extract, extract_pickles           # noqa: E402
+from hume._extract import (_PICKLE_FLAGS, _rings_csr, extract,      # noqa: E402
+                           extract_pickles)
 
 RDLogger.DisableLog("rdApp.*")
 
@@ -55,6 +58,30 @@ def a_pickles_only(mols):
     extract_pickles(mols)
 
 
+def a_pickles_no_rings(mols):
+    """extract_pickles WITHOUT the ring CSR, so the difference from the arm above IS the rings.
+
+    Not a shippable path -- RingCount needs the ring set and there is no substitute (benzene and
+    cyclohexane have identical `nring` vectors and differ on 6 of the 49). It is here because the
+    dense-ring decision was taken against an estimate of ~4 us/mol, which counted reading
+    `RingInfo` on the 78.7% of molecules `_rings.gate()` does not fire on and counted neither the
+    gate itself -- a Python loop over every bond of EVERY molecule -- nor `canon_rings()` at
+    104 us on the 21.3% where it does fire. The measured number belongs next to the decision.
+    """
+    for m in mols:
+        try:
+            rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
+        except Exception:
+            m.ClearComputedProps()
+        Chem.AssignStereochemistry(m, cleanIt=True, force=True)
+        m.ToBinary(_PICKLE_FLAGS)
+
+
+def a_rings_only(mols):
+    """The ring CSR alone: `_rings.rings_for` over the batch, gate included."""
+    _rings_csr(mols)
+
+
 def a_pickle_boundary(mols):
     """The new boundary end to end -- serialise, parse, and materialise the SAME eight arrays.
 
@@ -62,7 +89,7 @@ def a_pickle_boundary(mols):
     path does not build them (blocks_from_pickles keeps the parse in C++ vectors), so this arm
     is an upper bound on what the new boundary costs.
     """
-    _core.pickle_extract(extract_pickles(mols))
+    _core.pickle_extract(extract_pickles(mols).blobs)
 
 
 def a_hybrid(mols):
@@ -80,7 +107,7 @@ def a_hybrid(mols):
     gd = Chem.Atom.GetDoubleProp
     for m in mols:
         try:
-            Chem.rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
+            rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
         except Exception:
             m.ClearComputedProps()
         Chem.AssignStereochemistry(m, cleanIt=True, force=True)
@@ -98,13 +125,16 @@ def a_blocks_api(mols):
 
 def a_blocks_pickle(mols):
     """182 columns, new boundary. What hume.featurize_blocks() now runs."""
-    _core.blocks_from_pickles(extract_pickles(mols))
+    _core.blocks_from_pickles(extract_pickles(mols).blobs)
 
 
 ARMS = [
     ("extract()                    BOUNDARY, old", a_extract),
     ("extract_pickles()            python half", a_pickles_only),
+    ("  of which: ToBinary, no rings", a_pickles_no_rings),
+    ("  of which: the ring CSR alone", a_rings_only),
     ("extract_pickles + parse      BOUNDARY, new", a_pickle_boundary),
+    ("lean pickle + python charges  NOT TAKEN", a_hybrid),
     ("featurize_blocks reader=api  END TO END", a_blocks_api),
     ("featurize_blocks reader=pickle END TO END", a_blocks_pickle),
 ]
@@ -144,15 +174,14 @@ def main() -> int:
     p = np.asarray(parse_us)
     print(f"  {'(MolFromSmiles, not in any arm)':44s} {p.mean():9.2f} {p.std(ddof=1):8.2f}")
 
-    old = np.asarray(times[ARMS[0][0]]).mean()
-    new = np.asarray(times[ARMS[2][0]]).mean()
-    e_old = np.asarray(times[ARMS[3][0]]).mean()
-    e_new = np.asarray(times[ARMS[4][0]]).mean()
+    mean = {name: float(np.asarray(times[name]).mean()) for name, _ in ARMS}
+    old, new = mean[ARMS[0][0]], mean[ARMS[4][0]]
+    e_old, e_new = mean[ARMS[6][0]], mean[ARMS[7][0]]
     print(f"\n  boundary   {old:7.2f} -> {new:7.2f} us/mol   ({old / new:.2f}x)")
     print(f"  end to end {e_old:7.2f} -> {e_new:7.2f} us/mol   ({e_old / e_new:.2f}x)")
 
     mols = [Chem.MolFromSmiles(s) for s in pick]
-    blobs = extract_pickles(mols)
+    blobs = extract_pickles(mols).blobs
     print(f"\n  pickle size: mean {np.mean([len(b) for b in blobs]):.0f} bytes/mol, "
           f"max {max(len(b) for b in blobs)}")
     return 0

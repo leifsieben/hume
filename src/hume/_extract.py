@@ -23,6 +23,18 @@ LAYOUT. One batch is a set of flat arrays plus offsets, so N molecules cross the
 call. Per-atom integer properties share one (n_atoms, 8) C-contiguous block and per-atom doubles
 one (n_atoms, 2) block, because the extension reads them by row and one allocation beats twelve.
 
+A CONTRACT ON THE CALLER: THE MOLECULE MUST BE THE HYDROGEN-SUPPRESSED ONE. Molecules are taken
+exactly as given here; nothing calls `Chem.RemoveHs`. mordred computes RingCount (49),
+TopologicalCharge (21) and PathCount (11) on `Chem.RemoveHs(mol)`, because every one of those
+descriptors has `explicit_hydrogens = False`. `Chem.MolFromSmiles` already suppresses hydrogens,
+and on all 100,000 molecules of cpp/hard.smi `RemoveHs` is then the identity -- the only explicit
+hydrogen there is isotopic, which plain `RemoveHs` keeps -- so nothing changes today. A molecule
+that arrives from `Chem.AddHs` or out of an SDF is a different graph, and those 81 columns will
+disagree with mordred for it. (PathCount alone is insulated: `pathcount::build_from_rows` applies
+mordred's `useHs=False` itself, because `Chem.FindAllPathsOfLengthN` takes that by default and
+mordred never passes it -- so hydrogens are invisible to PathCount while RingCount and
+TopologicalCharge would see them. That asymmetry is mordred's, and it is reproduced, not fixed.)
+
     atom_off  int32   (n_mol + 1,)   atoms of molecule k are [atom_off[k] : atom_off[k+1]]
     bond_off  int32   (n_mol + 1,)
     chg_ok    int32   (n_mol,)       0 = Gasteiger unavailable, charges are 0.0
@@ -32,6 +44,7 @@ one (n_atoms, 2) block, because the extension reads them by row and one allocati
     bond_i    int32   (n_bonds, 5)   u, v, conjugated, in-ring, SMARTS bond code
     bond_s    int32   (n_bonds,)     E/Z as +/-1, 0 for none
     bond_d    float64 (n_bonds,)     bond order
+    rings                            the ring SET as a two-level CSR; see `Rings` below
 
 Hybridisation is passed through as RDKit's enum value rather than re-derived, for the reason
 export_predict.py gives: HallKierAlpha indexes a per-element table by (hybridisation - 2), and
@@ -116,6 +129,27 @@ _GASTEIGER = "_GasteigerCharge"
 
 
 @dataclass(frozen=True)
+class Rings:
+    """The ring SET, as a two-level CSR. Atom indices are LOCAL to their molecule.
+
+        ring_moff  int32 (n_mol + 1,)     rings of molecule k are [ring_moff[k] : ring_moff[k+1])
+        ring_ptr   int32 (n_rings + 1,)   atoms of ring r are ring_at[ring_ptr[r] : ring_ptr[r+1]]
+        ring_at    int32 (n_ring_atoms,)
+
+    WHY THIS IS NOT `atom_i`'s `nring` COLUMN. That column is a per-atom COUNT and answers SMARTS
+    `[R2]`, which is all the 182 blocks and the Crippen typer ask. Every one of RingCount's 49
+    columns is a predicate on a RING -- its size, whether ALL its atoms are aromatic, whether ANY
+    is a heteroatom -- and its 28 fused columns need |Ri & Rj| for every ring pair. Benzene and
+    cyclohexane have identical `nring` vectors and differ on 6 of the 49, so no count can stand
+    in for the set. It is not a second perception either: both come from the one ring perception
+    RDKit did at sanitisation. See src/hume/_rings.py.
+    """
+    ring_moff: np.ndarray
+    ring_ptr: np.ndarray
+    ring_at: np.ndarray
+
+
+@dataclass(frozen=True)
 class Batch:
     """Flat arrays for N molecules. See the module docstring for the layout."""
     atom_off: np.ndarray
@@ -126,10 +160,37 @@ class Batch:
     bond_i: np.ndarray
     bond_s: np.ndarray
     bond_d: np.ndarray
+    rings: Rings
 
     @property
     def n_mol(self) -> int:
         return len(self.chg_ok)
+
+
+def _rings_csr(mols) -> Rings:
+    """The ring CSR for a batch, from src/hume/_rings.py -- the module that ships.
+
+    ONE SOURCE OF RINGS FOR BOTH BOUNDARIES, and that is a decision rather than an accident. The
+    pickle carries RDKit's RingInfo and src/hume_core/molpickle.h can already parse it, so the
+    pickle path COULD take its rings from the blob for free. It does not, because the blob
+    carries RDKit's RAW answer and `rings_for` returns a REPAIRED one: `Chem.GetSymmSSSR` is not
+    a function of the graph, and 32 molecules in 100,000 get a different ring set depending on
+    the order they are presented in. Two boundaries sourcing rings from genuinely different
+    places, agreeing by argument rather than by construction, is how 49 columns go quietly wrong.
+    The ~4 us/mol this costs the pickle path is under 2% of the end-to-end figure, and the
+    `Sink::ring_at` hooks in molpickle.h stay in place, unused, if that ever stops being true.
+    """
+    from ._rings import rings_for
+
+    moff, ptr, at = [0], [0], []
+    for m in mols:
+        rs = rings_for(m)
+        for r in rs:
+            at.extend(r)
+            ptr.append(len(at))
+        moff.append(len(ptr) - 1)
+    return Rings(np.asarray(moff, dtype=np.int32), np.asarray(ptr, dtype=np.int32),
+                 np.asarray(at, dtype=np.int32))
 
 
 def extract(mols) -> Batch:
@@ -139,6 +200,7 @@ def extract(mols) -> Batch:
     did. `None` is rejected loudly rather than skipped, because a silently dropped molecule turns
     a row index into a lie, and every consumer of this array indexes by position.
     """
+    mols = list(mols)
     atom_off, bond_off, chg_ok = [0], [0], []
     z: list[int] = []
     deg: list[int] = []
@@ -269,6 +331,7 @@ def extract(mols) -> Batch:
         bond_i=bond_i,
         bond_s=np.asarray(bs, dtype=np.int32),
         bond_d=np.asarray(bd, dtype=np.float64),
+        rings=_rings_csr(mols),
     )
 
 
@@ -301,13 +364,28 @@ _PICKLE_FLAGS = (Chem.PropertyPickleOptions.PrivateProps
 _to_binary = Chem.Mol.ToBinary
 
 
-def extract_pickles(mols) -> list:
+@dataclass(frozen=True)
+class Pickles:
+    """The pickle boundary: one blob per molecule, plus the ring CSR the blob does not carry.
+
+    `rings` is here for the same reason it is on `Batch`, from the same `rings_for()`, and the
+    two are trivially equal by construction -- which cpp/verify_molpickle.py asserts anyway.
+    """
+    blobs: list
+    rings: Rings
+
+    def __len__(self) -> int:
+        return len(self.blobs)
+
+
+def extract_pickles(mols) -> Pickles:
     """Serialise molecules for the C++ reader. The Python half of the pickle boundary.
 
-    Returns one `bytes` per molecule, in order. Same contract as `extract()`: `None` is rejected
-    loudly rather than skipped, and the two RDKit computations that `extract()` performs happen
-    here in the same order, because both are inputs the blob has to carry.
+    Same contract as `extract()`: `None` is rejected loudly rather than skipped, and the two
+    RDKit computations that `extract()` performs happen here in the same order, because both are
+    inputs the blob has to carry.
     """
+    mols = list(mols)
     out = []
     for k, m in enumerate(mols):
         if m is None:
@@ -322,7 +400,7 @@ def extract_pickles(mols) -> list:
             m.ClearComputedProps()
         Chem.AssignStereochemistry(m, cleanIt=True, force=True)
         out.append(_to_binary(m, _PICKLE_FLAGS))
-    return out
+    return Pickles(out, _rings_csr(mols))
 
 
 def _check_pickle_version() -> None:
@@ -348,4 +426,5 @@ def _empty() -> Batch:
     z32, z64 = np.zeros(0, np.int32), np.zeros(0, np.float64)
     return Batch(np.zeros(1, np.int32), np.zeros(1, np.int32), z32,
                  z32.reshape(0, N_ATOM_INT), z64.reshape(0, N_ATOM_DBL),
-                 z32.reshape(0, N_BOND_INT), z32, z64)
+                 z32.reshape(0, N_BOND_INT), z32, z64,
+                 Rings(np.zeros(1, np.int32), np.zeros(1, np.int32), z32))

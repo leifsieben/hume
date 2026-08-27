@@ -251,12 +251,26 @@ struct Work {
 };
 
 //! Where one molecule's fields land. Column meanings are bindings.cpp's A_* / B_* enums.
+//
+// THE RING LISTS ARE OPTIONAL AND THEY ARE NOT IN THE BOUNDARY ARRAYS AT ALL. `atom_i` carries
+// a per-atom ring COUNT and `bond_i` a per-bond in-ring flag, which is everything the 182 blocks
+// and the Crippen typer ask. RingCount asks a different question -- it needs the rings
+// themselves, `Chem.GetSymmSSSR(mol)`, because `nG12FAHRing` is about a fused system's size and
+// heteroatom content and no per-atom count can answer that. Those lists are already in the
+// pickle (RDKit writes RingInfo's atom rings), so the pickle path can hand them over for free
+// where src/hume/_extract.py would need a whole new pair of arrays and another Python pass.
+// Pass nullptr for both and nothing changes for the callers that do not want them.
 struct Sink {
   int *atom_i;      // (n, 9)  Z, deg, nH, fchg, hyb, arom, ring, cip, nring
   double *atom_d;   // (n, 2)  mass, gasteiger
   int *bond_i;      // (nb, 5) u, v, conjugated, in-ring, SMARTS bond code
   int *bond_s;      // (nb,)   E/Z as +/-1
   double *bond_d;   // (nb,)   bond order
+  // Appended to, not written by index. The molecule's ring count is the growth of `ring_len`
+  // across the parse() call; its rings are the corresponding runs of LOCAL atom indices in
+  // `ring_at`. Both must be given together or not at all.
+  std::vector<int32_t> *ring_at = nullptr;
+  std::vector<int32_t> *ring_len = nullptr;
 };
 
 inline void peek_sizes(const std::uint8_t *buf, std::size_t len, int &n_atoms, int &n_bonds) {
@@ -453,6 +467,10 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
               }
             }
             if (!found) throw Error("ring names two atoms with no bond between them");
+          }
+          if (out.ring_at) {
+            out.ring_at->insert(out.ring_at->end(), w.ring.begin(), w.ring.end());
+            out.ring_len->push_back(sz);
           }
         }
         break;

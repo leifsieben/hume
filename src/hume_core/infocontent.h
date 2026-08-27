@@ -31,10 +31,16 @@
 //      order, which is `GetNeighbors()` order, which is atom numbering. So the tree -- and every
 //      code built from it -- depends on how the atoms happen to be numbered.
 //
-// MEASURED CONSEQUENCE: 20.4% of the 100,000 molecules in cpp/hard.smi change at least one
-// InformationContent column when the atoms are renumbered with `Chem.RenumberAtoms`. There is
-// nothing there to be bit-exact against, and "we reproduce mordred" would be a claim about a
-// coin flip.
+// MEASURED CONSEQUENCE: on the first 2,000 molecules of cpp/hard.smi, 32.3% change at least one
+// InformationContent column under a single perturbation of the input ORDER -- 15.6% under
+// `Chem.RenumberAtoms` alone, and 28.0% once the BOND LIST is shuffled as well, with 16.8% of
+// the corpus visible ONLY to the bond-order screen. (Full-corpus numbers are in the
+// cpp/verify_ic.py report; the shape does not change.) There is nothing there to be bit-exact
+// against, and "we reproduce mordred" would be a claim about a coin flip.
+//
+// AND NOTE WHICH SCREEN FINDS WHAT. `Chem.RenumberAtoms` permutes atoms and LEAVES THE BOND
+// LIST ALONE, so an atom-only screen under-samples anything that reads bonds in order -- which
+// includes RDKit's ring perception. Half of mordred's instability here is invisible to it.
 //
 // ------------------------------------------------------------------------------------------
 // THE WORKED EXAMPLE. This is the evidence that what follows is a repair and not a discrepancy.
@@ -63,10 +69,16 @@
 //   bonds never become single or double. Which of mordred's two values we land on is not the
 //   point and is not always either of them; the point is that there is exactly one.
 //
-//   AND THE CONVERSE CONTROL: an ACYCLIC molecule has no aromatic bond (defect 1 cannot fire)
-//   and cannot have two adjacent atoms at equal distance from any root (defect 2 cannot fire),
-//   so on acyclic molecules this file must agree with mordred EXACTLY at every order. That is
-//   checked on the corpus by cpp/verify_ic.py rather than argued.
+//   AND THE CONVERSE CONTROL, which is what turns "we differ" into a characterisation instead
+//   of a count. An ACYCLIC molecule has no aromatic bond (R1 cannot fire) and cannot have two
+//   adjacent atoms at equal distance from any root -- that needs a cycle -- so R2 cannot fire
+//   either. On acyclic molecules this file must therefore agree with mordred EXACTLY at every
+//   order, MIC on isotope-labelled molecules excepted, since R3 is a third mechanism and is
+//   independent of topology. And a molecule with a ring but no aromatic bond must agree at
+//   ORDER 1 and may differ from order 2 up, because that is exactly where R2 starts. Both are
+//   checked over the whole corpus by cpp/verify_ic.py rather than argued. (The MIC exception is
+//   not a licence taken in advance: the first run of the acyclic control FAILED on 4 molecules,
+//   every one of them MIC and every one carrying a [13C] or [15N].)
 //
 // ------------------------------------------------------------------------------------------
 // THE RESOLUTION IMPLEMENTED HERE -- decided by the project owner, recorded in PORT_STATUS.md
@@ -101,8 +113,11 @@
 //     splits it into "mordred was unstable here anyway" and "mordred was stable and we still
 //     differ"; see its docstring for the numbers and the characterisation of the second set.
 //   * WHAT IS CLAIMED INSTEAD OF EXACTNESS IS DETERMINISM, and it is demonstrated rather than
-//     asserted: identical output for every column on every molecule under random renumbering
-//     and canonical-SMILES round trip.
+//     asserted: bit-identical output for every column on every molecule of cpp/hard.smi under
+//     three random atom renumberings, three permutations that ALSO SHUFFLE THE BOND LIST, and a
+//     canonical-SMILES round trip. The bond-order half is not optional -- `Chem.RenumberAtoms`
+//     leaves the bond list alone, so an atom-only screen cannot see anything that reads bonds in
+//     order, and a determinism claim made against it is provisional.
 //
 // ============================================================================================
 // WHAT IS *NOT* CHANGED, AND THE ARITHMETIC THAT IS REPRODUCED EXACTLY
@@ -141,68 +156,93 @@
 // Ipc / AvgIpc -- rdkit/Chem/GraphDescriptors.py, a DIFFERENT graph and a DIFFERENT problem
 // ============================================================================================
 //
-// *** OPEN BUG, DIAGNOSED 2026-08-27, NOT YET FIXED. Ipc / AvgIpc / Log2Ipc ONLY -- the 42
-// *** mordred InformationContent columns below are unaffected and are deterministic.
-//
-// Our Ipc is NUMBERING-DEPENDENT on 56 of 2,000 corpus molecules (2.8%). RDKit's is NOT, and
-// RDKit's is CORRECT. That combination rules out the comfortable explanation, so it is written
-// down here rather than left as "a floating-point difference":
-//
-//   * RDKit stable: 6 random renumberings of the example below give ONE value, 3597222335.9511533.
-//   * RDKit correct: exact integer Faddeev-Le Verrier over the same adjacency matrix gives
-//     AvgIpc = 3.78859017853964 against RDKit's 3.7885901785396405 -- agreement to ~1e-15.
-//   * So OURS is the one that moves, and ours is the one that is wrong.
-//
-//   example: CC(=O)OC1CC2(C)C3(CO3)C1OC1C=C(C)C(=O)C(O)C12CO.CCCCCCCCCCCCCCCCCCl.CO
-//            44 heavy atoms, THREE FRAGMENTS.
-//
-// AND THE OVERFLOW STORY DOES NOT APPLY HERE. The largest |coefficient| for that molecule is 9
-// DIGITS -- comfortably inside double -- so the power-of-two rescaling described below should
-// never engage, and the accuracy budget is not the explanation. Suspect the rescaling triggering
-// spuriously, or the disconnected-graph path: the char poly of a disconnected graph is the
-// PRODUCT of its fragments' polynomials, and a fragment loop is exactly where an atom-order
-// dependence would enter. Note 339 of the 2,000 are multi-fragment while only 56 are unstable,
-// so being disconnected is not sufficient on its own -- size interacts with it.
-//
-// The determinism check that finds these lives in cpp/verify_ic.py ("1. DETERMINISM"), and the
-// exact-integer oracle to check a candidate fix against is the Faddeev recurrence stated
-// correctly: M_0 = 0, c_0 = 1, M_k = A M_{k-1} + c_{k-1} I, c_k = -tr(A M_k)/k. Getting that
-// recurrence subtly wrong (seeding M_1 = A, or taking tr(M) instead of tr(A M)) produces
-// plausible 24-digit coefficients and a confidently wrong answer.
-//
 //   adjMat = (GetDistanceMatrix(mol, 0) == 1)      <- HYDROGEN-SUPPRESSED, unlike everything
 //   cPoly  = abs(CharacteristicPolynomial(mol, adjMat))       above
 //   Ipc    = sum(cPoly) * InfoEntropy(cPoly)
 //   AvgIpc =                InfoEntropy(cPoly)
 //
-// CharacteristicPolynomial is Le Verrier-Faddeev-Frame and returns n+1 coefficients, leading 1
-// first. InfoEntropy is rdInfoTheory's C++ one: normalise by the sum, skip zero entries, natural
-// log divided by log 2.
+// rdkit/Chem/Graphs.py's CharacteristicPolynomial is Le Verrier-Faddeev-Frame in FLOATING POINT
+// and returns n+1 coefficients, leading 1 first. InfoEntropy is rdInfoTheory's C++ one:
+// normalise by the sum, SKIP ZERO ENTRIES, natural log divided by log 2.
 //
-// THE NUMERICS. The coefficients are integers that grow roughly like the number of k-matchings,
-// and BOTH the coefficients and the Faddeev iterate matrix overflow IEEE double for molecules
-// that are entirely ordinary. Measured on cpp/hard.smi -- see cpp/verify_ic.py for the run:
+// --------------------------------------------------------------------------------------------
+// Ipc IS A THIRD ILL-POSED DESCRIPTOR, AND THIS ONE IS RDKIT'S. Measured, on cpp/hard.smi.
+// --------------------------------------------------------------------------------------------
 //
-//     RDKit's Ipc goes non-finite at (see verify log; smallest overflowing heavy-atom count and
-//     the fraction of the corpus affected are printed by `verify_ic.py ipc`).
+// THE COEFFICIENTS ARE INTEGERS. det(xI - A) for a 0/1 adjacency matrix is monic with integer
+// coefficients, and every tr(A M_k)/k in the recurrence is an exact integer. A double holds
+// integers exactly up to 2^53 and not one bit further, so the whole question is how many bits
+// the coefficients need. Measured exactly, by running the recurrence in Python integers:
 //
-// WHAT THIS FILE DOES ABOUT IT, and it is not "return inf quietly":
-//   * The Faddeev iterate and the running coefficient are RESCALED BY A POWER OF TWO whenever
-//     they threaten to overflow. The recurrence M_k = A(M_{k-1} + c_{k-1} I), c_k = -tr(M_k)/k
-//     is HOMOGENEOUS in the pair (M_{k-1}, c_{k-1}), so scaling both by s scales every later
-//     coefficient by exactly s and nothing else changes. Each coefficient is therefore kept as
-//     (mantissa, binary exponent) and log2|c_k| is always finite and always exact to the working
-//     precision. Powers of two are used so the rescaling itself introduces no rounding.
-//   * AVGIPC IS COMPUTED FROM THE LOGS, via a max-subtracted softmax, so it NEVER overflows and
-//     is defined on every molecule in the corpus. AvgIpc is the column that survives dedupe.
-//   * IPC = sum(cPoly) * AvgIpc is returned exactly when it is representable. Past that it
-//     SATURATES AT DBL_MAX and the row's `ipcOverflow` flag is set -- it is never silently inf
-//     -- and `Log2Ipc`, which is exact and finite everywhere, is emitted as a third column
-//     beside it so no information is lost at the boundary.
-//   * DOUBLE PRECISION IS ITSELF A LIMIT, separately from overflow: the coefficients are exact
-//     integers with more than 53 bits long before they reach 1e308. cpp/verify_ic.py checks the
-//     double answer against exact integer Faddeev-Le Verrier and reports the heavy-atom count at
-//     which AvgIpc's relative error passes 1e-9. RDKit has the same limit and does not say so.
+//     heavy atoms      20    30    40    50    55    60    65    70
+//     max |c_k| bits   13    20    27    33    37    39    44    48
+//
+// -- about 0.7 bits per atom. It crosses 53 at roughly 75 atoms, and cpp/hard.smi runs to 245.
+//
+// PAST THAT POINT RDKIT'S OWN ANSWER MOVES WITH THE ATOM NUMBERING, because the coefficients
+// come out of a trace after catastrophic cancellation and the cancellation pattern is a
+// function of the numbering. Six random renumberings of one molecule, RDKit's AvgIpc:
+//
+//      n =  65    one value      (coefficients still exact; agrees with exact integers)
+//      n =  70    6 values, agreeing to 9 significant figures
+//      n = 100    6 values, 1.5217 .. 1.5548
+//      n = 199    6 values, 0.6905 .. 1.5129        <- a factor of 2.2 apart
+//      n = 245    6 values, 1.6720 .. 1.6831
+//
+// So `AvgIpc` fails PORT_STATUS.md house rule 1's test -- is it a function of the molecule? --
+// for every molecule above about 70 heavy atoms, which is 2.9% of cpp/hard.smi. Reproducing
+// RDKit bit-for-bit there would again be reproducing a coin flip.
+//
+// AND OVERFLOW IS NOT THE PROBLEM, contrary to what this file said before it was measured.
+// Over all 100,000 molecules RDKit's Ipc is FINITE EVERY TIME: 100000 finite, 0 inf, 0 nan,
+// largest 1.65e88 at n = 245, against a double's 1.8e308. The failure is PRECISION and it
+// starts an order of magnitude sooner than overflow would. Anyone reaching for `AvgIpc`
+// "because Ipc overflows" has the right conclusion for the wrong reason.
+//
+// --------------------------------------------------------------------------------------------
+// THE RESOLUTION: COMPUTE THE COEFFICIENTS EXACTLY. They are integers, so this is available.
+// --------------------------------------------------------------------------------------------
+//
+// The Faddeev recurrence needs only THREE operations on the big values -- add, subtract, and
+// exact division by a small integer k <= n. There is no big multiplication anywhere, because A
+// is the adjacency matrix and `A M` is one ROW ADDITION per bond. So `bigCharPoly()` below runs
+// the recurrence in fixed-width two's-complement multiword integers, with the word count chosen
+// ADAPTIVELY: it starts at one 64-bit word, watches every addition for signed overflow, and
+// restarts with twice the width if any addition overflows. Small molecules therefore pay
+// single-word arithmetic -- the common case is not slowed down to pay for the tail.
+//
+// WHAT THAT BUYS, and each of these is checked on the corpus by cpp/verify_ic.py:
+//   * DETERMINISTIC everywhere. Integer arithmetic has no cancellation error to depend on an
+//     ordering, so the coefficients are the same whatever order the atoms or the bonds arrive in.
+//   * BIT-IDENTICAL TO RDKIT wherever RDKit is right. When the largest |c_k| fits in 60 bits the
+//     scale factor below is 1, the exact integers convert to double exactly, and the entropy is
+//     then computed with RDKit's own formula in RDKit's own order. Measured on the first 2,000
+//     of cpp/hard.smi: of the 1,950 molecules whose coefficients fit in 53 bits, 1,940 agree
+//     with RDKit TO THE LAST BIT.
+//   * AND THE TEN THAT DO NOT ARE RDKIT'S ERROR, not ours -- checked against exact integer
+//     arithmetic one by one rather than waved at. Ours is within 1.6e-15 of the exact answer on
+//     every one of them; RDKit is out by up to 1.02e-2. The reason is that COEFFICIENT width is
+//     not the right predictor: RDKit's Faddeev ITERATE MATRIX crosses 2^53 well before the final
+//     coefficients do, so RDKit stops being exact earlier than "max |c_k| <= 2^53" suggests.
+//     This is why the claim above is stated as a measurement and not as a theorem.
+//   * CORRECT past that, where RDKit is not.
+//
+// THE SCALE FACTOR. Entropy is invariant under a common scaling of its arguments, so the
+// coefficients are converted to double divided by 2^E with E = max(0, maxbits - 60). That keeps
+// every double in range no matter how large the integers get, costs nothing when E = 0 (which is
+// what preserves the bit-identity above), and is exact because it is a power of two.
+//
+// IPC ITSELF is sum(cPoly) * AvgIpc, which is 2^E * (sum of the scaled doubles) * AvgIpc. It is
+// returned exactly when it is representable; if it ever were not, it SATURATES AT DBL_MAX and
+// the row's `ipcOverflow` flag is set -- never a silent inf -- and `Log2Ipc` is emitted as a
+// third column, finite for every molecule, so nothing is lost at the boundary. On cpp/hard.smi
+// the saturation never fires; it exists because "it did not happen on this corpus" is not the
+// same claim as "it cannot happen".
+//
+// THE ONE TRAP, since it produces plausible 24-digit coefficients and a confidently wrong
+// oracle: the recurrence is M_0 = 0, c_0 = 1, M_k = A M_{k-1} + c_{k-1} I, c_k = -tr(A M_k)/k.
+// Seeding M_1 = A with c_1 = -tr(A) is the SAME recurrence shifted by one step and is fine;
+// taking tr(M) instead of tr(A M) at the matching step is not.
 //
 // ============================================================================================
 // WHAT THE CALLER MUST SUPPLY -- all of it already exists at bindings.cpp's boundary
@@ -235,9 +275,40 @@
 // as an ordinary Z=1 heavy row and is not double counted. That correspondence is checked
 // per molecule by cpp/verify_ic.py against the real `Chem.AddHs` graph.
 //
+// --------------------------------------------------------------------------------------------
+// WIRING. Not done here -- bindings.cpp and hume_blocks.h are owned by other agents right now --
+// so this is the instruction rather than the edit. It is four small pieces and no new inputs.
+//
+//   1. bindings.cpp, next to `crippen_fill`: fill an `infoic::Mol` from the SAME `AI` / `BI`
+//      pointers that loop already walks. Per atom take columns A_Z, A_NH, A_FCHG, A_AROM; per
+//      bond take B_U, B_V, B_CODE and `BD[b0 + b]`. Nothing else is needed, and nothing new has
+//      to cross the boundary -- note in particular that `hume_blocks.h`'s own `Mol` does NOT
+//      carry the SMARTS bond code, so read it from `BI` directly as crippen_fill does, rather
+//      than adding a field there.
+//
+//   2. `u` MUST STAY THE BEGIN ATOM and `v` the end atom. That is the only thing that tells a
+//      dative bond's donor from its acceptor, and the donor is the one whose valence the bond
+//      does not count towards. _extract.py already fills them that way; a loop that normalises
+//      to (min, max) would silently change B for every molecule with a dative bond.
+//
+//   3. Call `infoic::selfCheck()` once at module load, beside `criptyper::selfCheck()` and
+//      `esttyper::selfCheck()`. It checks the generated tables, the numpy summation order, and
+//      -- the one that matters -- that the worked example is still invariant under all 36
+//      transpositions of its atoms.
+//
+//   4. Hoist one `infoic::CodeBuilder` outside the per-molecule loop and pass it to
+//      `compute(m, row, &cb)`. It is scratch only; it memoises nothing across molecules, so this
+//      changes no value. Without it every molecule pays four vector allocations.
+//
+//   Column names come from `infoic::columnNames()`. 33 of the 42 InformationContent columns and
+//   `AvgIpc` are the ones that survive data/dedupe.json; `Ipc` and `Log2Ipc` are emitted beside
+//   `AvgIpc` because dropping a column that is already computed would violate house rule 7 the
+//   moment the dedupe is rerun at another threshold.
+//
 //   #include "infocontent.h"
 //   infoic::selfCheck();                       // once, at module load
-//   infoic::Row r; infoic::compute(mol, r);    // 45 doubles, names in infoic::COLS
+//   infoic::CodeBuilder cb;                    // once, outside the loop
+//   infoic::Row r; infoic::compute(mol, r, &cb);   // 45 doubles, names in columnNames()
 //
 #ifndef HUME_INFOCONTENT_H
 #define HUME_INFOCONTENT_H
@@ -282,6 +353,9 @@ inline const char *const *columnNames() {
 struct Row {
   double v[N_COLS];
   bool ipcOverflow = false;   // Ipc saturated at DBL_MAX; Log2Ipc is still exact
+  int ipcMaxCoeffBits = 0;    // bit length of the largest EXACT char-poly coefficient. Above 53
+                              // RDKit's own double arithmetic has stopped being exact; the
+                              // harness reports the distribution rather than assuming a cutoff.
 };
 
 // --------------------------------------------------------------------------------------------
@@ -525,71 +599,186 @@ class CodeBuilder {
 };
 
 // --------------------------------------------------------------------------------------------
-// Ipc: Le Verrier-Faddeev-Frame with power-of-two rescaling, on the HYDROGEN-SUPPRESSED graph.
-// Returns log2|c_k| for k = 0..n; zero coefficients come back as -infinity and are skipped by
-// the entropy, which is what rdInfoTheory's `if (tPtr[i])` does.
+// Ipc: EXACT INTEGER Le Verrier-Faddeev-Frame on the HYDROGEN-SUPPRESSED graph. See the header
+// comment for why exact and not floating point: the coefficients are integers that outgrow a
+// double at around 75 heavy atoms, and RDKit's own answer moves with the atom numbering above
+// that. Zero coefficients are skipped by the entropy, which is what rdInfoTheory's
+// `if (tPtr[i])` does.
 // --------------------------------------------------------------------------------------------
-inline void charPolyLog2Abs(const Mol &m, std::vector<double> &log2abs) {
-  const int n = m.n;
-  log2abs.assign(n + 1, -std::numeric_limits<double>::infinity());
-  log2abs[0] = 0.0;                                     // leading coefficient is exactly 1
-  if (n == 0) return;
-  std::vector<double> M((size_t)n * n, 0.0), T((size_t)n * n, 0.0);
-  for (int b = 0; b < m.nb; b++) {                      // adjacency: dMat == 1, so unweighted
-    M[(size_t)m.bu[b] * n + m.bv[b]] = 1.0;
-    M[(size_t)m.bv[b] * n + m.bu[b]] = 1.0;
+// Fixed-width two's-complement multiword integers. Only what the recurrence needs: add with
+// signed-overflow detection, negate, and exact division by a small positive integer. No
+// multiplication -- `A M` is a row addition per bond, which is the whole reason exact arithmetic
+// is affordable here. Limbs are 64-bit, little endian, and the carry is done in plain C++ rather
+// than __int128 so this stays portable C++17.
+namespace big {
+
+inline bool add(uint64_t *d, const uint64_t *s, int W) {
+  const uint64_t ds = d[W - 1] >> 63, ss = s[W - 1] >> 63;
+  uint64_t carry = 0;
+  for (int i = 0; i < W; i++) {
+    const uint64_t a = d[i], b = s[i];
+    const uint64_t t = a + b;
+    const uint64_t c1 = (uint64_t)(t < a);
+    const uint64_t t2 = t + carry;
+    carry = c1 | (uint64_t)(t2 < t);
+    d[i] = t2;
   }
-  double cprev = 0.0;                                   // M_1 = A, c_1 = -tr(A) = 0
-  for (int i = 0; i < n; i++) cprev -= M[(size_t)i * n + i];
-  int E = 0;                                            // running binary scale of (M, cprev)
-  log2abs[1] = cprev == 0.0 ? -std::numeric_limits<double>::infinity() : std::log2(std::fabs(cprev));
-  for (int k = 2; k <= n; k++) {
-    double mx = std::fabs(cprev);
-    for (size_t q = 0; q < M.size(); q++) mx = std::max(mx, std::fabs(M[q]));
-    if (mx > 1.0e150) {
-      // Powers of two only, so the rescale is exact. The recurrence is homogeneous in the pair
-      // (M, c_prev), so this scales every LATER coefficient by the same factor and nothing else.
-      const int e = std::ilogb(mx);
-      const double s = std::ldexp(1.0, -e);
-      for (size_t q = 0; q < M.size(); q++) M[q] *= s;
-      cprev *= s;
-      E += e;
-    }
-    for (int i = 0; i < n; i++) M[(size_t)i * n + i] += cprev;     // M + c_{k-1} I
-    std::fill(T.begin(), T.end(), 0.0);                            // T = A * M
-    for (int b = 0; b < m.nb; b++) {                    // A is the adjacency: one row-add per bond
-      const int u = m.bu[b], v = m.bv[b];
-      double *tu = &T[(size_t)u * n], *tv = &T[(size_t)v * n];
-      const double *mu = &M[(size_t)u * n], *mv = &M[(size_t)v * n];
-      for (int j = 0; j < n; j++) { tu[j] += mv[j]; tv[j] += mu[j]; }
-    }
-    M.swap(T);
-    double tr = 0.0;
-    for (int i = 0; i < n; i++) tr += M[(size_t)i * n + i];
-    const double ck = -tr / (double)k;
-    log2abs[k] = ck == 0.0 ? -std::numeric_limits<double>::infinity()
-                           : std::log2(std::fabs(ck)) + (double)E;
-    cprev = ck;
-  }
+  return (ds == ss) && ((d[W - 1] >> 63) != ds);      // signed overflow
 }
 
-// InfoEntropy over values given by their log2, plus log2 of their sum. Max-subtracted, so it is
-// finite for every molecule regardless of how large the coefficients are.
-inline void entropyFromLog2(const std::vector<double> &l, double &entropy, double &log2sum) {
-  double mx = -std::numeric_limits<double>::infinity();
-  for (double x : l) if (std::isfinite(x)) mx = std::max(mx, x);
-  if (!std::isfinite(mx)) { entropy = 0.0; log2sum = -std::numeric_limits<double>::infinity(); return; }
-  double t = 0.0;
-  for (double x : l) if (std::isfinite(x)) t += std::exp2(x - mx);
-  const double log2t = std::log2(t);
-  double acc = 0.0;
-  for (double x : l) {
-    if (!std::isfinite(x)) continue;                 // rdInfoTheory skips zero entries
-    const double lp = (x - mx) - log2t;              // log2 p
-    acc -= std::exp2(lp) * lp;
+inline bool isNeg(const uint64_t *x, int W) { return (x[W - 1] >> 63) != 0; }
+
+// Two's complement negate. Returns true on the one input it cannot represent, the most negative
+// value, which is a width overflow like any other and must widen rather than wrap.
+inline bool negate(uint64_t *x, int W) {
+  const uint64_t was = x[W - 1] >> 63;
+  bool zero = true;
+  for (int i = 0; i < W; i++) if (x[i]) zero = false;
+  uint64_t carry = 1;
+  for (int i = 0; i < W; i++) {
+    const uint64_t t = ~x[i] + carry;
+    carry = (carry && t == 0) ? 1 : 0;
+    x[i] = t;
   }
-  entropy = acc;
-  log2sum = mx + log2t;
+  return !zero && ((x[W - 1] >> 63) == was);
+}
+
+// x /= k, exact, k in [1, 2^32). Sign-magnitude round trip; the caller guarantees divisibility.
+inline void divSmall(uint64_t *x, uint64_t k, int W) {
+  const bool neg = isNeg(x, W);
+  if (neg) negate(x, W);
+  uint64_t r = 0;
+  for (int i = W - 1; i >= 0; i--) {
+    const uint64_t hi = x[i] >> 32, lo = x[i] & 0xffffffffULL;
+    uint64_t cur = (r << 32) | hi;
+    const uint64_t qh = cur / k;
+    r = cur % k;
+    cur = (r << 32) | lo;
+    const uint64_t ql = cur / k;
+    r = cur % k;
+    x[i] = (qh << 32) | ql;
+  }
+  if (neg) negate(x, W);
+}
+
+// |x| -> a correctly-rounded double times 2^(-scaleExp), and the bit length of |x|.
+// The 64-bit window plus a sticky bit is what makes the double conversion correctly rounded
+// instead of merely close.
+inline double toScaledDouble(const uint64_t *x, int W, int scaleExp, int *bitlen) {
+  uint64_t mag[64];
+  for (int i = 0; i < W; i++) mag[i] = x[i];
+  if (isNeg(x, W)) negate(mag, W);
+  int top = -1;
+  for (int i = W - 1; i >= 0; i--)
+    if (mag[i]) { top = i; break; }
+  if (top < 0) { if (bitlen) *bitlen = 0; return 0.0; }
+  int hb = 63;
+  while (hb >= 0 && !((mag[top] >> hb) & 1ULL)) hb--;
+  const int bits = top * 64 + hb + 1;
+  if (bitlen) *bitlen = bits;
+  // Assemble the top 64 bits of the magnitude, with a STICKY bit for everything below, so the
+  // conversion to double is correctly rounded rather than merely close. In both branches
+  // |x| == win * 2^shift exactly (up to the sticky bit).
+  const int shift = bits - 64;
+  uint64_t win;
+  bool sticky = false;
+  if (shift <= 0) {
+    win = mag[0] << (-shift);                  // bits <= 64, so limb 0 holds all of it
+  } else {
+    const int wi = shift / 64, bo = shift % 64;
+    win = mag[wi] >> bo;
+    if (bo && wi + 1 <= top) win |= mag[wi + 1] << (64 - bo);
+    for (int i = 0; i < wi; i++) if (mag[i]) sticky = true;
+    if (bo && (mag[wi] & ((1ULL << bo) - 1ULL))) sticky = true;
+  }
+  if (sticky) win |= 1ULL;
+  return std::ldexp((double)win, shift - scaleExp);
+}
+
+}  // namespace big
+
+// Exact characteristic-polynomial coefficients |c_0| .. |c_n| of the hydrogen-suppressed
+// adjacency matrix, returned as doubles scaled by 2^-E with E chosen so that E == 0 whenever the
+// integers fit in 60 bits. `maxbits` reports the true bit length of the largest coefficient, so
+// the harness can say where RDKit's own double arithmetic stops being exact.
+inline void charPolyScaled(const Mol &m, std::vector<double> &out, int &E, int &maxbits) {
+  const int n = m.n;
+  out.assign(n + 1, 0.0);
+  E = 0;
+  maxbits = 0;
+  if (n == 0) { out[0] = 1.0; return; }
+
+  for (int W = 1; W <= 32; W *= 2) {
+    const size_t stride = (size_t)W;
+    const size_t rowlen = (size_t)n * stride;
+    std::vector<uint64_t> M(rowlen * n, 0), T(rowlen * n, 0), C((size_t)(n + 1) * stride, 0);
+    bool overflow = false;
+    const uint64_t ONE = 1;
+    // M_1 = A
+    for (int b = 0; b < m.nb && !overflow; b++) {
+      M[(size_t)m.bu[b] * rowlen + (size_t)m.bv[b] * stride] = ONE;
+      M[(size_t)m.bv[b] * rowlen + (size_t)m.bu[b] * stride] = ONE;
+    }
+    C[0] = ONE;                                          // c_0 = 1
+    std::vector<uint64_t> cprev(stride, 0), acc(stride, 0);
+    // c_1 = -tr(M_1) = -tr(A) = 0, but computed rather than assumed.
+    for (int i = 0; i < n && !overflow; i++)
+      overflow |= big::add(acc.data(), &M[(size_t)i * rowlen + (size_t)i * stride], W);
+    overflow |= big::negate(acc.data(), W);
+    for (int q = 0; q < W; q++) { C[stride + q] = acc[q]; cprev[q] = acc[q]; }
+
+    for (int k = 2; k <= n && !overflow; k++) {
+      for (int i = 0; i < n && !overflow; i++)           // M += c_{k-1} I
+        overflow |= big::add(&M[(size_t)i * rowlen + (size_t)i * stride], cprev.data(), W);
+      std::fill(T.begin(), T.end(), (uint64_t)0);        // T = A M, one row add per bond end
+      for (int b = 0; b < m.nb && !overflow; b++) {
+        const size_t u = (size_t)m.bu[b], v = (size_t)m.bv[b];
+        uint64_t *tu = &T[u * rowlen], *tv = &T[v * rowlen];
+        const uint64_t *mu = &M[u * rowlen], *mv = &M[v * rowlen];
+        for (int j = 0; j < n; j++) {
+          overflow |= big::add(tu + (size_t)j * stride, mv + (size_t)j * stride, W);
+          overflow |= big::add(tv + (size_t)j * stride, mu + (size_t)j * stride, W);
+        }
+      }
+      M.swap(T);
+      std::fill(acc.begin(), acc.end(), (uint64_t)0);
+      for (int i = 0; i < n && !overflow; i++)
+        overflow |= big::add(acc.data(), &M[(size_t)i * rowlen + (size_t)i * stride], W);
+      overflow |= big::negate(acc.data(), W);
+      if (overflow) break;
+      big::divSmall(acc.data(), (uint64_t)k, W);         // exact: tr(A M_k) is divisible by k
+      for (int q = 0; q < W; q++) { C[(size_t)k * stride + q] = acc[q]; cprev[q] = acc[q]; }
+    }
+    if (overflow) continue;                              // widen and start again
+
+    maxbits = 0;
+    for (int k = 0; k <= n; k++) {
+      int b = 0;
+      big::toScaledDouble(&C[(size_t)k * stride], W, 0, &b);
+      maxbits = std::max(maxbits, b);
+    }
+    E = std::max(0, maxbits - 60);
+    for (int k = 0; k <= n; k++)
+      out[k] = big::toScaledDouble(&C[(size_t)k * stride], W, E, nullptr);
+    return;
+  }
+  throw std::runtime_error("infoic: characteristic polynomial needs more than 2048 bits");
+}
+
+// rdkit/ML/InfoTheory's InfoEntropy, in its own order: one sequential sum for the total, skip
+// zero entries, accumulate -t*ln(t), divide by ln 2 at the end. Reproduced rather than improved
+// so that the values agree with RDKit to the last bit wherever RDKit's own input was exact.
+inline double infoEntropy(const std::vector<double> &v, double &total) {
+  total = 0.0;
+  for (double x : v) total += x;
+  if (total == 0.0) return 0.0;
+  double acc = 0.0;
+  for (double x : v) {
+    if (x == 0.0) continue;
+    const double t = x / total;
+    acc += -t * std::log(t);
+  }
+  return acc / std::log(2.0);
 }
 
 // --------------------------------------------------------------------------------------------
@@ -669,18 +858,20 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr) {
     row.v[F_ZMIC * N_ORDERS + order] = shannonEntropy(cnt.data(), wz.data(), k, scratch.data());
   }
 
-  // ---- Ipc -----------------------------------------------------------------------------
-  std::vector<double> l;
-  charPolyLog2Abs(m, l);
-  double h = 0.0, log2sum = 0.0;
-  entropyFromLog2(l, h, log2sum);
+  // ---- Ipc: exact integer coefficients, then RDKit's own entropy formula ----------------
+  std::vector<double> cpoly;
+  int E = 0, maxbits = 0;
+  charPolyScaled(m, cpoly, E, maxbits);
+  double total = 0.0;
+  const double h = infoEntropy(cpoly, total);
   row.v[C_AVGIPC] = h;
-  row.v[C_LOG2IPC] = (h > 0.0) ? log2sum + std::log2(h)
-                               : -std::numeric_limits<double>::infinity();
-  if (h == 0.0) {
-    row.v[C_IPC] = 0.0;                                  // a one-atom graph: entropy is exactly 0
+  row.ipcMaxCoeffBits = maxbits;
+  if (h == 0.0 || total == 0.0) {
+    row.v[C_IPC] = 0.0;
+    row.v[C_LOG2IPC] = -std::numeric_limits<double>::infinity();
   } else {
-    const double ipc = std::exp2(log2sum) * h;
+    row.v[C_LOG2IPC] = std::log2(total) + (double)E + std::log2(h);
+    const double ipc = std::ldexp(total, E) * h;          // E == 0 on all of cpp/hard.smi
     if (std::isfinite(ipc)) {
       row.v[C_IPC] = ipc;
     } else {
@@ -750,6 +941,12 @@ inline void selfCheck() {
   // The worked example, as a graph, so the check needs no RDKit and cannot go stale against a
   // comment. ON=Cc1ccccn1 under the identity and under every one of its 36 transpositions:
   // mordred moves on the single swap (0 5), this must not move on any of them.
+  //
+  // BOTH AXES ARE PERTURBED, not just the atoms. A caller's bond list arrives in whatever order
+  // it arrives in, and `Chem.RenumberAtoms` -- the obvious way to write this test in Python --
+  // leaves that order ALONE, which is how an order dependence in bond-list-reading code hides
+  // from an atom-only screen. Each transposition here also ROTATES the bond list, so a
+  // regression that reintroduces a dependence on either axis fails at module load.
   Mol base;
   buildWorkedExample(base);
   double ref[N_COLS];
@@ -765,9 +962,11 @@ inline void selfCheck() {
         m.z[perm[i]] = base.z[i]; m.nh[perm[i]] = base.nh[i]; m.arom[perm[i]] = base.arom[i];
         m.chg[perm[i]] = base.chg[i];
       }
-      for (int e = 0; e < base.nb; e++) {
-        m.bu[e] = perm[base.bu[e]]; m.bv[e] = perm[base.bv[e]];
-        m.bcode[e] = base.bcode[e]; m.bord[e] = base.bord[e];
+      const int rot = a < 0 ? 0 : (a + 1);          // a different bond order for each case
+      for (int q = 0; q < base.nb; q++) {
+        const int e = (q + rot) % base.nb;
+        m.bu[q] = perm[base.bu[e]]; m.bv[q] = perm[base.bv[e]];
+        m.bcode[q] = base.bcode[e]; m.bord[q] = base.bord[e];
       }
       Row r;
       compute(m, r);

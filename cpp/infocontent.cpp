@@ -81,16 +81,21 @@ static int values(const char *in, const char *out) {
   infoic::CodeBuilder cb;
   Row r;
   long long overflow = 0;
+  int widest = 0;
   for (const Mol &m : g_mols) {
     infoic::compute(m, r, &cb);
     overflow += r.ipcOverflow;
     for (int c = 0; c < infoic::N_COLS; c++)
       std::fprintf(f, c ? " %.17g" : "%.17g", r.v[c]);
-    std::fputc('\n', f);
+    // Trailing DIAGNOSTIC column, not a descriptor: the bit length of the largest EXACT
+    // characteristic-polynomial coefficient. It is what says where RDKit's own double
+    // arithmetic stopped being exact, and it is checked for determinism like everything else.
+    std::fprintf(f, " %d\n", r.ipcMaxCoeffBits);
+    if (r.ipcMaxCoeffBits > widest) widest = r.ipcMaxCoeffBits;
   }
   std::fclose(f);
-  std::printf("wrote %s  |  %zu molecules  |  Ipc saturated at DBL_MAX on %lld of them\n", out,
-              g_mols.size(), overflow);
+  std::printf("wrote %s  |  %zu molecules  |  Ipc saturated at DBL_MAX on %lld  |  widest exact "
+              "coefficient %d bits\n", out, g_mols.size(), overflow, widest);
   return 0;
 }
 
