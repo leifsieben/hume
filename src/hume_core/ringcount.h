@@ -65,6 +65,20 @@
 //     Canonical atom ranks ALONE therefore do not fix this; the bond order must be canonicalised
 //     as well, which is why canon_rings() rebuilds the graph instead of renumbering it.
 //
+// THE REPAIR IS GATED, because it costs 104 us/mol against 5.1 for reading RingInfo -- five times
+// all 81 columns. `gate()` in cpp/verify_topo3.py fires on a molecule with a ring of 7+ atoms, an
+// atom in 3+ rings, or a ring system carrying 3+ independent cycles: 21.3% of cpp/hard.smi,
+// 26.1 us/mol amortised, where the minimal gate that still covers every affected molecule fires
+// on 8.5%. The extra is deliberate margin -- hexaprismane
+// (C12C3C4C5C6C1C1C6C5C4C3C21) has every ring at 4 atoms and no atom in more than 2, and only the
+// cyclomatic clause catches it. RESIDUAL RISK, in one sentence: a molecule slips past only if its
+// ring set is ambiguous while every ring has at most 6 atoms, no atom lies in more than 2 rings
+// and no ring system has more than 2 independent cycles, and the consequence is a
+// numbering-dependent value for that molecule's five sensitive columns -- not a wrong value
+// anywhere else. `verify_topo3.py gatecheck` is the standing guard: it runs the repair
+// unconditionally over all 100,000 and asserts the gated pipeline is identical (currently 0/100,000
+// disagreements), so a future corpus that defeats the gate fails loudly instead of silently.
+//
 // WHAT THE CALLER MUST SUPPLY.
 //
 //   z[i]        GetAtomicNum()      only ever compared against 6

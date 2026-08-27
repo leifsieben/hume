@@ -62,6 +62,8 @@ MODES
     perm      HOUSE RULE 1: is each column a function of the molecule? mordred vs mordred
     canon     the ring-set repair: is canon_rings() renumbering-invariant, and where does it
               differ from RDKit as-parsed?
+    gatecheck the repair is GATED for cost. Run it unconditionally over the whole corpus and
+              assert the gated pipeline gives the identical 49 columns. Must report 0.
     benchpy   mordred us/mol on a subsample, for the C++/Python comparison
     all       dump, ref, the three binaries, compare
 """
@@ -432,86 +434,50 @@ def perm(limit: int | None = None) -> None:
 # ---------------------------------------------------------------------------------------------
 # THE RING-SET REPAIR
 # ---------------------------------------------------------------------------------------------
-def canon_rings(mol):
-    """RDKit's symmetrised SSSR, perceived on the CANONICALLY renumbered molecule and mapped
-    back to the caller's numbering.
+# The repair, the gate and the ring handover live in the PACKAGE, not here: src/hume/_rings.py
+# is what src/hume/_extract.py calls, so every number below is a measurement of the shipping code
+# rather than of a harness copy that could drift from it.
+# Loaded BY PATH rather than as `hume._rings`, because importing the package would run
+# src/hume/__init__.py, which loads the compiled extension and its pickle-version drift guard.
+# This harness needs neither, and must keep working in an isolated interpreter that has no
+# built extension at all.
+import importlib.util as _ilu                                              # noqa: E402
+_spec = _ilu.spec_from_file_location("hume_rings", ROOT / "src" / "hume" / "_rings.py")
+_rings = _ilu.module_from_spec(_spec)
+_spec.loader.exec_module(_rings)
+canon_rings, gate, rings_for = _rings.canon_rings, _rings.gate, _rings.rings_for
 
-    WHY. `Chem.GetSymmSSSR` is not a function of the graph. On bridged cages and large
-    polycyclics its `symmetrizeSSSR` step sometimes finds a symmetry-equivalent extra ring and
-    sometimes does not -- RDKit's own source says it "may miss extra rings that would need to
-    swap two (or three...) rings to be included" -- and WHICH happens depends on the atom
-    numbering. On cpp/hard.smi that moves five RingCount columns.
 
-    THE REPAIR IS TO THE SELECTION, NOT TO THE QUANTITY. Canonical atom ranks are a function of
-    the graph, so perceiving on the canonically renumbered copy makes the chosen ring set one
-    too. Nothing about what is being counted changes: on every molecule where RDKit is already
-    stable this returns exactly RDKit's own answer, and on the unstable ones it returns whichever
-    of RDKit's own answers the canonical numbering yields. The alternative -- redefining the
-    family on the cyclomatic number, or on the full relevant-cycle set -- would change the value
-    for every symmetric cage rather than only the ambiguous ones, and would be a different
-    descriptor wearing the same name.
-
-    Rings come back sorted by (size, sorted canonical-rank vector), so the ring LIST order is a
-    graph invariant too, not merely the multiset. RingCount only counts, but anything downstream
-    that indexes rings gets determinism for free.
-
-    CANONICAL ATOM RANKS ALONE ARE NOT ENOUGH, and this cost an hour to find. `RenumberAtoms`
-    renumbers ATOMS and leaves the BOND LIST in its original order with its endpoints rewritten,
-    so two molecules can have a byte-identical canonically-renumbered atom numbering and still
-    present their bonds to the ring perceiver in different orders -- and `GetSymmSSSR` then
-    returns different rings from what is, as a numbered graph, the same graph. Measured on
-    `COc1cc2ccc1OCc1cccc(n1)COc1ccc(cc1OC)C=NCCNCCNCCN=C2`: canonical atom numbering identical on
-    15 of 15 renumberings, canonical SMILES identical on 15 of 15, rings DIFFERENT on 10 of 15.
-    Ranking atoms and then leaving the bonds alone made three corpus molecules WORSE than doing
-    nothing.
-
-    So perception happens on a SKELETON rebuilt from scratch: n carbons in canonical-rank order
-    and the bonds added in sorted (rank_u, rank_v) order. Ring perception is a property of the
-    graph alone -- it reads no element, no bond order and no aromatic flag -- so the skeleton
-    answers exactly the question being asked, and rebuilding it is what puts the BOND order under
-    canonical control as well. Aromaticity and atomic number for the counting still come from the
-    real molecule; nothing here re-perceives them, which also keeps this clear of the
-    canonical-SMILES round trip that is known to move aromaticity on 19 corpus molecules.
-
-    WHAT IT COSTS, because it is not free and the decision is the owner's. Median over 4,000
-    molecules, contended: `RingInfo().AtomRings()` 5.1 us/mol, `Chem.GetSymmSSSR` 18.9,
-    `CanonicalRankAtoms` alone 14.9, this function 104.0 -- against 20.7 us/mol for all 81
-    columns in C++. Unconditionally repairing therefore costs five times the descriptors it
-    protects. It buys correctness on 22 of 100,000 molecules. A gate that fires on a molecule
-    with a bridgehead (an atom in 3+ SSSR rings) or any ring of 8+ atoms fires on 8.5% of the
-    corpus and covers all 32 molecules whose columns the repair changes, which amortises to
-    8.9 us/mol -- but that gate is validated on this corpus, not proved, and is offered rather
-    than adopted."""
-    from rdkit import Chem
-    n = mol.GetNumAtoms()
-    if n == 0:
-        return []
-    rank = list(Chem.CanonicalRankAtoms(mol, breakTies=True))    # rank[old] = canonical index
-    back = [0] * n
-    for old, new in enumerate(rank):
-        back[new] = old
-    edges = sorted((min(rank[b.GetBeginAtomIdx()], rank[b.GetEndAtomIdx()]),
-                    max(rank[b.GetBeginAtomIdx()], rank[b.GetEndAtomIdx()]))
-                   for b in mol.GetBonds())
-    em = Chem.RWMol()
-    for _ in range(n):
-        em.AddAtom(Chem.Atom(6))
-    for u, v in edges:
-        em.AddBond(int(u), int(v), Chem.BondType.SINGLE)
-    sk = em.GetMol()
-    rings = [sorted(back[i] for i in r) for r in Chem.GetSymmSSSR(sk)]
-    return sorted(rings, key=lambda r: (len(r), sorted(rank[i] for i in r)))
+def _name(order, greater, fused, arom, het):
+    """mordred RingCount.__str__, transcribed."""
+    a = []
+    if greater:
+        a.append("G")
+    if order is not None:
+        a.append(str(order))
+    if fused:
+        a.append("F")
+    if arom is True:
+        a.append("a")
+    elif arom is False:
+        a.append("A")
+    if het is True:
+        a.append("H")
+    elif het is False:
+        a.append("C")
+    return "n{}Ring".format("".join(a))
 
 
 def rc49(mol, rings):
     """The 49 RingCount columns, in Python, from a molecule and a ring list.
 
-    A SECOND IMPLEMENTATION ON PURPOSE, for two jobs. (1) It is the invariance test's yardstick:
-    the requirement is that the COLUMNS do not move, and comparing ring sets by atom index
-    instead would fail on a molecule whose canonical numbering differs from another by an
-    AUTOMORPHISM -- the same rings, relabelled, and every one of these columns blind to the
+    A SECOND IMPLEMENTATION ON PURPOSE, for two jobs. (1) It is the yardstick for the invariance
+    and gate tests: the requirement is that the COLUMNS do not move, and comparing ring sets by
+    atom index instead would fail on a molecule whose canonical numbering differs from another by
+    an AUTOMORPHISM -- the same rings, relabelled, and every one of these columns blind to the
     relabelling. (2) `canon` checks it against cpp/topo3_ringcount.txt, so the shipped C++ is
-    gated by an independent transcription of mordred's predicates, not only by mordred itself."""
+    gated by an independent transcription of mordred's predicates, not only by mordred itself.
+    Currently 0 disagreements over 100,000 molecules x 49 columns."""
     Z = [a.GetAtomicNum() for a in mol.GetAtoms()]
     AR = [a.GetIsAromatic() for a in mol.GetAtoms()]
     S = [frozenset(r) for r in rings]
@@ -563,24 +529,49 @@ def rc49(mol, rings):
     return tuple(out)
 
 
-def _name(order, greater, fused, arom, het):
-    """mordred RingCount.__str__, transcribed."""
-    a = []
-    if greater:
-        a.append("G")
-    if order is not None:
-        a.append(str(order))
-    if fused:
-        a.append("F")
-    if arom is True:
-        a.append("a")
-    elif arom is False:
-        a.append("A")
-    if het is True:
-        a.append("H")
-    elif het is False:
-        a.append("C")
-    return "n{}Ring".format("".join(a))
+def _gatecheck_one(arg):
+    i, smi = arg
+    from rdkit import Chem, RDLogger
+    RDLogger.DisableLog("rdApp.*")
+    m = Chem.RemoveHs(Chem.MolFromSmiles(smi))
+    g = gate(m)
+    full = rc49(m, canon_rings(m))                 # the repair, unconditionally
+    got = rc49(m, rings_for(m))                    # what the gate actually ships
+    return g, got != full, smi
+
+
+def gatecheck(limit: int | None = None) -> None:
+    """REQUIREMENT: the gate must be indistinguishable from repairing everything.
+
+    Runs canon_rings() on all 100,000 regardless of the gate and asserts the gated pipeline
+    produces the identical 49 columns. This is what turns "validated on this corpus" into a
+    re-runnable check that a future corpus can fail loudly."""
+    from multiprocessing import Pool
+    versions("gatecheck")
+    smis = [l.strip() for l in open(SMI) if l.strip()]
+    if limit:
+        smis = smis[:limit]
+    nfire = nbad = 0
+    bad = []
+    t0 = time.time()
+    with Pool(NPROC) as p:
+        for g, differs, smi in p.imap_unordered(_gatecheck_one, list(enumerate(smis)),
+                                                chunksize=200):
+            nfire += g
+            if differs:
+                nbad += 1
+                bad.append(smi)
+    n = len(smis)
+    print(f"[gatecheck] {n} molecules, {time.time() - t0:.0f}s")
+    print(f"  gate fires on                       {nfire:6d} / {n}  = {100 * nfire / n:.1f}%")
+    print(f"  amortised ring cost                 {5.1 + (104 - 5.1) * nfire / n:.1f} us/mol "
+          f"(5.1 ungated, 104.0 unconditional)")
+    print(f"  gated != unconditional on           {nbad:6d} / {n}   (requirement: 0)")
+    if bad:
+        print("  GATE LEAKS on:")
+        for s in bad[:20]:
+            print("   ", s[:160])
+        raise SystemExit(1)
 
 
 def _canon_one(arg):
@@ -710,6 +701,8 @@ def main() -> None:
         perm(lim)
     elif mode == "canon":
         canon(lim)
+    elif mode == "gatecheck":
+        gatecheck(lim)
     elif mode == "benchpy":
         benchpy(lim or 2000)
     elif mode == "all":
