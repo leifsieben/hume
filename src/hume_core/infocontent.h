@@ -298,7 +298,21 @@
 //
 //   4. Hoist one `infoic::CodeBuilder` outside the per-molecule loop and pass it to
 //      `compute(m, row, &cb)`. It is scratch only; it memoises nothing across molecules, so this
-//      changes no value. Without it every molecule pays four vector allocations.
+//      changes no value. NO LONGER REQUIRED FOR SPEED: as of 2026-08-28 the fallback inside
+//      `compute()` is a function-local `thread_local` rather than a stack object, so a caller
+//      that passes nothing gets the same reuse. Passing one explicitly is still tidier.
+//
+//   5. THE ONE WIRING CHANGE STILL OUTSTANDING, AND IT IS WORTH 68% OF THIS DESCRIPTOR.
+//      bindings.cpp copies `infoic::N_IC` values and throws Ipc / AvgIpc / Log2Ipc away -- but
+//      it calls `compute()`, which computes them. That is an exact-integer Le
+//      Verrier-Faddeev-Frame recurrence, O(n^3) in the heavy-atom count, MEASURED at 68% of this
+//      file's entire CPU on 5,000 molecules of cpp/hard.smi. One line:
+//
+//          infoic::compute(W.im, W.irow);   ->   infoic::computeIC(W.im, W.irow);
+//
+//      The 42 wired columns are bit-identical either way -- nothing above the Ipc block reads
+//      anything the Ipc block writes -- and `compute()` is still there for the day Ipc's own bug
+//      is closed and `AvgIpc` (which IS one of the 865) gets wired.
 //
 //   Column names come from `infoic::columnNames()`. 33 of the 42 InformationContent columns and
 //   `AvgIpc` are the ones that survive data/dedupe.json; `Ipc` and `Log2Ipc` are emitted beside
@@ -307,8 +321,8 @@
 //
 //   #include "infocontent.h"
 //   infoic::selfCheck();                       // once, at module load
-//   infoic::CodeBuilder cb;                    // once, outside the loop
-//   infoic::Row r; infoic::compute(mol, r, &cb);   // 45 doubles, names in columnNames()
+//   infoic::Row r; infoic::computeIC(mol, r);  // the 42 wired columns
+//   infoic::Row r; infoic::compute(mol, r);    // ... or all 45, names in columnNames()
 //
 #ifndef HUME_INFOCONTENT_H
 #define HUME_INFOCONTENT_H
@@ -1253,6 +1267,62 @@ inline void selfCheck() {
       if (pairwiseSum(a, n) != pairwiseSum(a, n2) + pairwiseSum(a + n2, n - n2))
         throw std::runtime_error("infoic: pairwiseSum n>128");
     }
+  }
+
+  // PKey IS AN INJECTION AND ITS NUMERIC ORDER IS THE BYTE ORDER IT REPLACED. That is the whole
+  // safety argument for the 128-bit packing, so it is checked rather than asserted: build the
+  // ORIGINAL 24-byte key and the PKey for a spread of synthetic paths -- every length from 0 to
+  // MAX_ORDER edges, both ends of the symbol range, both ends of the Z and degree ranges -- and
+  // require that memcmp and (hi, lo) agree on every ORDERED PAIR, equality included. A hash
+  // would fail this at once; a packing with an overlapping or mis-shifted field fails it too.
+  {
+    struct Path { int len; uint8_t sym[MAX_ORDER], z[MAX_ORDER], dg[MAX_ORDER]; uint8_t rz, rd; };
+    std::vector<Path> ps;
+    const uint8_t ZS[4] = {1, 6, 118, 255}, DS[4] = {0, 1, 4, 255}, SS[3] = {SYM_OTHER,
+                                                                            SYM_SINGLE,
+                                                                            SYM_AROMATIC};
+    for (int len = 0; len <= MAX_ORDER; len++)
+      for (int a = 0; a < 4; a++)
+        for (int s = 0; s < 3; s++) {
+          Path p{};
+          p.len = len; p.rz = ZS[a]; p.rd = DS[a];
+          for (int q = 0; q < len; q++) {
+            p.sym[q] = SS[(s + q) % 3];
+            p.z[q] = ZS[(a + q) % 4];
+            p.dg[q] = DS[(a + q + 1) % 4];
+          }
+          ps.push_back(p);
+        }
+    const size_t NP = ps.size();
+    std::vector<std::array<uint8_t, 24> > bytes(NP);
+    std::vector<PKey> pk(NP);
+    for (size_t i = 0; i < NP; i++) {
+      const Path &p = ps[i];
+      std::array<uint8_t, 24> b{};
+      b.fill(0);
+      b[0] = p.rz; b[1] = p.rd;
+      uint64_t hi = ((uint64_t)(((uint32_t)p.rz << 8) | p.rd)) << 48, lo = 0;
+      int pos = 2;
+      for (int q = 0; q < p.len; q++) {
+        b[pos] = p.sym[q]; b[pos + 1] = p.z[q]; b[pos + 2] = p.dg[q];
+        pos += 3;
+        pkSetField(hi, lo, q + 1,
+                   1u + (((uint32_t)p.sym[q] << 16) | ((uint32_t)p.z[q] << 8) | p.dg[q]));
+      }
+      b[pos] = 0xFF;                              // the terminator, exactly where walk() put it
+      if (p.len < MAX_ORDER) pkSetField(hi, lo, p.len + 1, PK_TERM);
+      bytes[i] = b;
+      pk[i] = PKey{hi, lo};
+    }
+    for (size_t i = 0; i < NP; i++)
+      for (size_t j = 0; j < NP; j++) {
+        const int c = std::memcmp(bytes[i].data(), bytes[j].data(), 24);
+        const bool blt = c < 0, beq = c == 0;
+        const bool plt = pk[i] < pk[j], peq = pk[i] == pk[j];
+        if (blt != plt || beq != peq)
+          throw std::runtime_error("infoic: PKey packing is not order-preserving -- the 128-bit "
+                                   "code no longer reproduces the 24-byte key it replaced");
+      }
   }
 
   // The worked example, as a graph, so the check needs no RDKit and cannot go stale against a

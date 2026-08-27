@@ -13,10 +13,10 @@ Regenerate this census with the snippet at the bottom. Do not hand-edit the coun
 
 | | columns |
 |---|---|
-| **producing a value from the package** (`hume.featurize_all`) | **840** |
+| **producing a value from the package** (`hume.featurize_all`) | **859** |
 | named by the package but NaN (`PENDING_COLUMNS`) | 2 (`qed`, `SPS`) |
 | verified C++ exists, but NOT wired into the extension | 0 |
-| still Python | ~24 |
+| not named at all | 3 (`NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters`, `AvgIpc`) |
 
 "Verified C++ exists" is a claim about `cpp/*.cpp`; "callable" is a claim about the wheel; and
 "produces a value" is a third claim, narrower than "has a name". Only the last one is what a user
@@ -221,10 +221,35 @@ directory.
 
 ## What is true right now
 
-    named by the package    (hume.ALL_COLUMNS)                842 of 864
-    PRODUCING A VALUE       (ALL_COLUMNS - PENDING_COLUMNS)   840 of 864
+    named by the package    (hume.ALL_COLUMNS)                861 of 864
+    PRODUCING A VALUE       (ALL_COLUMNS - PENDING_COLUMNS)   859 of 864
     verified C++ NOT yet wired into the extension               0
-    still Python                                             ~24
+    not named at all                                            3
+
+THE LAST FIVE, and none is a porting gap of the ordinary kind:
+
+  qed                              named, NaN. Needs QED's 116 structural-alert SMARTS. The
+                                   cheapest correct route is to give frag_matcher.h's Matcher a
+                                   bound program table and generate a second program, keeping ONE
+                                   subgraph-isomorphism implementation; it needs four new leaf
+                                   opcodes (isotope, `~`, `@`, component-level `.`).
+  SPS                              named, NaN. Needs the NEW FindPotentialStereo, and it is NOT
+                                   in the pickle -- extract_pickles would have to run
+                                   FindPotentialStereo + FindPotentialStereoBonds per molecule
+                                   and ship two extra arrays.
+  NumAtomStereoCenters             unnamed. Needs the LEGACY _ChiralityPossible flag, which IS in
+  NumUnspecifiedAtomStereoCenters  the pickle in bits molpickle.h currently skips (0x8 of
+                                   pickleExplicitProperties; chiral tag at atom flag bit 2).
+                                   ~a field, not a subsystem. One real change: extract_pickles
+                                   calls AssignStereochemistry(cleanIt, force) BEFORE ToBinary,
+                                   which WIPES the flag on 906 of 2,000 molecules --
+                                   flagPossibleStereoCenters=True restores it.
+  AvgIpc                           unnamed. Blocked on the open Ipc question, see infocontent.h.
+
+THE LEGACY AND NEW STEREO PERCEPTIONS ARE NOT THE SAME THING. An earlier note in this file said
+one boundary addition would unblock all three stereo-flavoured columns. It will not: the legacy
+`_ChiralityPossible` atom set and the `FindPotentialStereo` atom set differ on 262 of 4,000
+corpus molecules (6.6%). Two additions, two perceptions.
 
 Both numbers come from `bench_e2e._survivors_covered`, run on the two different inputs; they
 differ by exactly `PENDING_COLUMNS` = (`qed`, `SPS`), which are named and NaN. Do not quote one
@@ -447,3 +472,28 @@ pin. Until then, cite the 865 as inherited rather than as reproducible.
   `AtomCount`, `BondCount`, `KappaShapeIndex` and friends.
 
 Zero column overlap, confirmed. The names read as a collision to anyone skimming.
+
+## Two traps that will bite the next person, both found by falling into them
+
+**1. `AssignStereochemistry(cleanIt=True, force=True)` CLEARS `_ChiralityPossible`** unless you
+also pass `flagPossibleStereoCenters=True`. `Descriptors.NumAtomStereoCenters` counts that flag,
+so without it the descriptor silently returns 0 — and an ill-posedness screen built on that call
+reported a *well-posed* column as unstable on 4,125 of 9,000 shuffles. **`verify_chiwalk.py`,
+`verify_topo3.py` and `src/hume/_extract.py` all omit the flag.** Any future stereo work run
+through them will measure an artifact.
+
+**2. `hume.ALL_COLUMNS` contains four DUPLICATED names** — `MaxEStateIndex`, `MinEStateIndex`,
+`MaxAbsEStateIndex`, `MinAbsEStateIndex` — emitted once by the 182-column block and again by the
+VSA family, as *independent computations that differ in the last bit*. So
+`{n: i for i, n in enumerate(ALL_COLUMNS)}` silently resolves to the second copy, and a
+whole-matrix A/B against a stored dump "finds" thousands of moved molecules that never moved.
+`hume.DUPLICATE_COLUMNS` exposes them. Not silently deduplicated: dropping either copy shifts
+every index above it, which is a schema change and the owner's call.
+
+## And one about git, which has now cost a broken HEAD
+
+`git add -u` stages modifications and **not** untracked files. Committing a change that adds a
+new header with `git add -u` produces exactly what happened at `ddc2959`: `bindings.cpp` went in
+carrying `#include "rdkcore.h"` while the header stayed untracked, so HEAD did not compile.
+Stage named paths, and check `git status --short` for `??` before committing a change that
+introduces a file.
