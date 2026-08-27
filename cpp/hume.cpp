@@ -102,6 +102,23 @@ int main(int argc, char **argv) {
   // minutes, so the per-cycle ratio is stable even when the absolutes are not. Reported as the
   // median of the per-cycle ratios plus the best-case (minimum) time for each, since the minimum
   // is the least contaminated estimate of the true cost.
+  //
+  // NOW A LAPACK-ONLY MODE, for the same reason certcheck is: A is the tuned library and B is
+  // ours, so without a library there is no A. Built with -DHUME_WITH_LAPACK it times
+  // eigen_small against dsyevd; without it, `./hume solverab` says so and points at
+  // cpp/bench_eigen.cpp, which does the same comparison against BOTH Accelerate and OpenBLAS
+  // and is where the shipped 166/161 vs 216/198 us numbers come from.
+#ifndef HUME_WITH_LAPACK
+  if (mode == "solverab") {
+    fprintf(stderr,
+            "solverab needs a reference LAPACK to compare against, and this binary links none.\n"
+            "  rebuild:  c++ -O3 -std=c++17 -DHUME_WITH_LAPACK -o hume hume.cpp "
+            "-framework Accelerate\n"
+            "  or use:   cpp/bench_eigen.cpp, which times eigen_small against Accelerate AND "
+            "OpenBLAS\n");
+    return 2;
+  }
+#endif
   if (mode == "solverab") {
     const int cycles = 15;
     std::vector<double> ta, tb, ratio;
@@ -118,7 +135,7 @@ int main(int argc, char **argv) {
         for (auto &m : ms) { bcut2d(m, BW, bc); sink_g += bc[0]; } }); };
       if (a_first) { run_a(); run_b(); } else { run_b(); run_a(); }
       ta.push_back(a); tb.push_back(b); ratio.push_back(b / a);
-      fprintf(stderr, "  cycle %2d [%s]  dsyevd %7.2f  dsytd2+dsterf %7.2f  ratio %.4f\n",
+      fprintf(stderr, "  cycle %2d [%s]  dsyevd %7.2f  eigen_small %7.2f  ratio %.4f\n",
               r + 1, a_first ? "A,B" : "B,A", a, b, b / a);
     }
     auto med = [](std::vector<double> v) {
@@ -128,9 +145,9 @@ int main(int argc, char **argv) {
     printf("  %d paired cycles over %zu molecules\n", cycles, ms.size());
     printf("  dsyevd          median %7.2f  min %7.2f us/mol\n", med(ta),
            *std::min_element(ta.begin(), ta.end()));
-    printf("  dsytd2+dsterf   median %7.2f  min %7.2f us/mol\n", med(tb),
+    printf("  eigen_small     median %7.2f  min %7.2f us/mol\n", med(tb),
            *std::min_element(tb.begin(), tb.end()));
-    printf("  PAIRED ratio (dsytd2+dsterf / dsyevd): median %.4f  -> %+.2f%%\n",
+    printf("  PAIRED ratio (eigen_small / dsyevd): median %.4f  -> %+.2f%%\n",
            med(ratio), 100.0 * (med(ratio) - 1.0));
     return 0;
   }
@@ -265,7 +282,7 @@ int main(int argc, char **argv) {
 
     // ---- PROBE 2: iterations to converge on the tail ----------------------------------
     printf("\nPROBE 2  Lanczos iterations for lambda_min AND lambda_max to 1e-12 relative\n");
-    printf("         (ground truth = dsytd2+dsterf; over the n>=71 bucket)\n");
+    printf("         (ground truth = dense eigen_small; over the n>=71 bucket)\n");
     const int REORTH[3] = {0, 8, -1};
     const char *RNAME[3] = {"none", "window-8", "full"};
     std::vector<const Mol *> samp = tail;
@@ -352,7 +369,7 @@ int main(int argc, char **argv) {
       for (size_t t = 0; t < samp.size(); t++) { bcut2d(*samp[t], BW, bc); sink_g += bc[0]; }
       t1 = std::chrono::steady_clock::now();
       t_dense = std::chrono::duration<double, std::micro>(t1 - t0).count() / samp.size();
-      printf("  dense dsytd2+dsterf, 4 spectra : %9.2f us/mol\n", t_dense);
+      printf("  dense eigen_small, 4 spectra   : %9.2f us/mol\n", t_dense);
       printf("  Lanczos ORACLE iters, 4 spectra: %9.2f us/mol  (%.2fx %s)\n", t_lan,
              t_dense > t_lan ? t_dense / t_lan : t_lan / t_dense,
              t_dense > t_lan ? "FASTER" : "SLOWER");
@@ -429,9 +446,10 @@ int main(int argc, char **argv) {
           S.d.assign(L.alpha.begin(), L.alpha.begin() + kk);
           S.e.assign(kk > 1 ? kk - 1 : 1, 0.0);
           for (int i = 0; i + 1 < kk; i++) S.e[i] = L.beta[i];
-          int nn = kk, info = 0;
-          dsterf_(&nn, S.d.data(), S.e.data(), &info);
-          if (info != 0) continue;
+          double sd_lo = 0.0, sd_hi = 0.0;
+          if (!hume_eig::sterf_min_max(kk, S.d.data(), S.e.data(), &sd_lo, &sd_hi)) continue;
+          S.d[0] = sd_lo;
+          S.d[kk - 1] = sd_hi;
           const double bn = L.beta[kk - 1];
           double scale = std::max(std::fabs(S.d[0]), std::fabs(S.d[kk - 1]));
           if (scale < 1.0) scale = 1.0;
@@ -485,6 +503,14 @@ int main(int argc, char **argv) {
   // rounding excites the growing solution and |y_k| comes out far too LARGE, which inflates
   // the residual and stops the certificate from ever firing. Compare it against dsteqr, which
   // is expensive but correct, at a fixed k well past true convergence.
+  //
+  // LAPACK-ONLY MODE. dsteqr is the whole point of this check -- it is the independent, correct
+  // answer the recurrence is being graded against, and grading the recurrence against
+  // eigen_small's own tridiagonal code would be marking its own homework. So this mode is kept
+  // exactly as it was and compiled only with -DHUME_WITH_LAPACK; the shipped binary needs no
+  // BLAS at all. Its verdict is already recorded: the backward recurrence matches dsteqr's last
+  // component to within a factor ~1 at k = 40/60/80 on the tail, and the forward one does not.
+#ifdef HUME_WITH_LAPACK
   if (mode == "certcheck") {
     std::vector<const Mol *> tail;
     for (auto &m : ms) {
@@ -529,6 +555,7 @@ int main(int argc, char **argv) {
     }
     return 0;
   }
+#endif  // HUME_WITH_LAPACK
 
   // DOES THE SECOND NUMERICAL PATH SURVIVE INTO THE SHIPPED ARTEFACT AT ALL?
   //
@@ -822,24 +849,30 @@ int main(int argc, char **argv) {
   BCUT_SKIP_SOLVE = false;
   // SOLVER A/B IN ONE PROCESS. t_b above was timed with whatever BCUT_SOLVER is set to; time
   // the other one right here, back to back, so the comparison cannot be contaminated by machine
-  // load drifting between two separate bench runs.
+  // load drifting between two separate bench runs. With no LAPACK linked there IS no other
+  // solver -- BCUT_SOLVER 0 falls through to the same eigen_small path -- so the line is
+  // suppressed rather than printed as a meaningless 0%.
   extern int BCUT_SOLVER;
   int keep_solver = BCUT_SOLVER;
+#ifdef HUME_WITH_LAPACK
   BCUT_SOLVER = keep_solver ? 0 : 1;
   double t_b2 = time_it(ms, 10, [&] { for (auto &m : ms) { bcut2d(m, BW, bc); sink += bc[0]; } });
   BCUT_SOLVER = keep_solver;
+#endif
   printf("  %-44s %8.2f us/mol\n", "EState (incl. distances)", t_e);
   printf("  %-44s %8.2f us/mol\n", "Kappa1-3 + HallKierAlpha", t_k);
   printf("  %-44s %8.2f us/mol\n",
-         keep_solver ? "BCUT2D (dsytd2+dsterf, 4 spectra)" : "BCUT2D (dsyevd, 4 dense spectra)",
+         keep_solver ? "BCUT2D (eigen_small, 4 spectra)" : "BCUT2D (dsyevd, 4 dense spectra)",
          t_b);
   printf("  %-44s %8.2f us/mol  (%.0f%% of BCUT2D)\n", "  ^ of which: matrix assembly only",
          t_asm, 100.0 * t_asm / t_b);
   printf("  %-44s %8.2f us/mol  (%.0f%%)\n", "  ^ of which: 4 eigensolves", t_b - t_asm,
          100.0 * (t_b - t_asm) / t_b);
+#ifdef HUME_WITH_LAPACK
   printf("  %-44s %8.2f us/mol  (%+.1f%% vs above)\n",
-         keep_solver ? "  ALT solver: dsyevd" : "  ALT solver: dsytd2+dsterf",
+         keep_solver ? "  ALT solver: dsyevd" : "  ALT solver: eigen_small",
          t_b2, 100.0 * (t_b2 - t_b) / t_b);
+#endif
   // Stage probe: where inside the eigensolve does the time actually go? This decides whether
   // vectorising the four Householder reductions is worth building at all.
   BCUT_SOLVER = 2;
@@ -847,9 +880,9 @@ int main(int argc, char **argv) {
   BCUT_SOLVER = keep_solver;
   double solve_only = t_b - t_asm;
   printf("  %-44s %8.2f us/mol  (%.0f%% of the eigensolve)\n",
-         "  ^ tridiagonalisation (dsytd2) only", t_tri - t_asm,
+         "  ^ tridiagonalisation only", t_tri - t_asm,
          100.0 * (t_tri - t_asm) / solve_only);
-  printf("  %-44s %8.2f us/mol  (%.0f%%)\n", "  ^ QR sweep (dsterf) only",
+  printf("  %-44s %8.2f us/mol  (%.0f%%)\n", "  ^ QR sweep (PWK) only",
          t_b - t_tri, 100.0 * (t_b - t_tri) / solve_only);
   printf("\n(sink %.3g)\n", (double)sink);
   return 0;

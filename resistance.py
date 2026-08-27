@@ -37,6 +37,14 @@ where all 110 of Mordred's spectral scalars were already killed by the |rho|>=0.
 Blocks 77 -> 65 features. Later 65 -> 60, when the five RATSC*_c columns were removed: the
 unity weight is a constant, and a constant centres to exactly zero, so those five were
 identically 0.0 by algebra. RPAIR{b} already carries the uncentred version of the same thing.
+
+**RATSC*/RPAIR* VALUES PUBLISHED BEFORE THE BIN-EDGE SNAP ARE SUPERSEDED.** Delta lands
+*exactly* on a bin edge for real molecules -- confirmed in exact rational arithmetic -- so
+before the snap the bin was decided by the host BLAS's last-ulp rounding rather than by the
+molecule. Accelerate's own two LAPACKs disagreed with EACH OTHER on 9.00% of the 98,905-molecule
+corpus, more than reference LU disagreed with either. 13,029 molecules (13.17%) have different
+bin values as a result of the fix, and all three solvers now agree with each other and with
+exact arithmetic. See `_snap_to_edges` below for the full argument and the tolerance.
 """
 
 from __future__ import annotations
@@ -87,6 +95,54 @@ _KSTEPS = (2, 3, 4, 6, 8, 12, 16)
 _PT = Chem.GetPeriodicTable()
 _EDGES = np.array([lo for lo, _ in _DBINS] + [np.inf])
 _NB = len(_DBINS)
+
+# ---------------------------------------------------------------- the bin-edge snap
+#
+# WITHOUT THIS, RATSC*/RPAIR* ARE NOT A PROPERTY OF THE MOLECULE. They are a property of whichever
+# LAPACK happens to be linked, and that is not a worry, it is a measurement:
+#
+#   * Omega_ij is a RATIONAL function of the graph, so delta = d - Omega has an EXACT value.
+#     Computed in exact rational arithmetic on 22 molecules where two solvers disagreed, every
+#     single one had atom pairs whose delta equals a bin edge EXACTLY -- up to 66 such pairs on
+#     one molecule -- and the pairs that flipped were always a subset of those. Highly symmetric
+#     molecules put many pairs on the same edge at once, so one ulp moves them all together.
+#   * np.digitize(..., right=False) puts an on-edge value in the HIGHER bin, so a solver that
+#     rounds Omega up by a single ulp drops the pair into the LOWER one.
+#   * Accelerate's OWN TWO LAPACKs -- same vendor, same machine -- disagreed with each other on
+#     9.00% of the 98,905-molecule corpus (worst case 242 pair-counts on one molecule). That is
+#     MORE than reference LU disagreed with either of them (8.77% vs the modern kernel, 5.77% vs
+#     the legacy one). Against the exact rational answer all three were wrong on some molecule,
+#     and on at least one molecule ALL THREE were wrong.
+#
+# So the pre-snap RATSC*/RPAIR* numbers were an artifact of one vendor's summation order. The
+# same resistance.py on a Linux box with OpenBLAS would have produced different integers.
+#
+# TOLERANCE 1e-9, and the number follows from two measured facts rather than from taste. The
+# disagreement between solvers on these matrices is ~1e-12 (max 9.5e-12 absolute over every
+# entry of every inverse in the corpus), so 1e-9 is roughly a THOUSAND TIMES the numerical noise
+# -- comfortably wide enough to catch every tie. And the edges it must not blur are 0.1 apart at
+# the closest (0.1 / 0.5 / 1.0 / 2.0), so 1e-9 is EIGHT ORDERS below the narrowest real gap: no
+# delta that is genuinely inside a bin can be dragged out of it. Anything between about 1e-11 and
+# 1e-6 would work identically; 1e-9 sits in the middle of that plateau on a log scale.
+#
+# SNAP APPLIES TO BINNING ONLY. Kf, Cyclicity and the RW* columns are continuous, already agree
+# across solvers to 1e-12, and have no edge to fall off -- snapping them would change a definition
+# to solve a problem they do not have. DeltaMax and DeltaMean likewise keep the raw delta.
+_SNAP_TOL = 1e-9
+_SNAP_EDGES = _EDGES[np.isfinite(_EDGES)]
+
+
+def _snap_to_edges(delta: np.ndarray) -> np.ndarray:
+    """delta, with any value within _SNAP_TOL of a bin edge moved exactly ONTO that edge.
+
+    The windows are disjoint (the closest pair of edges is 1e-6 and 0.1), so the order in which
+    they are applied cannot matter. Returns a copy; the caller's delta is left alone because
+    DeltaMax/DeltaMean are computed from the unsnapped value.
+    """
+    out = delta.copy()
+    for e in _SNAP_EDGES:
+        out = np.where(np.abs(out - e) <= _SNAP_TOL, e, out)
+    return out
 
 # Property lookup tables indexed by atomic number. Building these once turns the per-atom
 # work into a single fancy-index instead of four Python calls per atom -- the sort of thing
@@ -193,7 +249,11 @@ def featurize(mol) -> np.ndarray:
 
     # One digitize + bincount per property beats one masked pass per bin: the pair list is
     # scanned once instead of _NB times.
-    b = np.digitize(delta, _EDGES) - 1
+    # SNAP BEFORE DIGITISING, so the value np.digitize sees is exactly the edge and its
+    # `right=False` rule (on-edge -> HIGHER bin) resolves the tie the same way for every solver
+    # on every platform. See _snap_to_edges. delta itself is untouched: DeltaMax and DeltaMean
+    # below still use the raw value.
+    b = np.digitize(_snap_to_edges(delta), _EDGES) - 1
     keep = pm & (b >= 0) & (b < _NB)
     bk, pk = b[keep], prod[keep]
     feats = []

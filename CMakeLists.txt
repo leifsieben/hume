@@ -2,9 +2,9 @@
 #
 # NO -march=native. It compiles for whatever core happens to be present, so the binary cannot
 # ship; plain -O3 is what the verification harness is built with
-# (`c++ -O3 -std=c++17 hume.cpp -framework Accelerate`) and matching it is what makes the
-# bit-identity claim mean something. Portability and runtime dispatch are being measured
-# separately -- see PACKAGING.md.
+# (`c++ -O3 -std=c++17 hume.cpp`) and matching it is what makes the bit-identity claim mean
+# something. It also costs nothing to leave out: on arm64 the two flags produce BYTE-IDENTICAL
+# object files for this source, re-checked after the BLAS removal -- see PACKAGING.md.
 cmake_minimum_required(VERSION 3.15...3.31)
 project(hume_core LANGUAGES CXX)
 
@@ -18,24 +18,39 @@ pybind11_add_module(_core src/hume_core/bindings.cpp)
 target_compile_options(_core PRIVATE -O3)
 target_include_directories(_core PRIVATE src/hume_core)
 
-# LAPACK. This is the hard part of shipping, not an afterthought -- see PACKAGING.md.
+# NO BLAS, NO LAPACK, NO PLATFORM CHECK -- and that is the point of this file's history.
 #
-# hume_blocks.h asks Accelerate for `dgesv$NEWLAPACK` and `dgemm$NEWLAPACK` BY NAME, via asm
-# labels. Accelerate ships two LAPACKs that do not round the same way, and the resistance block
-# was verified against the modern one (the bare `dgesv_` symbol resolves to Apple's legacy
-# implementation, which returned 0.18749999999999994 where the new one returns 0.1875 exactly --
-# the ulp that moved 94 atom pairs across a resistance bin edge). Those asm labels do not exist
-# outside Accelerate, so a non-Apple build does not link today. Fixing that means picking a
-# reference LAPACK and RE-VERIFYING resistance and BCUT2D against it, which is a separate piece
-# of work from building the bridge; failing loudly here is better than producing a wheel whose
-# numbers quietly differ from the ones the paper verified.
-if(APPLE)
-  target_link_libraries(_core PRIVATE "-framework Accelerate")
-else()
-  message(FATAL_ERROR
-    "hume currently builds on macOS only: src/hume_core/hume_blocks.h binds Accelerate's "
-    "dgesv$NEWLAPACK / dgemm$NEWLAPACK by asm label, and the resistance and BCUT2D blocks are "
-    "verified against that specific LAPACK. See the LAPACK note in PACKAGING.md.")
-endif()
+# This build used to REFUSE to configure off macOS. src/hume_core/hume_blocks.h asked Accelerate
+# for `dgesv$NEWLAPACK` and `dgemm$NEWLAPACK` by asm label, because Accelerate ships two LAPACKs
+# that do not round the same way and the resistance block had been verified against the modern
+# one. Those symbols exist in no other library, so failing loudly was better than shipping a
+# wheel whose numbers quietly differed. The cost was that HUME was a macOS-only package.
+#
+# Both call sites are now gone, replaced by two header-only implementations with no external
+# dependency at all: cpp/eigen_small.h (BCUT2D's extremal eigenvalues) and cpp/lu_small.h
+# (resistance's per-component solve and rw_returns' matrix powers). There is no longer any
+# `target_link_libraries` here, and no `if(APPLE)`.
+#
+# WHAT CHANGED NUMERICALLY, because "portable now" is not the same as "same numbers":
+#   * BCUT2D moved in the last bits on 795 of 98,905 molecules, max 1.9e-10 relative -- inside
+#     the rtol 1e-9 the block is graded at.
+#   * The resistance BIN columns (RATSC*/RPAIR*) moved on up to 8.1% of molecules. Those
+#     columns turn out not to be well defined in floating point at all: exact rational
+#     arithmetic shows the flipping pairs sit EXACTLY on a bin edge, and Accelerate's own two
+#     LAPACKs disagree with each other on 9.00% of the corpus -- more than reference LU
+#     disagrees with either. See the note above resistance() in hume_blocks.h.
+# Neither of those is caused by the build system, but this is where the dependency was declared
+# and this is where someone will come looking.
+#
+# PROVEN, not assumed. Both of these configure and compile clean, and the resulting extension
+# links no BLAS (checked with otool -L / ldd):
+#   cmake -S . -B build/nolapack -DCMAKE_DISABLE_FIND_PACKAGE_BLAS=ON \
+#         -DCMAKE_DISABLE_FIND_PACKAGE_LAPACK=ON -DCMAKE_FIND_FRAMEWORK=NEVER \
+#         -DCMAKE_SYSTEM_FRAMEWORK_PATH= -DCMAKE_OSX_SYSROOT=
+#   c++ -O3 -std=c++17 -o hume cpp/hume.cpp     # no -framework Accelerate
+#
+# The two headers live under cpp/ and are pulled in by relative path from hume_blocks.h, so no
+# include directory is needed here -- but they MUST be present in the sdist. Both are tracked by
+# git, which is what scikit-build-core uses to decide what an sdist contains.
 
 install(TARGETS _core DESTINATION hume)

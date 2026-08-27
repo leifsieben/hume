@@ -32,31 +32,49 @@
 #include <queue>
 #include <vector>
 
+// NO BLAS, NO LAPACK. Both linear-algebra dependencies are gone and the two headers below are
+// what replaced them:
+//
+//   eigen_small.h -- Householder tridiagonalisation + Pal-Walker-Kahan QL/QR, the two stages
+//                    dsytd2 + dsterf performed, for BCUT2D's extremal eigenvalues.
+//   lu_small.h    -- reference LU with partial pivoting (dgetf2 + dgetrs) and a reference
+//                    dgemm, for resistance's per-component solve and rw_returns' matrix powers.
+//
+// WHY THIS MATTERED ENOUGH TO DO. hume_blocks.h used to ask Accelerate for `dgesv$NEWLAPACK`
+// and `dgemm$NEWLAPACK` BY NAME through asm labels, because Accelerate ships two LAPACKs that
+// round differently and the resistance block was verified against the modern one. Those symbols
+// exist nowhere but Accelerate, so CMakeLists.txt refused to configure off Apple rather than
+// silently produce different numbers -- which made HUME a macOS-only package. It no longer is,
+// and the arithmetic no longer depends on which BLAS the host happens to have installed: the
+// same source now gives the same bits on every platform, which is a stronger reproducibility
+// property than the one it replaced.
+//
+// READ THE HEADERS' OWN NOTES BEFORE CHANGING EITHER. eigen_small.h reproduces Accelerate to
+// 4.26e-13 across all 395,620 Burden matrices; lu_small.h is bit-identical to reference LAPACK
+// but NOT to Accelerate's blocked dgesv$NEWLAPACK, and the consequences of that are measured
+// and recorded above resistance() below rather than left as a hope.
+#include "../../cpp/eigen_small.h"
+#include "../../cpp/lu_small.h"
+
+// LAPACK IS OPTIONAL AND OFF BY DEFAULT. Two diagnostic modes in cpp/hume.cpp exist to check
+// this code AGAINST a reference implementation -- `solverab` times eigen_small against dsyevd,
+// and `certcheck` validates the Lanczos last-component recurrence against dsteqr's exact
+// eigenvectors. Those are evidence-gathering tools, not part of the pipeline, so they are kept
+// compilable rather than deleted, behind a flag the shipped build does not set:
+//
+//   c++ -O3 -std=c++17 -DHUME_WITH_LAPACK -o hume hume.cpp -framework Accelerate
+//
+// Nothing reachable from blocks_row() is inside this guard. `./hume verify` and `./hume bench`
+// build and run identically with and without it.
+#ifdef HUME_WITH_LAPACK
 extern "C" {
 void dsyevd_(char *, char *, int *, double *, int *, double *, double *, int *, int *, int *,
              int *);
-
-// ACCELERATE SHIPS TWO LAPACKs AND THEY DO NOT ROUND THE SAME WAY. The bare `dgesv_` symbol
-// resolves to Apple's legacy (reference-LAPACK-era) implementation; `dgesv$NEWLAPACK` is the
-// modern one. numpy 2.x on this machine links Accelerate and gets the NEW one, so matching
-// numpy means asking for it by name -- on K4 the new path returns inv[0,1] = 0.1875 exactly
-// and the legacy path returns 0.18749999999999994, which is the ulp that moved 94 atom pairs
-// across a resistance bin edge. Requested via an asm label rather than by defining
-// ACCELERATE_NEW_LAPACK globally, so that dsyevd below stays on the path BCUT2D was verified
-// against and this fix cannot silently perturb a block that already passes.
-void dgesv_new(int *, int *, double *, int *, int *, double *, int *, int *)
-    __asm__("_dgesv$NEWLAPACK");
-void dgemm_new(char *, char *, int *, int *, int *, double *, double *, int *, double *, int *,
-               double *, double *, int *) __asm__("_dgemm$NEWLAPACK");
-// The two stages dsyevd performs internally, exposed so they can be called without the
-// blocking/workspace machinery that a 27-atom matrix cannot amortise. dsytd2 takes one
-// character argument and dsterf none.
-void dsytd2_(char *, int *, double *, int *, double *, double *, double *, int *);
-void dsterf_(int *, double *, double *, int *);
 // Eigenvalues AND eigenvectors of a tridiagonal. Needed only for the LAST ROW of the
 // eigenvector matrix, which turns Lanczos's beta into a certified residual bound.
 void dsteqr_(char *, int *, double *, double *, double *, int *, double *, int *);
 }
+#endif
 
 // ---------------------------------------------------------------------------------- data
 
@@ -739,15 +757,25 @@ static void rw_returns(const Mol &m, double *out) {
   T2.assign(nn, 0.0); T3.assign(nn, 0.0); T4.assign(nn, 0.0);
   T6.assign(nn, 0.0); T8.assign(nn, 0.0);
   // Every operand here is a power of one symmetric matrix, so all of them are symmetric and
-  // commute. That is what lets a row-major buffer go straight into Fortran dgemm: the library
-  // reads it as the transpose, and for symmetric operands the transpose is the same matrix.
-  double one = 1.0, zero = 0.0;
-  char N = 'N';
-  int nl = n;
+  // commute. That is what lets a row-major buffer go straight into a column-major GEMM: the
+  // kernel reads it as the transpose, and for symmetric operands the transpose is the same
+  // matrix.
+  //
+  // hume_lin::gemm_nn, not dgemm$NEWLAPACK. Checked at the bit level on the real matrices, not
+  // assumed: over all 98,905 molecules and all five products, 511,294 of 609,332,690 result
+  // entries (0.084%) differ from Accelerate's, every one of them in the last bit. Compiling with
+  // -ffp-contract=off makes the disagreement FIFTY TIMES WORSE (30.4M entries), which is how we
+  // know Accelerate's kernel contracts too; the default -O3 contraction is the closer match and
+  // is deliberately not suppressed.
+  //
+  // WHAT REACHES THE OUTPUT: six of the 28 RW columns moved, and only on molecules where the
+  // value is essentially zero -- RW6/8/12/16_std on 44, 43, 44 and 23 molecules, RW16_max and
+  // RW16_q90 on 2 each, worst 4.5e-17 ABSOLUTE. They show up at %.12g only because %.12g prints
+  // twelve significant digits of a number that is itself ~1e-17. Against the float32 reference
+  // these columns are graded at (rtol 3e-6, atol 1e-6) it is five orders below the floor.
   auto mul = [&](const std::vector<double> &A, const std::vector<double> &B,
                  std::vector<double> &C) {
-    dgemm_new(&N, &N, &nl, &nl, &nl, &one, const_cast<double *>(A.data()), &nl,
-           const_cast<double *>(B.data()), &nl, &zero, C.data(), &nl);
+    hume_lin::gemm_nn(n, A.data(), n, B.data(), n, C.data(), n);
   };
   mul(S, S, T2);
   mul(T2, S, T3);
@@ -799,6 +827,52 @@ static void rw_returns(const Mol &m, double *out) {
 // scanning it six times. resistance.py builds Om, mask, delta, prod and a digitize/bincount
 // over full n x n arrays because numpy makes that the fast way to write it in Python; in C++
 // the same arithmetic is a single loop with no temporaries.
+//
+// THE BIN COLUMNS ARE NOT WELL DEFINED IN FLOATING POINT, AND THAT IS A PROPERTY OF THE
+// DESCRIPTOR, NOT OF THE SOLVER. This is the single most important thing to know before touching
+// this block, and it was established by measurement, not argument.
+//
+// Dropping Accelerate's `dgesv$NEWLAPACK` for hume_lin::gesv moved RATSC*/RPAIR* on up to 8.1%
+// of the corpus -- RPAIR3 on 7,728 molecules, by as much as 238 counts on one. That looks
+// alarming until you ask what the RIGHT answer is:
+//
+//   * Omega_ij is a RATIONAL function of the graph, so `delta = d - Omega` has an exact value
+//     and an unambiguous bin. Computed in exact rational arithmetic on the molecules where the
+//     solvers disagree, EVERY ONE has pairs whose delta equals a bin edge EXACTLY -- 1, 8, 12
+//     of them. np.digitize's `edge <= x` puts a tie in the upper bin; a solver that rounds
+//     Omega up by one ulp puts it in the lower one. There is nothing to get right in double
+//     precision: the value is on the knife edge.
+//   * Accelerate's OWN TWO LAPACKs disagree with each other on 9.00% of the corpus (worst 242
+//     counts) -- MORE than reference LU disagrees with either (8.77% vs new, 5.77% vs legacy).
+//   * Against the exact rational answer, all three solvers are wrong on some molecule and right
+//     on others, and on at least one (corpus index 87) all three are wrong.
+//
+// So the previously "verified" bin values were an artifact of one vendor's blocked kernel, and
+// the same resistance.py that defines them would produce different integers on a Linux box with
+// OpenBLAS. Chasing bit-identity here was chasing a number that was never reproducible.
+//
+// THE FIX, NOW APPLIED IN BOTH IMPLEMENTATIONS: delta is snapped onto a bin edge when it is
+// within 1e-9 of one, and only then digitized. Solver disagreement is ~1e-12 and the closest
+// two edges are 0.1 apart, so the snap window is a thousand times the noise and eight orders
+// below the narrowest real gap -- it catches every tie and can blur no genuine one. The C++
+// snap below and resistance.py's _snap_to_edges are the same tolerance, the same edges and the
+// same rule, and that file carries the full argument.
+//
+// THIS SUPERSEDES THE PREVIOUSLY PUBLISHED RATSC*/RPAIR* NUMBERS on every platform, macOS
+// included -- they were an artifact of one vendor's summation order. What replaces them is
+// checked the only way that means anything here: reference LU, Accelerate's dgesv$NEWLAPACK and
+// Accelerate's legacy dgesv_ now produce IDENTICAL bin vectors on all 98,905 molecules, where
+// before the two Accelerate kernels alone disagreed on 9.00% of them.
+//
+// NOT SNAPPED, deliberately: Kf, Cyclicity, DeltaMax, DeltaMean and the RW* columns. They are
+// continuous, they already agree across solvers to 1e-12, and they have no edge to fall off --
+// snapping them would change a definition to solve a problem they do not have. Note in
+// particular that dsnap below is a separate local from delta for exactly that reason.
+//
+// They did move slightly, but from the SOLVER SWAP rather than from the snap, and only as
+// rounding: max 1e-6 ABSOLUTE on Kf (4.2e-12 relative) and 1e-11 on DeltaMean. Those are sums
+// over the pair loop and carry no bin edge; their large RELATIVE deltas in the report are the
+// atol regime, values near zero. All of them still pass the gate at 100%.
 //
 // The random-walk return probabilities need matrix powers and are handled separately below.
 static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
@@ -866,21 +940,23 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
     for (int i = 0; i < k; i++) L[(size_t)i * k + i] = (double)m.adj[comp[i]].size();
     const double inv_k = 1.0 / k;
     for (size_t t = 0; t < L.size(); t++) L[t] += inv_k;
-    // dgesv, NOT dposv, and the difference is observable. numpy.linalg.inv is gesv(A, I) --
-    // an LU factorisation with partial pivoting. Cholesky is valid here (L + J/k is symmetric
-    // positive definite) and is the faster factorisation, but it rounds DIFFERENTLY, and the
-    // resistance bins have edges at 0.1/0.5/1.0/2.0 which exact molecular Omega values land
-    // on precisely. Tetrahedrane is the clean case: every pair has Omega = 2/n = 0.5 exactly,
-    // so delta = 1 - 0.5 = 0.5 sits exactly on a bin edge, and a 1-ulp difference moves a pair
-    // from RPAIR2 to RPAIR1 and takes four RATSC columns with it. numpy on this machine links
-    // ACCELERATE, the same LAPACK this binary links, so matching the ALGORITHM makes the
-    // arithmetic identical rather than merely close. Verified: the cage set went from 10
-    // mismatching columns to zero on this change alone.
+    // LU WITH PARTIAL PIVOTING, NOT CHOLESKY, and the difference is observable. (L + J/k) is
+    // symmetric positive definite, so Cholesky is valid and is the shorter, better-conditioned
+    // factorisation -- and it is still the wrong one. numpy.linalg.inv, which this block is
+    // verified against, is gesv(A, I): an LU factorisation with partial pivoting. Cholesky
+    // computes a DIFFERENT rounding of the same mathematical object, and the resistance bins
+    // have edges at 0.1/0.5/1.0/2.0 which exact molecular Omega values land on precisely.
+    // Tetrahedrane is the clean case: every pair has Omega = 2/n = 0.5 exactly, so
+    // delta = 1 - 0.5 = 0.5 sits exactly on a bin edge, and a 1-ulp difference moves a pair
+    // from RPAIR2 to RPAIR1 and takes four RATSC columns with it. Matching the ALGORITHM is
+    // what makes the arithmetic identical rather than merely close: the cage set went from 10
+    // mismatching columns to zero on that change alone, and reintroducing Cholesky would undo
+    // it. hume_lin::gesv is reference LAPACK's dgetf2 + dgetrs, so it keeps that property while
+    // owing nothing to a host BLAS -- see lu_small.h, and the exactness note above.
     I.assign((size_t)k * k, 0.0);
     for (int i = 0; i < k; i++) I[(size_t)i * k + i] = 1.0;
     ipiv.assign(k, 0);
-    int kk = k, nrhs = k, info = 0;
-    dgesv_new(&kk, &nrhs, L.data(), &kk, ipiv.data(), I.data(), &kk, &info);
+    int info = hume_lin::gesv(k, k, L.data(), k, ipiv.data(), I.data(), k);
     if (info != 0) continue;
     // Lp = inv(L + J/k) - J/k, and Omega from Lp -- in THAT order, matching resistance.py.
     // Folding the two 1/k terms algebraically (they cancel) is not the same in floating point.
@@ -903,13 +979,33 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
         dev += delta;
         if (delta > dmaxv) dmaxv = delta;
         npair++;
-        // np.digitize(delta, [1e-6, 0.1, 0.5, 1.0, 2.0, inf]) - 1, i.e. edges[b] <= x < edges[b+1]
+        // SNAP TO THE BIN EDGE, then digitize. resistance.py's _snap_to_edges, same tolerance,
+        // same edges, same order -- and the order cannot matter because the windows are
+        // disjoint. Read the long comment on _snap_to_edges in resistance.py for why this
+        // exists; the short version is that delta lands EXACTLY on an edge for real molecules,
+        // and without the snap the bin is decided by the host BLAS's summation order rather
+        // than by the molecule.
+        //
+        // dsnap is a SEPARATE VALUE from delta on purpose: DeltaMax and DeltaMean above are
+        // computed from the raw delta and must not move.
+        // A plain array, NOT a braced initializer_list: ranging over `{1e-6, 0.1, ...}` needs
+        // <initializer_list>, which this header only ever got transitively from <vector>. That
+        // compiles here and is exactly the kind of thing that stops compiling on the next
+        // standard library -- which would be an absurd way to lose the portability this whole
+        // change was for.
+        static const double SNAP_EDGES[5] = {1e-6, 0.1, 0.5, 1.0, 2.0};
+        double dsnap = delta;
+        for (int q = 0; q < 5; q++)
+          if (std::fabs(dsnap - SNAP_EDGES[q]) <= 1e-9) dsnap = SNAP_EDGES[q];
+        // np.digitize(dsnap, [1e-6, 0.1, 0.5, 1.0, 2.0, inf]) - 1, i.e. edges[b] <= x <
+        // edges[b+1]. right=False, so a value sitting ON an edge belongs to the HIGHER bin --
+        // which is exactly what this >= chain does, checked against numpy rather than assumed.
         int b = -1;
-        if (delta >= 2.0) b = 4;
-        else if (delta >= 1.0) b = 3;
-        else if (delta >= 0.5) b = 2;
-        else if (delta >= 0.1) b = 1;
-        else if (delta >= 1e-6) b = 0;
+        if (dsnap >= 2.0) b = 4;
+        else if (dsnap >= 1.0) b = 3;
+        else if (dsnap >= 0.5) b = 2;
+        else if (dsnap >= 0.1) b = 1;
+        else if (dsnap >= 1e-6) b = 0;
         if (b >= 0) {
           cntb[b] += 1.0;
           const double *pa = &Pc[(size_t)ga * 4], *pb = &Pc[(size_t)gb * 4];
@@ -1337,6 +1433,7 @@ static void kappa(const Mol &m, double *out) {
 struct BcutWork {
   std::vector<double> A, w, z, work, e, tau;
   std::vector<int> isuppz, iwork;
+  hume_eig::Work eig;      // eigen_small's own only-ever-grows scratch
 };
 
 // 0 = dsyevd (the proven path), 1 = dsytd2 + dsterf. A RUNTIME switch, not a compile-time one,
@@ -1586,15 +1683,14 @@ static void lanczos_run(const BurdenOp &B, int maxit, int reorth, LanczosWork &W
   }
 }
 
-// Extremal Ritz values of the leading k x k block of T, via dsterf on a copy.
+// Extremal Ritz values of the leading k x k block of T, via eigen_small's dsterf on a copy.
+// Only the two extremes are ever read, which is exactly what sterf_min_max returns -- it skips
+// dsterf's closing dlasrt in favour of one O(k) scan.
 static void ritz_extremes(const LanczosWork &W, int k, LanczosWork &S, double *lo, double *hi) {
   S.d.assign(W.alpha.begin(), W.alpha.begin() + k);
   S.e.assign(k > 1 ? k - 1 : 1, 0.0);
   for (int i = 0; i + 1 < k; i++) S.e[i] = W.beta[i];
-  int nn = k, info = 0;
-  dsterf_(&nn, S.d.data(), S.e.data(), &info);
-  *lo = S.d[0];
-  *hi = S.d[k - 1];
+  if (!hume_eig::sterf_min_max(k, S.d.data(), S.e.data(), lo, hi)) { *lo = *hi = 0.0; return; }
 }
 
 // ---- production path: certified extremal eigenvalues, or an honest failure ---------------
@@ -1850,8 +1946,15 @@ static bool lanczos_extremal(const BurdenOp &B, double tol, double *lo, double *
       W.d.assign(W.alpha.begin(), W.alpha.end());
       W.e.assign(kk > 1 ? kk - 1 : 1, 0.0);
       for (int i = 0; i + 1 < kk; i++) W.e[i] = W.beta[i];
-      int nn = kk, info = 0;
-      dsterf_(&nn, W.d.data(), W.e.data(), &info);
+      // eigen_small's dsterf. It returns the two extremes directly instead of sorting the whole
+      // spectrum, so they are written back into the ends of W.d, which is all the code below
+      // ever reads. `info == 0` becomes "the QL/QR sweep converged", the same condition dsterf
+      // reported.
+      double ev_lo = 0.0, ev_hi = 0.0;
+      const int info = hume_eig::sterf_min_max(kk, W.d.data(), W.e.data(), &ev_lo, &ev_hi)
+                           ? 0 : 1;
+      W.d[0] = ev_lo;
+      W.d[kk - 1] = ev_hi;
       if (info == 0) {
         double scale = std::max(std::fabs(W.d[0]), std::fabs(W.d[kk - 1]));
         if (scale < 1.0) scale = 1.0;
@@ -1966,53 +2069,69 @@ static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
   }
   if (n == 1) { *hi = *lo = W.A[0]; return; }
 
-  // dsyevd, not dsyevr. dsyevr takes THREE character arguments and Accelerate's Fortran ABI
-  // rejects the call (INFO = -6) without the hidden string-length arguments; dsyevd takes two
-  // and is already proven against this LAPACK in cpp/bench.cpp. The cost is a FULL spectrum
-  // where only the two extremes are wanted -- so the number this produces is an upper bound,
-  // and an extremal-only solver (Lanczos, or dsyevr through a LAPACK that accepts it) can only
-  // be faster.
-  // NO WORKSPACE QUERY. The query is itself a LAPACK call, so querying before every
-  // factorisation doubles the number of calls -- eight per molecule where four are needed. For
-  // JOBZ='N' the requirement is documented and tiny (LWORK >= 2N+1, LIWORK >= 1), so the buffers
-  // are sized directly and reused across molecules; they only ever grow.
+  // hume_eig::extremal -- cpp/eigen_small.h, no BLAS and no LAPACK. It runs the SAME two stages
+  // this code used to call into Accelerate for (dsytd2 UPLO='U' then dsterf), in the same order,
+  // which is why agreement with LAPACK is structural rather than tuned: max deviation across
+  // all 395,620 Burden matrices of this corpus is 4.26e-13, itself below verify_hume.py's atol
+  // of 1e-12, with zero non-convergences including cages, C60, polyacenes, 120-carbon polyenes,
+  // 1,764-atom peptides and the exotic-element set.
+  //
+  // It is also FASTER than Accelerate at these sizes -- corpus-weighted 166/161 us against
+  // 216/198 -- winning or tying in every size bucket, because at n ~ 27 the tuned library is
+  // mostly wrapper and its QR sweep pays one sqrt per rotation that the Pal-Walker-Kahan
+  // formulation does not. So this is not a portability concession that costs speed; see the
+  // measurement tables in eigen_small.h and cpp/bench_eigen.cpp.
   if (BCUT_SKIP_SOLVE) { *lo = W.A[0]; *hi = W.A[n - 1]; return; }
-  int nn = n, lda = n, info = 0;
   // ONLY EVER GROW these buffers. Plain resize() shrinks and regrows as n varies from molecule
   // to molecule, and growing value-initialises the new tail -- a per-call cost that has nothing
-  // to do with the solver being timed. The dsyevd branch below always had the only-grow guard;
-  // the dsytd2 branch did not, which quietly handicapped the candidate it was being compared
-  // against by a fraction of a percent on a question decided at the percent level.
+  // to do with the solver being timed. hume_eig::Work::ensure() applies the same rule to
+  // eigen_small's own scratch.
   if ((int)W.w.size() < n) W.w.resize(n);
   if (BCUT_SOLVER >= 1) {
-    // dsyevd = tridiagonalise, then divide-and-conquer. At n ~ 27 the D&C threshold (SMLSIZ,
-    // typically 25) means it falls back to plain QR anyway, so what the wrapper actually buys
-    // us is ILAENV block-size lookups and a blocked dsytrd that has almost nothing to block.
-    // dsytd2 is the UNBLOCKED reduction and dsterf the QR-with-no-vectors solve: the same two
-    // stages, called directly. Neither takes more than one character argument, so the Fortran
-    // ABI problem that killed dsyevr does not arise here -- but INFO is still checked.
-    const int ne = n > 1 ? n - 1 : 1;
-    if ((int)W.e.size() < ne) W.e.resize(ne);
-    if ((int)W.tau.size() < ne) W.tau.resize(ne);
-    char uplo = 'U';
-    dsytd2_(&uplo, &nn, W.A.data(), &lda, W.w.data(), W.e.data(), W.tau.data(), &info);
     // SOLVER 2 is a BENCH-ONLY stage probe: stop after the tridiagonalisation so the split
     // between the Householder reduction and the QR sweep can be measured. It returns a
     // meaningless number and must never be the default -- the point is to find out whether
     // vectorising the reduction (idea #12) is aimed at most of the cost or a corner of it.
-    if (BCUT_SOLVER == 2) { *lo = W.w[0]; *hi = W.w[n - 1]; return; }
-    if (info == 0) dsterf_(&nn, W.w.data(), W.e.data(), &info);
-    if (info != 0) { *hi = *lo = 0.0; return; }
-  } else {
+    if (BCUT_SOLVER == 2) {
+      W.eig.ensure(n);
+      double *M = W.eig.a.data();
+      for (int j = 0; j < n; j++)
+        for (int i = 0; i <= j; i++) M[(size_t)j * n + i] = W.A[(size_t)j * n + i];
+      hume_eig::sytd2_upper(M, n, n, W.eig.d.data(), W.eig.e.data(), W.eig.tau.data(),
+                            W.eig.wk.data());
+      *lo = W.eig.d[0];
+      *hi = W.eig.d[n - 1];
+      return;
+    }
+    // A is symmetric, so its row-major buffer and the column-major one extremal() expects are
+    // the same bytes; no transpose is needed and none is done.
+    if (!hume_eig::extremal(W.A.data(), n, lo, hi, W.eig)) { *hi = *lo = 0.0; return; }
+    return;
+  }
+#ifdef HUME_WITH_LAPACK
+  // REFERENCE PATH, BUILD-FLAGGED OFF. Kept so `./hume solverab` can still time eigen_small
+  // against a tuned LAPACK in one process; not reachable in the shipped build. dsyevd, not
+  // dsyevr: dsyevr takes THREE character arguments and Accelerate's Fortran ABI rejects the
+  // call (INFO = -6) without the hidden string-length arguments. NO WORKSPACE QUERY -- the
+  // query is itself a LAPACK call, and for JOBZ='N' the requirement is documented and tiny
+  // (LWORK >= 2N+1, LIWORK >= 1).
+  {
+    int nn = n, lda = n, info = 0;
     char jobz = 'N', uplo = 'U';
     int lwork = 2 * n + 1, liwork = 1;
     if ((int)W.work.size() < lwork) W.work.resize(lwork);
     if ((int)W.iwork.size() < liwork) W.iwork.resize(liwork);
     dsyevd_(&jobz, &uplo, &nn, W.A.data(), &lda, W.w.data(), W.work.data(), &lwork,
             W.iwork.data(), &liwork, &info);
+    if (info != 0) { *hi = *lo = 0.0; return; }
   }
   *lo = W.w[0];
   *hi = W.w[n - 1];
+#else
+  // BCUT_SOLVER 0 without -DHUME_WITH_LAPACK: there is no reference to compare against, so fall
+  // through to the shipped solver rather than returning a silently wrong number.
+  if (!hume_eig::extremal(W.A.data(), n, lo, hi, W.eig)) { *hi = *lo = 0.0; return; }
+#endif
 }
 
 // 1e-10 on the residual, against a verification gate of rtol 1e-9. Measured worst TRUE
