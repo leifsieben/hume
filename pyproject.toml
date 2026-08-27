@@ -1,5 +1,13 @@
 # Packaging for HUME's verified blocks. See PACKAGING.md for why scikit-build-core + CMake +
 # pybind11 rather than ctypes, Cython, or a subprocess over text files.
+#
+# BUILDING IN THIS REPO -- always with the constraints file:
+#
+#     uv pip install -e . --python .venv/bin/python -c constraints.txt
+#
+# `dependencies` below is deliberately permissive, which is right for a library and wrong for
+# this working tree: a bare editable install re-resolves and UPGRADES rdkit, which is the oracle
+# every exactness claim is measured against. See constraints.txt.
 [build-system]
 requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
 build-backend = "scikit_build_core.build"
@@ -9,6 +17,10 @@ name = "hume"
 version = "0.1.0"
 description = "Verified molecular descriptor blocks, computed in C++"
 requires-python = ">=3.10"
+# Lower bounds only, on purpose. HUME computes its descriptors itself; rdkit supplies parsing
+# and perceived atom/bond properties. Those perceptions DO drift across releases, so values are
+# version-relative -- that belongs in `spec`, not in a hard pin that would fight the user's
+# environment. Verified bit-exact against rdkit 2025.9.2 / numpy 2.4.6.
 dependencies = ["numpy>=1.24", "rdkit>=2023.03"]
 
 [tool.scikit-build]

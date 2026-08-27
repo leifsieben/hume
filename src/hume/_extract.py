@@ -21,14 +21,14 @@ with like. Callers that want to know can read `chg_ok`.
 
 LAYOUT. One batch is a set of flat arrays plus offsets, so N molecules cross the boundary in one
 call. Per-atom integer properties share one (n_atoms, 8) C-contiguous block and per-atom doubles
-one (n_atoms, 4) block, because the extension reads them by row and one allocation beats twelve.
+one (n_atoms, 2) block, because the extension reads them by row and one allocation beats twelve.
 
     atom_off  int32   (n_mol + 1,)   atoms of molecule k are [atom_off[k] : atom_off[k+1]]
     bond_off  int32   (n_mol + 1,)
     chg_ok    int32   (n_mol,)       0 = Gasteiger unavailable, charges are 0.0
     atom_i    int32   (n_atoms, 8)   Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP
-    atom_d    float64 (n_atoms, 4)   mass, Gasteiger charge, Crippen logP, Crippen MR
-    bond_i    int32   (n_bonds, 4)   u, v, conjugated, in-ring
+    atom_d    float64 (n_atoms, 2)   mass, Gasteiger charge
+    bond_i    int32   (n_bonds, 5)   u, v, conjugated, in-ring, SMARTS bond code
     bond_s    int32   (n_bonds,)     E/Z as +/-1, 0 for none
     bond_d    float64 (n_bonds,)     bond order
 
@@ -36,20 +36,82 @@ Hybridisation is passed through as RDKit's enum value rather than re-derived, fo
 export_predict.py gives: HallKierAlpha indexes a per-element table by (hybridisation - 2), and
 reimplementing RDKit's perception rules in C++ is the first place an "exact" claim would quietly
 stop being true.
+
+CRIPPEN IS NOT IN THE ARRAYS ANY MORE. It used to be two more `atom_d` columns filled by
+`rdMolDescriptors._CalcCrippenContribs`, which cost 78 us/mol -- 42% of this module -- to run
+110 SMARTS patterns over the whole molecule. src/hume_core/crippen_typer.h answers the same
+question from the integers already in `atom_i` for 1.5 us/mol, bit-identically to RDKit on
+2,869,048 atoms, so the call is gone and the extension fills the pair itself. What that costs
+here is the fifth `bond_i` column: the typer needs SMARTS bond semantics, where the ORDER and
+the AROMATIC FLAG are independent questions, and neither is recoverable from `bond_d` -- a
+dative bond has order 1.0 without being SINGLE, and cpp/mols.smi contains TRIPLE bonds carrying
+the aromatic flag. Both cases are real, and together they are one Python call per bond.
+
+WHY THE LOOPS BELOW LOOK LIKE THAT. `a.GetAtomicNum()` is not arithmetic, it is a Boost.Python
+round trip, and the old shape of this function made about eleven of them per atom and seven per
+bond -- ~300 per molecule, measured at 88 us. Three things shrink that without changing a single
+value, because every value is the same one RDKit would have handed back either way:
+
+  * ONE PASS PER COLUMN, `list.extend(map(Atom.GetAtomicNum, ats))`, instead of one tuple per
+    atom. The unbound method skips the per-call attribute lookup on the instance, which measured
+    0.039 us/call against 0.11 for `a.GetAtomicNum()` -- and the whole pass over 29 atoms then
+    costs about as much as ten individual calls did.
+  * THE ATOM LIST IS BUILT ONCE, and BY INDEX. Wrapper construction alone -- building the list
+    and reading nothing off it -- is a third of what is left, so the old code's three separate
+    walks (charges, properties, CIP) were expensive before they read anything. Materialising
+    once pays it once. And `map(m.GetAtomWithIdx, range(n))` is HALF the price of iterating the
+    `m.GetAtoms()` sequence for the same objects in the same order -- 7.4 us/mol against 15.0,
+    and 8.9 against 16.7 for bonds. RDKit's _ROAtomSeq iterator is simply dearer than indexing.
+  * THE NON-FINITE CHARGE SCAN IS A BATCH numpy OP, not a per-atom `np.isfinite`. Calling a
+    numpy ufunc on a Python float costs ~0.3 us, so the old scan cost more than the charges did.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from itertools import repeat
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import rdMolDescriptors, rdPartialCharges
+from rdkit.Chem import rdPartialCharges
 
 # E/Z as +/-1, matching stereo.py's _E exactly (TRANS is E, CIS is Z).
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 
-N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 8, 4, 4
+N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 8, 2, 5
+
+# The bond half of the Crippen typer's input, byte-for-byte cpp/export_crippen.py's bond_code():
+# a bit for the bond ORDER when it is one of the three SMARTS knows how to name, and a separate
+# bit for the aromatic FLAG. `-` asks about the order, `:` about the flag, and the single bond
+# joining biphenyl's two rings is the C20-vs-C19 distinction that needs them apart.
+_BIT_SINGLE, _BIT_DOUBLE, _BIT_TRIPLE, _BIT_AROM = 1, 2, 4, 8
+_TYPE_BIT = {Chem.BondType.SINGLE: _BIT_SINGLE,
+             Chem.BondType.DOUBLE: _BIT_DOUBLE,
+             Chem.BondType.TRIPLE: _BIT_TRIPLE}
+
+# BondType -> GetBondTypeAsDouble(), memoised the first time each type is seen. The bond loop has
+# to read `b.GetBondType()` anyway for the Crippen code, so caching the order against it replaces
+# a second Python call per bond with a dict hit. It is filled from RDKit's own answer for a real
+# bond of that type rather than transcribed, so there is no second copy of RDKit's table to go
+# stale -- and the types RDKit refuses to give a number for (THREECENTER, DATIVEL, DATIVER,
+# OTHER all raise) never enter the cache and raise from the call, exactly as before.
+_ORDER: dict = {}
+
+# Unbound accessors, bound once here. `map(_atomic_num, ats)` is a C-level loop over a C-level
+# callable; `[a.GetAtomicNum() for a in ats]` re-resolves the attribute on every atom.
+_atomic_num = Chem.Atom.GetAtomicNum
+_degree = Chem.Atom.GetDegree
+_total_num_hs = Chem.Atom.GetTotalNumHs
+_formal_charge = Chem.Atom.GetFormalCharge
+_hybridization = Chem.Atom.GetHybridization
+_is_aromatic = Chem.Atom.GetIsAromatic
+_atom_in_ring = Chem.Atom.IsInRing
+_mass = Chem.Atom.GetMass
+_has_prop = Chem.Atom.HasProp
+_double_prop = Chem.Atom.GetDoubleProp
+
+_CIP_CODE = "_CIPCode"
+_GASTEIGER = "_GasteigerCharge"
 
 
 @dataclass(frozen=True)
@@ -77,9 +139,21 @@ def extract(mols) -> Batch:
     a row index into a lie, and every consumer of this array indexes by position.
     """
     atom_off, bond_off, chg_ok = [0], [0], []
-    ai: list[int] = []
-    ad: list[float] = []
-    bi: list[int] = []
+    z: list[int] = []
+    deg: list[int] = []
+    nh: list[int] = []
+    fchg: list[int] = []
+    hyb: list[int] = []
+    arom: list[int] = []
+    ring: list[int] = []
+    cip: list[int] = []
+    mass: list[float] = []
+    charge: list[float] = []
+    bu: list[int] = []
+    bv: list[int] = []
+    bconj: list[int] = []
+    bring: list[int] = []
+    bcode: list[int] = []
     bs: list[int] = []
     bd: list[float] = []
     na = nb = 0
@@ -88,61 +162,105 @@ def extract(mols) -> Batch:
         if m is None:
             raise ValueError(f"molecule {k} is None; parse before calling extract()")
 
-        # The four BCUT2D atom properties come from RDKit rather than being reimplemented. That
-        # is a deliberate split: Crippen (0.85 us) and Gasteiger (9.41 us) are already cheap C++,
-        # while the EIGENVALUE step is the ~300 us. Porting the cheap half would buy nothing and
-        # would put two SMARTS/PEOE implementations in the world.
+        n = m.GetNumAtoms()
+        ats = list(map(m.GetAtomWithIdx, range(n)))
+
+        # Gasteiger stays RDKit's. It is 9 us of iterative C++ for the charges themselves, and
+        # PEOE is a fitted parameter set rather than a graph query -- a second implementation
+        # would be a second set of parameters to keep in step, which is the argument that also
+        # kept hybridisation and CIP on RDKit's side of the line. Crippen was the opposite case
+        # and has moved; see the module docstring.
         try:
             rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
-            chg = [a.GetDoubleProp("_GasteigerCharge") for a in m.GetAtoms()]
-            ok = True
-            for i, c in enumerate(chg):
-                if not np.isfinite(c):
-                    chg[i], ok = 0.0, False
+            charge.extend(map(_double_prop, ats, repeat(_GASTEIGER)))
+            ok = 1
         except Exception:
-            chg = [0.0] * m.GetNumAtoms()
-            ok = False
-        crip = rdMolDescriptors._CalcCrippenContribs(m)
+            del charge[na:]                      # a partial molecule must not survive the throw
+            charge.extend(repeat(0.0, n))
+            ok = 0
         # CIP codes for the stereo block. MolFromSmiles assigns them already; the explicit call
         # is the safety net stereo.py also carries, and is verified to change nothing here.
         Chem.AssignStereochemistry(m, cleanIt=True, force=True)
 
-        n = m.GetNumAtoms()
-        for i, a in enumerate(m.GetAtoms()):
-            if a.HasProp("_CIPCode"):
-                cip = 1 if a.GetProp("_CIPCode") == "R" else -1
-            else:
-                cip = 0
-            ai.extend((a.GetAtomicNum(), a.GetDegree(), a.GetTotalNumHs(),
-                       a.GetFormalCharge(), int(a.GetHybridization()),
-                       int(a.GetIsAromatic()), int(a.IsInRing()), cip))
-            cl, cm = crip[i]
-            ad.extend((a.GetMass(), chg[i], cl, cm))
+        z.extend(map(_atomic_num, ats))
+        deg.extend(map(_degree, ats))
+        nh.extend(map(_total_num_hs, ats))
+        fchg.extend(map(_formal_charge, ats))
+        hyb.extend(map(_hybridization, ats))
+        arom.extend(map(_is_aromatic, ats))
+        ring.extend(map(_atom_in_ring, ats))
+        mass.extend(map(_mass, ats))
+
+        # HasProp returns 0/1, so in the overwhelmingly common case of a molecule with no
+        # assigned stereocentre the flag list IS the CIP column and no second pass happens.
+        flags = list(map(_has_prop, ats, repeat(_CIP_CODE)))
+        if any(flags):
+            cip.extend([(1 if a.GetProp(_CIP_CODE) == "R" else -1) if f else 0
+                        for f, a in zip(flags, ats)])
+        else:
+            cip.extend(flags)
 
         nbonds = m.GetNumBonds()
-        for b in m.GetBonds():
-            bi.extend((b.GetBeginAtomIdx(), b.GetEndAtomIdx(),
-                       int(b.GetIsConjugated()), int(b.IsInRing())))
+        for b in map(m.GetBondWithIdx, range(nbonds)):
+            bt = b.GetBondType()
+            code = _TYPE_BIT.get(bt, 0)
+            if b.GetIsAromatic():
+                code |= _BIT_AROM
+            bu.append(b.GetBeginAtomIdx())
+            bv.append(b.GetEndAtomIdx())
+            bconj.append(b.GetIsConjugated())
+            bring.append(b.IsInRing())
+            bcode.append(code)
             bs.append(_EZ.get(b.GetStereo(), 0))
-            bd.append(b.GetBondTypeAsDouble())
+            order = _ORDER.get(bt)
+            if order is None:
+                order = _ORDER[bt] = b.GetBondTypeAsDouble()
+            bd.append(order)
 
         na += n
         nb += nbonds
         atom_off.append(na)
         bond_off.append(nb)
-        chg_ok.append(int(ok))
+        chg_ok.append(ok)
 
-    n_mol = len(chg_ok)
+    if not chg_ok:
+        return _empty()
+
+    atom_off_a = np.asarray(atom_off, dtype=np.int32)
+    chg_ok_a = np.asarray(chg_ok, dtype=np.int32)
+    charge_a = np.asarray(charge, dtype=np.float64)
+
+    # The non-finite contract, once per batch instead of once per atom. RDKit hands back inf or
+    # nan for elements PEOE has no parameters for; those atoms get 0.0 and their molecule gets
+    # chg_ok = 0. Doing it here rather than in the loop is what makes it free when nothing is
+    # wrong, which is almost always -- and `searchsorted` on the offsets is exactly the "which
+    # molecule owns atom i" question the flat layout was chosen to make cheap.
+    bad = ~np.isfinite(charge_a)
+    if bad.any():
+        charge_a[bad] = 0.0
+        owners = np.searchsorted(atom_off_a, np.flatnonzero(bad), side="right") - 1
+        chg_ok_a[owners] = 0
+
+    atom_i = np.empty((na, N_ATOM_INT), dtype=np.int32)
+    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip)):
+        atom_i[:, col] = src
+    atom_d = np.empty((na, N_ATOM_DBL), dtype=np.float64)
+    atom_d[:, 0] = mass
+    atom_d[:, 1] = charge_a
+    bond_i = np.empty((nb, N_BOND_INT), dtype=np.int32)
+    for col, src in enumerate((bu, bv, bconj, bring, bcode)):
+        bond_i[:, col] = src
+
     return Batch(
-        atom_off=np.asarray(atom_off, dtype=np.int32),
+        atom_off=atom_off_a,
         bond_off=np.asarray(bond_off, dtype=np.int32),
-        chg_ok=np.asarray(chg_ok, dtype=np.int32),
-        atom_i=np.asarray(ai, dtype=np.int32).reshape(na, N_ATOM_INT),
-        atom_d=np.asarray(ad, dtype=np.float64).reshape(na, N_ATOM_DBL),
-        bond_i=np.asarray(bi, dtype=np.int32).reshape(nb, N_BOND_INT),
+        chg_ok=chg_ok_a,
+        atom_i=atom_i,
+        atom_d=atom_d,
+        bond_i=bond_i,
         bond_s=np.asarray(bs, dtype=np.int32),
         bond_d=np.asarray(bd, dtype=np.float64),
-    ) if n_mol else _empty()
+    )
 
 
 def _empty() -> Batch:

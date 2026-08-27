@@ -1,0 +1,22 @@
+# The pinned oracle. Every "ALL EXACT" claim in this repo is a claim about C++ agreeing with
+# THESE versions, so resolving anything else silently changes what the tests are testing.
+#
+# Why this file exists at all: `pyproject.toml` declares `rdkit>=2023.03`, which is the correct
+# LIBRARY constraint -- HUME should install against a wide range for users -- but it means a
+# bare `uv pip install -e .` re-resolves and upgrades rdkit in the dev venv as a side effect of
+# rebuilding the extension. That happened twice in one session here. The second time it landed
+# mid-run on a live verify process, which then executed 2026.3.5 code out of unlinked-but-mapped
+# dylibs while reporting itself as the pinned version.
+#
+# ALWAYS build in this repo with:
+#
+#     uv pip install -e . --python .venv/bin/python -c constraints.txt
+#
+# RDKit is not a passive dependency here. It parses SMILES and supplies perceived properties --
+# aromaticity, hybridisation, ring membership, CIP codes, Gasteiger charges -- that are INPUTS to
+# the C++. Aromaticity perception in particular differs across releases: 19 molecules in the
+# 98,905-molecule corpus perceive differently on a canonical-SMILES round trip within a single
+# version. So "HUME is exact" is version-relative by construction, and the version belongs in
+# `spec="v1"` (see API.md).
+rdkit==2025.9.2
+numpy==2.4.6

@@ -1,8 +1,7 @@
-"""What are the 187.5 us/molecule of RDKit->array extraction actually made of?
+"""What is RDKit->array extraction actually made of, and what is left of it?
 
-The bridge measured extraction at 187.5 us/mol against 249.8 us of C++ compute -- 43% of
-`featurize_blocks`. That ratio decides an architecture question, so it is worth knowing what the
-187.5 is, not merely how big it is:
+THE QUESTION THIS ANSWERED. Extraction was 43% of `featurize_blocks`, and that ratio decides an
+architecture question, so it mattered what the time WAS and not merely how big it was:
 
   * If it is PYTHON CALL OVERHEAD -- `atom.GetAtomicNum()` and friends crossing the boundary
     ~10 times per atom, ~300 times per molecule -- it is cheap to fix by getting the same data
@@ -11,11 +10,32 @@ The bridge measured extraction at 187.5 us/mol against 249.8 us of C++ compute -
     SMARTS typer, CIP labelling), it is irreducible from Python, and the only lever left is
     linking RDKit's C++ directly -- which costs wheels.
 
-Those two have opposite consequences, so the split is the measurement.
+It was both, and the two were addressed differently. Crippen -- 93 us/mol cold on this box, the
+largest single item and by far the largest RDKit-side one -- was the second case, and it left
+Python entirely: src/hume_core/crippen_typer.h now answers it inside the extension for 1.4.
+Everything else was the first case and is now bulk-extracted. Extraction went 231 -> 92 us/mol,
+verified bit-identical on all 182 columns over the 98,905-molecule corpus.
+
+WHAT IS LEFT AND WHAT IT WOULD TAKE. The two `wrapper list, no reads` rows below build the atom
+and bond object lists and read NOTHING off them; they are the floor for any approach that
+touches an RDKit object from Python, and the per-column passes on top are within a small factor
+of it. The only remaining lever is not to touch RDKit objects from Python at all:
+`m.ToBinary(PrivateProps | AtomProps)` serialises the whole molecule -- graph, aromaticity,
+hybridisation, ring info, CIP codes and Gasteiger charges -- in 9.8 us/mol and 455 bytes, which
+would replace essentially all 92. What it costs is a hand-written parser for RDKit's pickle
+format inside the extension, pinned to a format version that RDKit does not promise to keep.
+That is a different kind of decision from this one and has not been taken.
 
 METHOD. Each component is timed in its own pass over the same molecules, in-process, with the
 order rotated across cycles so machine drift is common-mode. CPU time, not wall: the bridge work
 found wall-clock spreads of 26-47x on this shared box, larger than anything being compared.
+
+COLD, NOT WARM. RDKit caches results on the molecule, so a second pass over the same molecules
+measures a dict lookup instead of the work. That is not a hypothetical: the pre-change extract()
+costs 231 us/mol on freshly parsed molecules and 130 on molecules it has already seen, and the
+gap is exactly the Crippen SMARTS pass being free from the second repetition onwards. Every
+component here therefore re-parses the molecules and times only what follows the parse, and
+c_crippen_rdkit additionally passes force=True.
 
     .venv/bin/python src/hume/_profile_extract.py [n_mols]
 """
@@ -23,27 +43,37 @@ from __future__ import annotations
 
 import sys
 import time
+from itertools import repeat
 from pathlib import Path
 
 import numpy as np
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors, rdPartialCharges
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from hume._extract import extract  # noqa: E402
+
 RDLogger.DisableLog("rdApp.*")
 ROOT = Path(__file__).resolve().parents[2]
+
+_A = Chem.Atom
 
 
 def _cpu():
     return time.process_time()
 
 
-def bench(fn, mols, reps=3):
-    """-> us per molecule, CPU time, best of `reps`."""
+def bench(fn, smis, reps=3):
+    """-> us per molecule, CPU time, best of `reps`, on FRESH molecules with the parse removed."""
     best = float("inf")
     for _ in range(reps):
+        mols = [Chem.MolFromSmiles(s) for s in smis]
         t0 = _cpu()
         fn(mols)
-        best = min(best, (_cpu() - t0) / len(mols) * 1e6)
+        t1 = _cpu()
+        best = min(best, (t1 - t0) / len(smis) * 1e6)
+        del mols
     return best
 
 
@@ -51,52 +81,72 @@ def bench(fn, mols, reps=3):
 def c_gasteiger(mols):
     for m in mols:
         try:
-            # same reasoning as c_crippen: charges are cached on the molecule
-            rdPartialCharges.ComputeGasteigerCharges(m, nIter=12, throwOnParamFailure=False)
-            [a.GetDoubleProp("_GasteigerCharge") for a in m.GetAtoms()]
+            rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
         except Exception:
             pass
 
 
-def c_crippen(mols):
-    # force=True IS LOAD-BEARING. RDKit caches Crippen contributions on the molecule, so timing
-    # a second pass over the same molecules measures a dict lookup rather than the 68-pattern
-    # SMARTS typer. This project has already reported an 82x-wrong Crippen number that way, and
-    # the first version of THIS profiler made the same mistake and inverted its own verdict.
-    # In real extraction every molecule is fresh, so cold is the honest cost.
+def c_stereo(mols):
     for m in mols:
-        rdMolDescriptors._CalcCrippenContribs(m, force=True)
+        Chem.AssignStereochemistry(m, cleanIt=True, force=True)
 
 
-def c_atom_loop(mols):
-    """The per-atom Python attribute access -- 8 ints + mass per atom."""
+def c_atom_list(mols):
+    """Wrapper construction ALONE -- the floor for anything that touches an atom from Python."""
     for m in mols:
-        for a in m.GetAtoms():
-            (a.GetAtomicNum(), a.GetDegree(), a.GetTotalNumHs(), a.GetFormalCharge(),
-             int(a.GetHybridization()), int(a.GetIsAromatic()), int(a.IsInRing()),
-             a.GetMass())
+        list(map(m.GetAtomWithIdx, range(m.GetNumAtoms())))
+
+
+def c_atom_cols(mols):
+    """The eight per-atom column passes, on lists that already exist."""
+    for m in mols:
+        ats = list(map(m.GetAtomWithIdx, range(m.GetNumAtoms())))
+        list(map(_A.GetAtomicNum, ats))
+        list(map(_A.GetDegree, ats))
+        list(map(_A.GetTotalNumHs, ats))
+        list(map(_A.GetFormalCharge, ats))
+        list(map(_A.GetHybridization, ats))
+        list(map(_A.GetIsAromatic, ats))
+        list(map(_A.IsInRing, ats))
+        list(map(_A.GetMass, ats))
+
+
+def c_charge_read(mols):
+    for m in mols:
+        rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
+        ats = list(map(m.GetAtomWithIdx, range(m.GetNumAtoms())))
+        list(map(_A.GetDoubleProp, ats, repeat("_GasteigerCharge")))
 
 
 def c_cip(mols):
     for m in mols:
-        for a in m.GetAtoms():
-            if a.HasProp("_CIPCode"):
-                a.GetProp("_CIPCode")
+        ats = list(map(m.GetAtomWithIdx, range(m.GetNumAtoms())))
+        list(map(_A.HasProp, ats, repeat("_CIPCode")))
+
+
+def c_bond_list(mols):
+    for m in mols:
+        list(map(m.GetBondWithIdx, range(m.GetNumBonds())))
 
 
 def c_bond_loop(mols):
     for m in mols:
-        for b in m.GetBonds():
-            (b.GetBeginAtomIdx(), b.GetEndAtomIdx(), int(b.GetIsConjugated()),
-             int(b.IsInRing()), int(b.GetStereo()), b.GetBondTypeAsDouble())
+        for b in map(m.GetBondWithIdx, range(m.GetNumBonds())):
+            (b.GetBeginAtomIdx(), b.GetEndAtomIdx(), b.GetIsConjugated(), b.IsInRing(),
+             b.GetBondType(), b.GetIsAromatic(), b.GetStereo())
 
 
-def c_array_build(mols):
-    """The numpy assembly at the end, on lists of the right size."""
+def c_crippen_rdkit(mols):
+    """NO LONGER CALLED. Kept because it is the thing that was removed, and the number it
+    prints is what the removal was worth. force=True is load-bearing: RDKit caches the
+    contributions on the molecule, and this project has already reported an 82x-wrong Crippen
+    number by timing the cache."""
     for m in mols:
-        n = m.GetNumAtoms()
-        np.asarray([0] * (n * 8), dtype=np.int32).reshape(n, 8)
-        np.asarray([0.0] * (n * 4), dtype=np.float64).reshape(n, 4)
+        rdMolDescriptors._CalcCrippenContribs(m, force=True)
+
+
+def c_extract(mols):
+    extract(mols)
 
 
 def main() -> None:
@@ -107,41 +157,59 @@ def main() -> None:
     mols = [m for m in (Chem.MolFromSmiles(s) for s in pick) if m is not None]
     natoms = float(np.mean([m.GetNumAtoms() for m in mols]))
     print(f"{len(mols)} molecules, mean {natoms:.1f} heavy atoms\n")
+    del mols
 
-    comps = [("Gasteiger (C++ iterative, + prop read)", c_gasteiger),
-             ("Crippen contribs (C++ SMARTS typer)", c_crippen),
-             ("per-ATOM python attribute loop", c_atom_loop),
-             ("CIP code read", c_cip),
-             ("per-BOND python attribute loop", c_bond_loop),
-             ("numpy array assembly", c_array_build)]
+    # (label, fn, kind, components whose cost this one also pays and which are subtracted).
+    # A pass that reads a property has to build the wrapper list first, and the charge read has
+    # to compute the charges; charging those twice would make the column sum to more than
+    # extract() does, which is how the old version of this file came to print 198 us of parts
+    # for a 187 us whole.
+    GAS = "Gasteiger charges, no read (RDKit C++)"
+    STE = "AssignStereochemistry (RDKit C++)"
+    ATL = "atom wrapper list, no reads"
+    BOL = "bond wrapper list, no reads"
+    comps = [(GAS, c_gasteiger, "RDKIT", ()),
+             (STE, c_stereo, "RDKIT", ()),
+             (ATL, c_atom_list, "FLOOR", ()),
+             ("8 per-atom column passes", c_atom_cols, "PYTHON", (ATL,)),
+             ("Gasteiger charge read pass", c_charge_read, "PYTHON", (GAS, ATL)),
+             ("CIP HasProp pass", c_cip, "PYTHON", (ATL,)),
+             (BOL, c_bond_list, "FLOOR", ()),
+             ("per-bond loop, 7 reads", c_bond_loop, "PYTHON", (BOL,))]
 
-    # rotate the order across cycles so drift is common-mode
     tot = {}
     for cyc in range(3):
         order = comps[cyc:] + comps[:cyc]
-        for name, fn in order:
-            tot.setdefault(name, []).append(bench(fn, mols))
+        for name, fn, _kind, _sub in order:
+            tot.setdefault(name, []).append(bench(fn, pick))
 
-    print(f"  {'component':42s} {'us/mol':>9s} {'us/atom':>9s}  kind")
-    rows = []
-    for name, fn in comps:
-        us = min(tot[name])
-        kind = "RDKit C++" if ("Gasteiger" in name or "Crippen" in name) else "PYTHON"
-        rows.append((name, us, kind))
-        print(f"  {name:42s} {us:9.2f} {us/natoms:9.3f}  {kind}")
+    whole = bench(c_extract, pick, reps=5)
+    gone = bench(c_crippen_rdkit, pick, reps=3)
 
-    py = sum(u for _, u, k in rows if k == "PYTHON")
-    cpp = sum(u for _, u, k in rows if k == "RDKit C++")
-    print(f"\n  python-side total : {py:8.2f} us/mol   ({100*py/(py+cpp):.0f}%)")
-    print(f"  RDKit C++ total   : {cpp:8.2f} us/mol   ({100*cpp/(py+cpp):.0f}%)")
-    print(f"  measured extract  :   187.50 us/mol   (bridge report, for reference)")
-    print()
-    if py > cpp:
-        print("  VERDICT: dominated by PYTHON BOUNDARY CROSSINGS, not by RDKit's own work.")
-        print("  Recoverable in bulk without touching the exactness claim.")
-    else:
-        print("  VERDICT: dominated by RDKit's OWN COMPUTATION (Gasteiger/Crippen).")
-        print("  Irreducible from Python; only linking RDKit's C++ would remove it.")
+    print(f"  {'component':38s} {'us/mol':>9s} {'us/atom':>9s}  kind")
+    acc = 0.0
+    by_kind = {"RDKIT": 0.0, "FLOOR": 0.0, "PYTHON": 0.0}
+    for name, _fn, kind, sub in comps:
+        us = min(tot[name]) - sum(min(tot[s]) for s in sub)
+        acc += us
+        by_kind[kind] += us
+        print(f"  {name:38s} {us:9.2f} {us / natoms:9.3f}  {kind}")
+    rest = whole - acc
+    print(f"  {'numpy assembly + loop bookkeeping':38s} {rest:9.2f} {rest / natoms:9.3f}  PYTHON")
+    by_kind["PYTHON"] += rest
+    print(f"  {'':38s} {'-' * 9:>9s}")
+    print(f"  {'extract() end to end':38s} {whole:9.2f} {whole / natoms:9.3f}")
+    print(f"\n  {'(removed) RDKit Crippen, cold':38s} {gone:9.2f} {gone / natoms:9.3f}  "
+          f"NO LONGER CALLED -- this is what moved into C++")
+
+    print(f"\n  wrapper construction alone : {by_kind['FLOOR']:8.2f} us/mol   "
+          f"({100 * by_kind['FLOOR'] / whole:.0f}% of extract)")
+    print(f"  RDKit's own computation    : {by_kind['RDKIT']:8.2f} us/mol   "
+          f"({100 * by_kind['RDKIT'] / whole:.0f}%)")
+    print(f"  reads, and moving the data : {by_kind['PYTHON']:8.2f} us/mol   "
+          f"({100 * by_kind['PYTHON'] / whole:.0f}%)")
+    print("\n  The first two are what a Python-side rewrite cannot remove: the first is the cost")
+    print("  of an RDKit object existing in Python at all, and the second is work being done.")
 
 
 if __name__ == "__main__":
