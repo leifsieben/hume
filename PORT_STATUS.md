@@ -205,3 +205,70 @@ json.dump({str(x): type(x).__module__.split('.')[-1] for x in full.descriptors},
 
 then `blocks.split(fam)` and count by family. Note mordred 1.2.0 needs **Python 3.11**
 (`distutils`, removed in 3.12) and **numpy 1.x**.
+
+---
+
+# HANDOFF — 2026-08-27 evening
+
+State at the pause. Everything below is committed; nothing important lives only in a scratch
+directory.
+
+## What is true right now
+
+    callable from the package (hume.featurize_all)   248 of 864
+    verified C++ NOT yet wired into the extension    419 (Autocorrelation) + 76 (frag/rdkit_core)
+    total verified C++                               743
+    still Python                                    ~121
+
+`hume.featurize_all(smiles) -> (fp, X, ALL_COLUMNS)` works today: SMILES -> ECFP (2048, r=3,
+chirality) + 529 emitted columns, through ONE pickle parse, six headers, one boundary fill.
+
+## The three things to do next, in priority order
+
+**1. WIRE AUTOCORRELATION — 419 columns, by far the largest coverage win.** `cpp/ac.cpp` is
+verified but is a `main()` over a text file. Needs a header lift (the way `hume_blocks.h` was
+lifted out of `cpp/hume.cpp`) plus a hydrogen-added graph at the boundary. Two hazards, both
+already written down in `cpp/ac_weights.h` — read that header first:
+  * mordred's charge getter is `(_GasteigerCharge + _GasteigerHCharge) if HasProp(...) else 0.0`
+    — the sum is INSIDE the conditional, so an atom missing the H-charge prop contributes 0.0
+    rather than its own charge.
+  * The nine weight vectors are computed in C++ from `cpp/ac_tables.h`. Do not reintroduce a
+    Python pass for them; that is the 473.9 µs/mol that was already removed once.
+
+**2. WIRE THE 76 FRAGMENT COLUMNS.** `src/hume_core/frag_matcher.h` + `cpp/frag_program.h` are
+ALL EXACT on 100,000 and have a standalone harness, but nothing calls them from `bindings.cpp`.
+This should be mechanical — same shape as the other six families in `all_row()`.
+
+**3. `infocontent` IS THE PIPELINE: 399.9 ± 2.52 µs/mol for 42 columns.** 63% of all compute,
+2× the entire 182-column block, ~6× everything else wired combined, for 33 columns of the 865.
+Profile per order before optimising. Its `Ipc`/`AvgIpc`/`Log2Ipc` are deliberately NOT wired —
+open bug, see the header.
+
+## Open bugs and debts
+
+* **`Ipc` is numbering-dependent on 56/2000 and OURS is the wrong one.** RDKit is stable (6
+  numberings, one value) and correct (exact integer Faddeev–Le Verrier agrees to ~1e-15). The
+  overflow argument does not apply: largest coefficient on the failing molecule is 9 digits.
+  Disconnected-graph path is the prime suspect. Full diagnosis in `infocontent.h`'s header.
+* **The `gate()` predicate costs 25.7 µs/mol to save 35.7.** A Python loop over every bond of
+  every molecule. All three clauses are answerable from `RingInfo` in O(#rings): max ring size,
+  `NumAtomRings`, and union-find over rings sharing an atom for the cyclomatic clause. The dense
+  ring decision itself stands; it is the predicate that is overpriced.
+* **`bench_e2e.py`'s `baseline.json` is a stale 100-molecule run.** Regenerate at the same size
+  as the hume arm. `report` correctly refuses a headline ratio while the arms disagree on a
+  shared step or the machine is contended — do not defeat that, it has already caught a bad
+  comparison.
+* **The end-to-end table needs a QUIET machine.** Everything measured so far says CONTENDED and
+  says so in the JSON.
+* Remaining rdkit_core: `NumAtomStereoCenters` + `NumUnspecifiedAtomStereoCenters` (RDKit's
+  `FindPotentialStereo`, a real subsystem) and `FpDensityMorgan1/2/3`. The other ~18 are already
+  computed elsewhere or trivial from the boundary.
+
+## Two things that will waste your time if you forget them
+
+* **The pin is enforced** in `pyproject.toml` via `[tool.uv] constraint-dependencies`. A bare
+  `uv pip install -e .` no longer moves rdkit. Isolated runs need `--no-project` or the project
+  constraints block a deliberately different rdkit.
+* **A version banner is not evidence** — `cpp/verify_hume.py` carries a numeric canary for this,
+  checked at both ends of the run. A process can print `rdkit 2025.09.2` and compute 2026.3.5's
+  numbers out of unlinked-but-still-mapped dylibs.
