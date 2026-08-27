@@ -89,3 +89,17 @@ cpp/estate_stress.txt
 cpp/estate_cpp*.txt
 cpp/estate_cpp*.smi
 cpp/estate_typer
+
+# Descriptor-census exchange file: regenerate with the snippet at the bottom of
+# PORT_STATUS.md. 1,613 (descriptor -> mordred family) entries; an input to blocks.split(),
+# never a source of truth.
+fam.json
+
+# Pure-topology port (RingCount / TopologicalCharge / PathCount) exchange files. Same reasoning
+# as cpp/estate_mols.txt: topo3_mols.txt is ~50 MB and topo3_ref.txt ~150 MB at the 100k scale.
+# Regenerate with `python cpp/verify_topo3.py all` (pinned, see the docstring). The three
+# binaries are build products; the .cpp and the headers under src/hume_core/ are tracked.
+cpp/topo3_*.txt
+cpp/ringcount
+cpp/topocharge
+cpp/pathcount

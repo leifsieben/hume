@@ -23,6 +23,18 @@ requires-python = ">=3.10"
 # environment. Verified bit-exact against rdkit 2025.9.2 / numpy 2.4.6.
 dependencies = ["numpy>=1.24", "rdkit>=2023.03"]
 
+[tool.uv]
+# THE PIN, ENFORCED RATHER THAN DOCUMENTED. `constraints.txt` and the `-c` flag on the install
+# line were not enough: they rely on every person and every agent remembering the flag, and the
+# venv was silently upgraded THREE times in one session by a bare `uv pip install -e .`. The
+# third time, a running verification was executing rdkit 2026.3.5 out of unlinked-but-still-
+# mapped dylibs while reporting itself as the pinned version.
+#
+# These constraints bind uv's resolution for THIS project without touching the dependency
+# metadata that ships to users, so a plain `uv pip install -e .` can no longer move the oracle.
+# Keep in lockstep with constraints.txt, which is what non-uv installers read.
+constraint-dependencies = ["rdkit==2025.9.2", "numpy==2.4.6"]
+
 [tool.scikit-build]
 # The package is src/hume; src/hume_core is C++ only and is not installed. The extension lands
 # next to __init__.py as hume._core, per the install(TARGETS ... DESTINATION hume) in
