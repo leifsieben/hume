@@ -1,31 +1,31 @@
 {
  "arm": "baseline",
- "n_mols": 100,
+ "n_mols": 2000,
  "steps": {
   "rdkit_descriptors": {
-   "us_mean": 143629.457,
-   "us_sd": 55397.239,
-   "us_min": 102030.06,
+   "us_mean": 3736.239,
+   "us_sd": 22.924,
+   "us_min": 3720.652,
    "n_reps": 3,
    "columns": 180
   },
   "mordred_descriptors": {
-   "us_mean": 390008.37,
-   "us_sd": 88999.781,
-   "us_min": 296930.98,
+   "us_mean": 30030.671,
+   "us_sd": 196.832,
+   "us_min": 29906.308,
    "n_reps": 3,
    "columns": 685
   },
   "ecfp_r3_2048": {
-   "us_mean": 442.11,
-   "us_sd": 241.81,
-   "us_min": 273.0,
+   "us_mean": 29.653,
+   "us_sd": 0.502,
+   "us_min": 29.253,
    "n_reps": 3
   },
   "smiles_parse": {
-   "us_mean": 903.037,
-   "us_sd": 145.974,
-   "us_min": 746.15,
+   "us_mean": 60.013,
+   "us_sd": 0.624,
+   "us_min": 59.528,
    "n_reps": 3
   }
  },
@@ -34,7 +34,7 @@
  "machine": {
   "platform": "darwin arm64",
   "cpu_count": 12,
-  "load1": 11.02,
+  "load1": 3.96,
   "contended": true,
   "python": "3.11.15"
  },
