@@ -141,6 +141,43 @@ def build_index() -> None:
     print(json.dumps(meta, indent=2))
 
 
+PARSEFAIL = OUT / "parse_failures.npz"
+
+
+def build_parsefail() -> None:
+    """Cache the indices of every master-index SMILES that RDKit refuses to parse.
+
+    THIS EXISTS BECAUSE ONE ARM FAILS SILENTLY AND INVISIBLY. `embed_pairs._chemprop_embed`
+    substitutes `Chem.MolFromSmiles("C")` -- METHANE -- for any molecule RDKit rejects, so a
+    failed molecule comes back as a perfectly ordinary, non-zero, entirely wrong embedding. The
+    all-zero-row check that catches SELFIES-TED's failures cannot see it. The only way to know
+    which rows are junk in `chemprop.npy` and `chemeleon.npy` is to compute the parse-failure set
+    independently and carry it beside every arm.
+
+    The string arms (ChemBERTa, MoLFormer) tokenise the SMILES directly and never touch RDKit, so
+    for them these rows are real embeddings of a real input string, not failures. The flag is
+    therefore recorded as data and left for the caller to apply per arm rather than being turned
+    into a NaN here.
+    """
+    from rdkit import Chem, RDLogger
+    RDLogger.DisableLog("rdApp.*")
+    smiles = load_index(None)
+    bad = np.array([i for i, s in enumerate(smiles) if Chem.MolFromSmiles(str(s)) is None],
+                   np.int64)
+    np.savez_compressed(PARSEFAIL, idx=bad,
+                        smiles=np.array([smiles[i] for i in bad], dtype=object))
+    print(f"{len(bad)} of {len(smiles):,} master-index SMILES fail RDKit parse")
+    for i in bad[:20]:
+        print(f"  {i:>9} {smiles[i]}")
+
+
+def _parsefail(n: int):
+    if not PARSEFAIL.exists():
+        return np.array([], np.int64)
+    b = np.load(PARSEFAIL, allow_pickle=True)["idx"]
+    return b[b < n]
+
+
 def load_index(tier: int | None = None):
     d = np.load(INDEX, allow_pickle=True)
     smiles, t = d["smiles"], d["tier"]
@@ -190,7 +227,97 @@ def _arm_molformer(smiles):
     return np.concatenate(outs).astype(np.float32)
 
 
-OVERRIDES = {"molformer": _arm_molformer}
+_MINIMOL = None
+
+
+def _arm_minimol(smiles, batch=256):
+    """MiniMol, with the model instantiated ONCE PER PROCESS rather than once per call.
+
+    `embed_pairs.arm_minimol` builds `Minimol(...)` on every call. Figure A calls it exactly once,
+    so the bug is invisible there -- but this file calls each arm once per 20,000-molecule shard,
+    and MiniMol's constructor initialises Hydra, which is a process-global singleton. The second
+    shard dies with `GlobalHydra is already initialized`, after the first has been written, so the
+    run looks like it checkpointed successfully and then stopped for no reason.
+
+    Caching the instance is also the correct thing on its own terms: reloading the checkpoint
+    sixteen times is pure waste.
+
+    AND MiniMol HAS TWO ALIGNMENT BUGS OF ITS OWN, which is why the plain call below became the
+    fast path of something longer. Graphium's featuriser does not raise on a molecule it cannot
+    turn into a graph -- it returns the SMILES STRING in that slot. Then, in `Minimol.__call__`:
+
+      * `Batch.from_data_list` hits the str and dies with `'str' object has no attribute
+        'stores'`, which is what killed this run at molecule 83,072 of tier 0; and
+      * `num_molecules = min(batch_size, fingerprint_graph.shape[0])` would SILENTLY RETURN
+        FEWER VECTORS THAN SMILES if it ever got past that. Every row after the failure would
+        be attributed to the wrong molecule, in a matrix whose whole purpose is row alignment.
+
+    So a rejected molecule becomes an explicit NaN row here and the length is asserted, never
+    inferred. That matches how this file already treats failures elsewhere: recorded as data and
+    left for the caller to apply per arm (see `build_parsefail`), rather than quietly imputed.
+    `_MINIMOL(...)` is still called on the whole chunk first, so the per-molecule bisect costs
+    nothing on the overwhelming majority of chunks that contain no bad molecule.
+    """
+    global _MINIMOL
+    if _MINIMOL is None:
+        from minimol import Minimol
+        _MINIMOL = Minimol(batch_size=batch)
+    out = []
+    for i in range(0, len(smiles), batch * 4):
+        chunk = [str(s) for s in smiles[i:i + batch * 4]]
+        out.append(_minimol_chunk(chunk, i))
+        print(f"    minimol {min(i+batch*4, len(smiles))}/{len(smiles)}", flush=True)
+    return np.concatenate(out).astype(np.float32)
+
+
+def _minimol_stack(vecs, n):
+    """-> (n, d) float32, or None if MiniMol returned the wrong number of vectors."""
+    if len(vecs) != n:
+        return None
+    return np.stack([np.asarray(v, np.float32) for v in vecs])
+
+
+def _minimol_chunk(chunk, offset):
+    """One chunk of SMILES -> (len(chunk), d) float32, NaN rows where MiniMol cannot featurise.
+
+    `offset` is only used to make the warning name a position in the shard, so a rejected
+    molecule is findable afterwards rather than merely counted.
+    """
+    try:
+        X = _minimol_stack(_MINIMOL(chunk), len(chunk))
+        if X is not None:
+            return X
+        why = "returned fewer vectors than SMILES"
+    except Exception as exc:                      # noqa: BLE001 -- graphium raises many types
+        why = f"{type(exc).__name__}: {exc}"
+
+    # Slow path. Ask the featuriser directly which molecules it rejects: it marks a failure by
+    # putting the SMILES string in the slot where a graph should be.
+    feats, _ = _MINIMOL.datamodule._featurize_molecules(chunk)
+    ok = [j for j, f in enumerate(feats) if not isinstance(f, str)]
+    bad = [j for j in range(len(chunk)) if j not in set(ok)]
+    print(f"    minimol: {why}; featuriser rejects {len(bad)} of {len(chunk)}", flush=True)
+    for j in bad:
+        print(f"      NaN row at index {offset + j}: {chunk[j]}", flush=True)
+
+    if not ok:
+        raise RuntimeError(
+            f"MiniMol rejected all {len(chunk)} molecules in the chunk at index {offset}. "
+            f"That is a broken model or environment, not bad input -- refusing to write a "
+            f"shard of NaN. First SMILES: {chunk[0]!r}")
+
+    X_ok = _minimol_stack(_MINIMOL([chunk[j] for j in ok]), len(ok))
+    if X_ok is None:
+        raise RuntimeError(
+            f"MiniMol returned a different number of vectors than the {len(ok)} molecules it "
+            f"accepted, in the chunk at index {offset}. Rows cannot be aligned; refusing to "
+            f"guess which vector belongs to which molecule.")
+    X = np.full((len(chunk), X_ok.shape[1]), np.nan, np.float32)
+    X[ok] = X_ok
+    return X
+
+
+OVERRIDES = {"molformer": _arm_molformer, "minimol": _arm_minimol}
 
 
 def _arm_fn(name):
@@ -261,16 +388,34 @@ def merge(name: str, tier: int) -> None:
     # A row that is exactly zero across every dimension is what the arm functions write when a
     # molecule fails (RDKit parse failure, SELFIES conversion failure). Recorded, never dropped.
     dead = np.flatnonzero(~np.any(X != 0, axis=1))
+
+    # X IS A SEPARATE .npy, NOT A KEY INSIDE THE .npz. CheMeleon is 2048-d, so tier 0 alone is a
+    # 2.6 GB matrix and the full index would be 10.5 GB; zip-compressing dense float32 buys ~7%
+    # and costs minutes, while a bare .npy is memory-mappable, which is what a downstream
+    # XGBoost sweep actually wants. The .npz beside it stays small and holds everything needed to
+    # prove the rows line up.  Both are written atomically -- a killed merge must not leave a
+    # truncated matrix that still loads.
+    # `.tmp.npy` / `.tmp.npz`, not `.npy.tmp`: numpy APPENDS the extension when the name does not
+    # already end in it, so a `.npy.tmp` target silently becomes `.npy.tmp.npy` and the rename
+    # then fails on a file that was never there.
+    np.save(OUT / f"{name}.tmp.npy", X)
+    (OUT / f"{name}.tmp.npy").rename(OUT / f"{name}.npy")
+    pf = _parsefail(len(X))
     np.savez_compressed(
-        OUT / f"{name}.npz", X=X, smiles=smiles, dim=X.shape[1],
+        OUT / f"{name}.tmp.npz", smiles=smiles, dim=X.shape[1], n=len(X),
         smiles_sha256=_sha(smiles), tier=tier,
         failed_idx=dead.astype(np.int64),
         failed_smiles=np.array([smiles[i] for i in dead], dtype=object),
+        # Rows RDKit could not parse. For chemprop/chemeleon these hold an embedding of METHANE
+        # and MUST be masked; for the string arms they are legitimate. See build_parsefail.
+        parse_fail_idx=pf,
+        parse_fail_smiles=np.array([smiles[i] for i in pf], dtype=object),
     )
-    print(f"  {name}: {X.shape} -> {name}.npz  ({len(dead)} all-zero rows)", flush=True)
+    (OUT / f"{name}.tmp.npz").rename(OUT / f"{name}.npz")
+    print(f"  {name}: {X.shape} -> {name}.npy  ({len(dead)} all-zero rows)", flush=True)
 
 
-def load_arm(name: str):
+def load_arm(name: str, mmap: bool = False):
     """-> (X, smiles). Refuses to return a matrix whose SMILES hash does not match its own array.
 
     This is the guard the whole file is built around: any code path that reindexes, truncates or
@@ -278,7 +423,8 @@ def load_arm(name: str):
     producing a plausible-looking figure from misaligned rows.
     """
     d = np.load(OUT / f"{name}.npz", allow_pickle=True)
-    X, smiles = d["X"], d["smiles"]
+    smiles = d["smiles"]
+    X = np.load(OUT / f"{name}.npy", mmap_mode="r" if mmap else None)
     assert len(X) == len(smiles), f"{name}: {len(X)} rows vs {len(smiles)} SMILES"
     got = _sha(smiles)
     want = str(d["smiles_sha256"])
@@ -291,24 +437,55 @@ def load_arm(name: str):
 def verify() -> None:
     idx_meta = json.load(open(OUT / "index_meta.json"))
     print(f"master index: {idx_meta['n_unique']:,} unique  sha {idx_meta['sha256'][:16]}")
-    for f in sorted(OUT.glob("*.npz")):
-        if f.name == INDEX.name:
-            continue
+    for f in sorted(OUT.glob("*.npy")):
         name = f.stem
         try:
-            X, smiles = load_arm(name)
-            d = np.load(f, allow_pickle=True)
+            X, smiles = load_arm(name, mmap=True)
+            d = np.load(OUT / f"{name}.npz", allow_pickle=True)
             nf = len(d["failed_idx"])
+            # NaN rows are a SEPARATE failure mode from `failed_idx` and from the all-zero check,
+            # and counting only the other two reported minimol as failed=0 while it carried 8
+            # deliberate NaN rows. `_arm_minimol` writes NaN where Graphium's featuriser refuses a
+            # molecule -- see the alignment note there. Report it, because a NaN row reaching a
+            # downstream model is either a crash or a silently imputed value, never a no-op.
+            nan = int(np.isnan(np.asarray(X[:, 0])).sum())
+            flag = f"  nan={nan}" if nan else ""
             print(f"  OK   {name:16s} {X.shape[0]:>9,} x {X.shape[1]:<5d} "
-                  f"tier<={int(d['tier'])}  failed={nf}")
-        except AssertionError as e:
-            print(f"  FAIL {name:16s} {e}")
+                  f"tier<={int(d['tier'])}  failed={nf}{flag}")
+        except Exception as e:
+            print(f"  FAIL {name:16s} {type(e).__name__}: {e}")
 
 
 if __name__ == "__main__":
     os.environ.setdefault("OMP_NUM_THREADS", str(N_THREADS))
+    # MiniMol featurises through datamol, which farms out to joblib/loky and sizes its pool from
+    # the machine's core count -- 14 worker processes appeared on a box that three other agents
+    # are timing on. `torch.set_num_threads` does not reach these; they are separate processes,
+    # so the cap has to be set in the environment BEFORE loky is imported.
+    os.environ.setdefault("LOKY_MAX_CPU_COUNT", str(N_THREADS))
+    os.environ.setdefault("JOBLIB_START_METHOD", "loky")
     cmd = sys.argv[1] if len(sys.argv) > 1 else "verify"
-    if cmd == "index":
+    if cmd == "run":
+        # RESUMABLE DRIVER. Every arm named on the command line, skipped if its output already
+        # exists AND passes load_arm's hash check -- a half-written or misaligned output is NOT
+        # treated as done. Within an arm, shards resume from disk, so the most a kill can cost is
+        # one shard (20,000 molecules). Arms are run in one process per arm so a crash in one
+        # cannot take the others with it.
+        arms = [a for a in sys.argv[2:] if not a.startswith("--")]
+        tier = int(sys.argv[sys.argv.index("--tier") + 1]) if "--tier" in sys.argv else 0
+        for a in arms:
+            try:
+                X, _ = load_arm(a, mmap=True)
+                if len(X) >= len(load_index(tier)):
+                    print(f"  {a}: done ({X.shape}), skipping", flush=True)
+                    continue
+                print(f"  {a}: on disk at {len(X):,}, extending", flush=True)
+            except Exception:
+                pass
+            embed(a, tier)
+    elif cmd == "parsefail":
+        build_parsefail()
+    elif cmd == "index":
         build_index()
     elif cmd == "verify":
         verify()
