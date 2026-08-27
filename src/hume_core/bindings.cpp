@@ -26,6 +26,7 @@
 #include "autocorr.h"
 #include "crippen_typer.h"
 #include "estate_typer.h"
+#include "frag_matcher.h"
 #include "hume_blocks.h"
 #include "infocontent.h"
 #include "molpickle.h"
@@ -46,9 +47,11 @@ static void need(bool cond, const char *what) {
 // Column counts in the flat per-atom / per-bond blocks. Mirrored in src/hume/_extract.py; the
 // checks below turn a mismatch into an exception at the boundary instead of into silently
 // transposed descriptors.
-static constexpr int N_ATOM_INT = 9;   // Z, deg, nH, fchg, hyb, arom, ring, cip, nring
+static constexpr int N_ATOM_INT = 10;  // Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
 static constexpr int N_ATOM_DBL = 2;   // mass, gasteiger      (Crippen is computed here)
 static constexpr int N_BOND_INT = 5;   // u, v, conjugated, in-ring, SMARTS bond code
+static_assert(N_ATOM_INT == (int)molpickle::N_ATOM_INT,
+              "bindings.cpp and molpickle.h disagree on the atom_i stride");
 
 // Column offsets inside a row of atom_i / bond_i, so the two loops below and the Crippen fill
 // cannot drift apart on what column 4 means.
@@ -58,8 +61,12 @@ static constexpr int N_BOND_INT = 5;   // u, v, conjugated, in-ring, SMARTS bond
 // RDKit has already done rather than being recomputed C++-side -- ring perception is
 // numbering-dependent for 24 molecules in the 100k corpus, so a second perception is a second
 // chance to disagree.
+// A_TVAL is RDKit's GetTotalValence(), SMARTS `v`. It is carried rather than derived for the
+// reason the rest of this list is: round(sum of incident bond orders) + nH disagrees with RDKit
+// on 11,238 of 575,571 corpus atoms, because aromatic bonds and hydrogens go through RDKit's own
+// rounding rule. See src/hume_core/frag_matcher.h.
 enum { A_Z = 0, A_DEG = 1, A_NH = 2, A_FCHG = 3, A_HYB = 4, A_AROM = 5, A_RING = 6, A_CIP = 7,
-       A_NRING = 8 };
+       A_NRING = 8, A_TVAL = 9 };
 enum { B_U = 0, B_V = 1, B_CONJ = 2, B_RING = 3, B_CODE = 4 };
 
 // --------------------------------------------------------------------------------------------
@@ -176,7 +183,7 @@ static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, Arr
   const ssize_t nm = chg_ok.shape(0);
   need(atom_off.shape(0) == nm + 1 && bond_off.shape(0) == nm + 1,
        "offset arrays must have n_mol + 1 entries");
-  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 8)");
+  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 10)");
   need(atom_d.ndim() == 2 && atom_d.shape(1) == N_ATOM_DBL, "atom_d must be (n_atoms, 2)");
   need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 5)");
   need(atom_i.shape(0) == atom_d.shape(0), "atom_i and atom_d disagree on n_atoms");
@@ -358,12 +365,10 @@ static void pickle_check(py::buffer probe) {
 //     sourcing them from genuinely different places, agreeing by argument rather than by
 //     construction -- and a divergence there is 49 quietly wrong columns, not a loud failure.
 //
-// WHAT IS NOT HERE, and it is the largest single item: Autocorrelation, 419 of the 865 columns.
-// It is verified, but it lives in cpp/ac.cpp as a standalone `main()` over a text file, and it
-// descriptors the HYDROGEN-ADDED graph with charges summed as `_GasteigerCharge +
-// _GasteigerHCharge`. Wiring it is a header refactor plus an H-added graph build, not a call --
-// a separate piece of work, and this file says so rather than letting a column count imply
-// otherwise.
+//   * the 76 `rdkit_core` fragment columns need SMARTS `v`, RDKit's GetTotalValence(), which is
+//     the TENTH `atom_i` column and was added for them. It is carried across the boundary rather
+//     than reconstructed from bond orders plus nH, because that reconstruction disagrees with
+//     RDKit on 11,238 of 575,571 corpus atoms; see src/hume_core/frag_matcher.h.
 // ============================================================================================
 
 // The per-atom EState index that the S* columns weight by. Nothing to compute here: blocks_row()
@@ -385,8 +390,40 @@ enum {
   // it looks like a value. The 42 IC/TIC/SIC/BIC/CIC/MIC/ZMIC columns below it are bit-identical
   // under renumbering and are wired.
   OFF_AC     = OFF_IC + infoic::N_IC,
-  N_ALL_COLS = OFF_AC + autocorr::N_COLS,
+  // 74 SMARTS pattern counts plus the two rdkit_core columns that are not substructure counts
+  // but ride along on the same graph -- NHOHCount (a SUM OF HYDROGENS over N and O, not the
+  // atom-counting SMARTS Lipinski.py displays) and HeavyAtomCount.
+  OFF_FRAG   = OFF_AC + autocorr::N_COLS,
+  N_FRAG_COLS = frag_prog::N_NAMED + 2,
+  N_ALL_COLS = OFF_FRAG + N_FRAG_COLS,
 };
+
+// B_CODE -> the bond-order number `fragmatch` compares against, which is RDKit's Bond::BondType
+// INTEGER: SINGLE 1, DOUBLE 2, TRIPLE 3, AROMATIC 12. Note 3 and 12, not the 4 and 8 of the
+// boundary's bitmask -- SMARTS `:` is a bond TYPE query and RDKit numbers AROMATIC twelfth.
+//
+// THE TYPE DECISION IS NOT MADE HERE. esttyper::btypeFromBcode() makes it, unchanged and reused:
+// it is the piece that knows an order bit wins over the aromatic FLAG (cpp/hard.smi has four
+// TRIPLE bonds carrying that flag, which `:` must not match) and it is verified equal to the bond
+// type on all 3,090,892 of its bonds. What is left here is a four-entry renumbering of its
+// one-hot answer, which is a table, not a second perception.
+//
+// ANYTHING ELSE MAPS TO 0, and that is exact rather than approximate on this pattern set: the
+// only bond-order values the compiled query program ever compares against are 1, 2, 3 and 12
+// (counted over all 1,474 nodes of cpp/frag_program.h -- 76x`1`, 54x`2`, 4x`3`, 6x`12`, one of
+// them negated). A dative bond is 17 to RDKit and 0 here, and no query can tell those apart,
+// negation included. The one case btypeFromBcode cannot recover is an AROMATIC-TYPED bond whose
+// getIsAromatic() flag is false; it occurs 0 times in cpp/hard.smi and would need a fifth bcode
+// bit, exactly as estate_typer.h records.
+static inline int frag_border(int bcode) {
+  switch (esttyper::btypeFromBcode((uint8_t)bcode)) {
+    case esttyper::BT_SINGLE:   return fragmatch::BO_SINGLE;
+    case esttyper::BT_DOUBLE:   return fragmatch::BO_DOUBLE;
+    case esttyper::BT_TRIPLE:   return fragmatch::BO_TRIPLE;
+    case esttyper::BT_AROMATIC: return fragmatch::BO_AROMATIC;
+    default:                    return 0;
+  }
+}
 
 //! Scratch for every family, allocated once per batch rather than once per molecule.
 struct AllWork {
@@ -409,7 +446,10 @@ struct AllWork {
   infoic::Row irow;
   autocorr::Mol am;
   autocorr::Work aw;
-  AllWork() : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES) {}
+  fragmatch::Mol fm;
+  fragmatch::Matcher fmt;            // holds the recursive-query cache across molecules
+  std::vector<int> fcount;
+  AllWork() : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES), fcount(frag_prog::N_NAMED) {}
 };
 
 // A family selector, so a caller can time one family or compute a subset. Not an optimisation
@@ -422,8 +462,8 @@ struct AllWork {
 // molecule's index, so the flag is forced on rather than left as a trap.
 enum : unsigned {
   F_BLOCKS = 1u, F_VSA = 2u, F_ESTATE = 4u, F_RING = 8u, F_PATH = 16u, F_TOPO = 32u, F_IC = 64u,
-  F_AC = 128u,
-  F_ALL = 255u,
+  F_AC = 128u, F_FRAG = 256u,
+  F_ALL = 511u,
 };
 
 static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, const int *BS,
@@ -568,6 +608,33 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     }
     autocorr::row(W.am, W.aw, out + OFF_AC);
   }
+
+  // ---- rdkit_core fragments: 74 SMARTS counts + NHOHCount + HeavyAtomCount ----
+  if (fams & F_FRAG) {
+    W.fm.alloc(n, nb);
+    for (int i = 0; i < n; i++) {
+      const int *r = ai + (ssize_t)i * N_ATOM_INT;
+      W.fm.z[i] = r[A_Z];
+      W.fm.deg[i] = r[A_DEG];
+      W.fm.nH[i] = r[A_NH];
+      W.fm.fchg[i] = r[A_FCHG];
+      W.fm.arom[i] = r[A_AROM];
+      W.fm.nring[i] = r[A_NRING];
+      W.fm.tval[i] = r[A_TVAL];
+    }
+    for (int b = 0; b < nb; b++) {
+      const int *r = bi + (ssize_t)b * N_BOND_INT;
+      W.fm.bu[b] = r[B_U];
+      W.fm.bv[b] = r[B_V];
+      W.fm.border[b] = frag_border(r[B_CODE]);
+      W.fm.bring[b] = r[B_RING];
+    }
+    W.fm.finish();
+    fragmatch::countAll(W.fm, W.fmt, W.fcount.data());
+    for (int i = 0; i < frag_prog::N_NAMED; i++) out[OFF_FRAG + i] = (double)W.fcount[i];
+    out[OFF_FRAG + frag_prog::N_NAMED] = (double)fragmatch::nhohCount(W.fm);
+    out[OFF_FRAG + frag_prog::N_NAMED + 1] = (double)fragmatch::heavyAtomCount(W.fm);
+  }
 }
 
 static unsigned family_mask(const py::object &families) {
@@ -575,7 +642,7 @@ static unsigned family_mask(const py::object &families) {
   static const std::pair<const char *, unsigned> NAMED[] = {
       {"blocks", F_BLOCKS}, {"vsa", F_VSA}, {"estate", F_ESTATE}, {"ringcount", F_RING},
       {"pathcount", F_PATH}, {"topocharge", F_TOPO}, {"infocontent", F_IC},
-      {"autocorr", F_AC}};
+      {"autocorr", F_AC}, {"frag", F_FRAG}};
   unsigned mask = F_BLOCKS;   // never optional; see the note on the enum
   for (auto h : families) {
     const std::string want = py::cast<std::string>(h);
@@ -648,6 +715,9 @@ static py::list all_column_names_tail() {
   for (int c = 0; c < topocharge::N_COLS; c++) out.append(py::str(topocharge::col_name(c)));
   for (int c = 0; c < infoic::N_IC; c++) out.append(py::str(infoic::columnNames()[c]));
   for (int c = 0; c < autocorr::N_COLS; c++) out.append(py::str(autocorr::col_name(c)));
+  for (int c = 0; c < frag_prog::N_NAMED; c++) out.append(py::str(frag_prog::NAMED[c].name));
+  out.append(py::str("NHOHCount"));
+  out.append(py::str("HeavyAtomCount"));
   return out;
 }
 
@@ -655,7 +725,7 @@ static py::list all_column_names_tail() {
 // internally, so without this there is no way to compare it against RDKit's per-atom answer --
 // and a per-atom comparison is strictly stronger than watching four BCUT2D columns agree.
 static py::array_t<double> crippen_pairs(ArrI atom_off, ArrI bond_off, ArrI atom_i, ArrI bond_i) {
-  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 8)");
+  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 10)");
   need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 5)");
   need(atom_off.ndim() == 1 && bond_off.ndim() == 1 && atom_off.shape(0) >= 1 &&
        atom_off.shape(0) == bond_off.shape(0), "offsets must be 1-D and the same length");
@@ -721,14 +791,15 @@ PYBIND11_MODULE(_core, mod) {
           "against. Raises RuntimeError naming both versions if not.");
 
   // Every family that has C++, in one pass over one parse. See all_row() for what is in it and,
-  // more importantly, for what is not: Autocorrelation's 419 columns still live in cpp/ac.cpp.
+  // more importantly, for what is not: Autocorrelation's tenth weight `Z` (52 columns) and the
+  // three ill-posed InformationContent columns.
   mod.attr("N_ALL_COLS") = (int)N_ALL_COLS;
   mod.attr("ALL_OFFSETS") = py::dict(
       py::arg("blocks") = (int)OFF_BLOCKS, py::arg("vsa") = (int)OFF_VSA,
       py::arg("estate") = (int)OFF_ESTATE, py::arg("ringcount") = (int)OFF_RING,
       py::arg("pathcount") = (int)OFF_PATH, py::arg("topocharge") = (int)OFF_TOPO,
       py::arg("infocontent") = (int)OFF_IC, py::arg("autocorr") = (int)OFF_AC,
-      py::arg("end") = (int)N_ALL_COLS);
+      py::arg("frag") = (int)OFF_FRAG, py::arg("end") = (int)N_ALL_COLS);
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"),
           py::arg("families") = py::none(),

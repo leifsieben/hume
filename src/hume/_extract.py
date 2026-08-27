@@ -38,8 +38,8 @@ TopologicalCharge would see them. That asymmetry is mordred's, and it is reprodu
     atom_off  int32   (n_mol + 1,)   atoms of molecule k are [atom_off[k] : atom_off[k+1]]
     bond_off  int32   (n_mol + 1,)
     chg_ok    int32   (n_mol,)       0 = Gasteiger unavailable, charges are 0.0
-    atom_i    int32   (n_atoms, 9)   Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP,
-                                     ring count
+    atom_i    int32   (n_atoms, 10)  Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP,
+                                     ring count, total valence
     atom_d    float64 (n_atoms, 2)   mass, Gasteiger charge
     bond_i    int32   (n_bonds, 5)   u, v, conjugated, in-ring, SMARTS bond code
     bond_s    int32   (n_bonds,)     E/Z as +/-1, 0 for none
@@ -50,6 +50,15 @@ Hybridisation is passed through as RDKit's enum value rather than re-derived, fo
 export_predict.py gives: HallKierAlpha indexes a per-element table by (hybridisation - 2), and
 reimplementing RDKit's perception rules in C++ is the first place an "exact" claim would quietly
 stop being true.
+
+TOTAL VALENCE IS CARRIED FOR EXACTLY THAT REASON. SMARTS `v` is asked by three of the fragment
+patterns -- `fr_Imine` (`[Nv3]`), `NumHDonors` (`v3`, `v4`) and `NumHAcceptors` (`v2`, `v3`) --
+and it is NOT a function of the other nine columns. The obvious reconstruction, round(sum of
+incident bond orders) + nH, is wrong on 11,238 of 575,571 atoms of cpp/hard.smi, because RDKit
+folds aromatic-bond contributions and hydrogens together under its own rounding rule: pyrrole's
+`[nH]` has two aromatic bonds summing to 3.0 and one H, and RDKit's total valence is 3, not 4.
+So it is one more RDKit call per atom here, and on the pickle path it is not a new field at all
+-- the blob already carries the explicit and implicit valences (see src/hume_core/molpickle.h).
 
 CRIPPEN IS NOT IN THE ARRAYS ANY MORE. It used to be two more `atom_d` columns filled by
 `rdMolDescriptors._CalcCrippenContribs`, which cost 78 us/mol -- 42% of this module -- to run
@@ -92,7 +101,7 @@ from rdkit.Chem import rdPartialCharges
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 
-N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 9, 2, 5
+N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 10, 2, 5
 
 # The bond half of the Crippen typer's input, byte-for-byte cpp/export_crippen.py's bond_code():
 # a bit for the bond ORDER when it is one of the three SMARTS knows how to name, and a separate
@@ -120,6 +129,7 @@ _formal_charge = Chem.Atom.GetFormalCharge
 _hybridization = Chem.Atom.GetHybridization
 _is_aromatic = Chem.Atom.GetIsAromatic
 _atom_in_ring = Chem.Atom.IsInRing
+_total_valence = Chem.Atom.GetTotalValence
 _mass = Chem.Atom.GetMass
 _has_prop = Chem.Atom.HasProp
 _double_prop = Chem.Atom.GetDoubleProp
@@ -211,6 +221,7 @@ def extract(mols) -> Batch:
     ring: list[int] = []
     cip: list[int] = []
     nring: list[int] = []
+    tval: list[int] = []
     mass: list[float] = []
     charge: list[float] = []
     bu: list[int] = []
@@ -253,6 +264,9 @@ def extract(mols) -> Batch:
         hyb.extend(map(_hybridization, ats))
         arom.extend(map(_is_aromatic, ats))
         ring.extend(map(_atom_in_ring, ats))
+        # SMARTS `v`. RDKit's own perception, not re-derived here; see the module docstring for
+        # the 11,238-atom counterexample to the obvious reconstruction.
+        tval.extend(map(_total_valence, ats))
         mass.extend(map(_mass, ats))
         # RING COUNT, not just ring membership. `[R1]` and `[R2]` are ordinary SMARTS primitives
         # in RDKit's fragment patterns, and the boolean above cannot answer them. Reconstructing
@@ -313,7 +327,7 @@ def extract(mols) -> Batch:
         chg_ok_a[owners] = 0
 
     atom_i = np.empty((na, N_ATOM_INT), dtype=np.int32)
-    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip, nring)):
+    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip, nring, tval)):
         atom_i[:, col] = src
     atom_d = np.empty((na, N_ATOM_DBL), dtype=np.float64)
     atom_d[:, 0] = mass

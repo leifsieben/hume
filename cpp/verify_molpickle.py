@@ -47,6 +47,11 @@ FIELDS = [
     (3, 0, "atom Z"), (3, 1, "atom degree"), (3, 2, "atom nH"), (3, 3, "atom formal charge"),
     (3, 4, "atom hybridisation"), (3, 5, "atom aromatic"), (3, 6, "atom in-ring"),
     (3, 7, "atom CIP"), (3, 8, "atom ring count"),
+    # SMARTS `v`. On the reference side it is `Atom.GetTotalValence()`; on the pickle side it is
+    # the blob's own explicit + implicit valence, which the reader used to skip. This row is the
+    # evidence that the second is the first -- the fragment columns depend on it and nothing
+    # downstream of a wrong valence would look wrong.
+    (3, 9, "atom total valence"),
     (4, 0, "atom mass"), (4, 1, "atom Gasteiger"),
     (5, 0, "bond u"), (5, 1, "bond v"), (5, 2, "bond conjugated"), (5, 3, "bond in-ring"),
     (5, 4, "bond SMARTS code"),

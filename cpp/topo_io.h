@@ -33,8 +33,10 @@ struct Rec {
   std::vector<int32_t> ring_off, ring_at;
   // The same atoms and bonds in the BOUNDARY's strided-row layout, so the harnesses exercise the
   // very builders bindings.cpp will call -- topocharge::build() and pathcount::build_from_rows()
-  // -- instead of a second CSR written only for the harness. Columns match src/hume/_extract.py:
-  // atom_i (n_atoms, 9) = Z deg nH fchg hyb arom ring cip nring; bond_i (n_bonds, 5) = u v conj
+  // -- instead of a second CSR written only for the harness. The atom rows are the FIRST NINE
+  // columns of src/hume/_extract.py's (n_atoms, 10) atom_i -- Z deg nH fchg hyb arom ring cip
+  // nring, with `tval` left off because neither builder reads it and both take the stride as an
+  // argument; bond_i (n_bonds, 5) = u v conj
   // ring code. Only the columns those two builders read are filled; the rest are left at zero,
   // which is exactly what makes a wrong column index show up as a failure rather than as a value.
   static constexpr int ASTRIDE = 9, BSTRIDE = 5;

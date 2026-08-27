@@ -88,7 +88,7 @@ namespace vsabin {
 // the molecule, exactly as src/hume_core/bindings.cpp already has it
 //
 // Field for field this is the boundary layout described in src/hume/_extract.py:
-//     atom_i (n_atoms, 9) = Z, deg, nH, fchg, hyb, arom, ring, cip, nring
+//     atom_i (n_atoms, 10) = Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
 //     atom_d (n_atoms, 2) = mass, gasteiger
 //     bond_i (n_bonds, 5) = u, v, conjugated, in-ring, SMARTS bond code
 // Only the columns this family reads are kept: Z, deg, nH, fchg, arom from atom_i, the Gasteiger

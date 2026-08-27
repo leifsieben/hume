@@ -248,9 +248,9 @@
 // WHAT THE CALLER MUST SUPPLY -- all of it already exists at bindings.cpp's boundary
 // ============================================================================================
 //
-// Boundary as of 2026-08-27: atom_i is (n_atoms, 9) -- Z, deg, nH, fchg, hyb, arom, ring, cip,
-// nring. This file reads five of the nine and needs nothing that is not already there; the
-// per-atom ring COUNT in the new column 8 is not used here.
+// Boundary as of 2026-08-27: atom_i is (n_atoms, 10) -- Z, deg, nH, fchg, hyb, arom, ring, cip,
+// nring, tval. This file reads five of the ten and needs nothing that is not already there; the
+// per-atom ring COUNT in column 8 and the total valence in column 9 are not used here.
 //
 //   per atom   z      GetAtomicNum()               atom_i[:, 0]
 //              deg    GetDegree()   (heavy)        atom_i[:, 1]   (cross-check only)

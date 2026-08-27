@@ -28,6 +28,13 @@ So this checks the WIRING, against an oracle outside it, family by family:
                     paths sum in different orders (see cpp/verify_topo3.py).
   InfoContent (42)  invariance under `Chem.RenumberAtoms`, which is what infocontent.h claims and
                     the only well-posed thing to claim -- mordred's own IC is numbering-dependent.
+  Fragments (76)    RDKit's own `Descriptors`, in this process, on the same molecules -- the
+                    oracle OUTSIDE the code path, not cpp/frag's standalone harness, which shares
+                    src/hume_core/frag_matcher.h with the wiring and so could only confirm that
+                    the matcher agrees with itself. These are integer counts, so "exact" is
+                    bitwise with nowhere to hide. This is also the only check that the tenth
+                    `atom_i` column (`tval`, SMARTS `v`) survives the pickle path: `fr_Imine`,
+                    `NumHDonors` and `NumHAcceptors` are the three columns that read it.
 
     .venv/bin/python cpp/verify_wiring.py [n_mols]
 """
@@ -198,7 +205,10 @@ def check_autocorr(mols, X, tmp: Path) -> int:
         return 0
     want = [ln.split() for ln in (tmp / "values_ac.txt").read_text().strip().split("\n")]
     lo = OFF["autocorr"]
-    n_cols = OFF["end"] - lo
+    # The family's own width -- the next offset above it, not "everything to the end". This used
+    # to read OFF["end"], which was the same number only while Autocorrelation happened to be the
+    # last family in the layout; adding the fragment columns after it broke that silently.
+    n_cols = min(v for v in OFF.values() if v > lo) - lo
     bad_cells = 0
     bad_cols: dict[int, float] = {}
     for i, row in enumerate(want):
@@ -337,6 +347,30 @@ def main() -> int:
     Y = all_cols(perm)
     bad += report("InfoContent renumbered", Y[:, lo:lo + n_ic], X[:, lo:lo + n_ic],
                   NAMES[lo:lo + n_ic])
+
+    # ---- rdkit_core fragments, against RDKit's own Descriptors ------------------------------
+    # `fn(m)` on the molecule as given, exactly as cpp/verify_frag.py's `verify` grades the
+    # standalone harness -- none of these caches anything on the molecule the way Crippen does.
+    lo = OFF["frag"]
+    frag_names = NAMES[lo:OFF["end"]]
+    want = np.empty((len(mols), len(frag_names)))
+    for j, nm in enumerate(frag_names):
+        f = fns[nm]
+        for i, m in enumerate(mols):
+            want[i, j] = float(f(m))
+    got = X[:, lo:OFF["end"]]
+    bad += report("fragments vs RDKit", got, want, frag_names)
+    # PER COLUMN, printed whether or not it passed. These are integer counts: "exact" means every
+    # molecule, and a family-level EXACT line hides which of the 76 were ever exercised. The
+    # `nonzero` column is that -- a pattern no corpus molecule matches is reported as exact on a
+    # column of zeros, which is worth seeing rather than inferring.
+    print(f"\n  per-column, {len(mols)} molecules from cpp/hard.smi:")
+    for j, nm in enumerate(frag_names):
+        n_ok = int(np.count_nonzero(got[:, j] == want[:, j]))
+        nz = int(np.count_nonzero(want[:, j]))
+        print(f"    {nm:24s} {n_ok:6d} / {len(mols):6d}"
+              f"   {'EXACT' if n_ok == len(mols) else 'MISMATCH'}"
+              f"   nonzero on {nz}")
 
     print("\nWIRING EXACT -- every family sees the graph its own harness verified it on"
           if not bad else f"\n{bad} COLUMNS DISAGREE")

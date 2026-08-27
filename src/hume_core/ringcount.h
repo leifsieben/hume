@@ -86,7 +86,7 @@
 //   ring_off / ring_at   RDKit's ring list in CSR form: ring r is
 //                        ring_at[ring_off[r] .. ring_off[r+1]).
 //
-// THE `nring` COLUMN OF THE NEW (n_atoms, 9) `atom_i` CANNOT SERVE THIS FAMILY, and the reason is
+// THE `nring` COLUMN OF THE (n_atoms, 10) `atom_i` CANNOT SERVE THIS FAMILY, and the reason is
 // not preference. `RingInfo.NumAtomRings` is a per-ATOM count; every one of these 49 columns is a
 // predicate on a RING -- its size, whether ALL of its atoms are aromatic, whether ANY is a
 // heteroatom -- and the 28 fused columns additionally need |Ri & Rj| for every pair of rings, to

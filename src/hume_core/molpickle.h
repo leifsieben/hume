@@ -28,16 +28,27 @@
 // extract() on 98,905 + 100,000 molecules by cpp/verify_molpickle.py:
 //
 //   IN THE PICKLE   Z, formal charge, hybridisation, aromatic flag, isotope, explicit H count,
-//                   implicit valence, no-implicit flag, bond endpoints, bond type, bond aromatic
-//                   flag, bond conjugation flag, bond stereo, the ring atom lists, and -- in the
-//                   per-atom property section -- `_CIPCode` and `_GasteigerCharge`.
+//                   EXPLICIT valence, IMPLICIT valence, no-implicit flag, bond endpoints, bond
+//                   type, bond aromatic flag, bond conjugation flag, bond stereo, the ring atom
+//                   lists, and -- in the per-atom property section -- `_CIPCode` and
+//                   `_GasteigerCharge`.
 //   DERIVED HERE    degree (count the bonds), total H count (explicit + implicit valence, unless
-//                   noImplicit), atom ring membership and RING COUNT (count the pickled rings an
-//                   atom appears in), bond ring membership (the pickled rings name atoms; the
-//                   bonds are the consecutive pairs, which is exactly how RDKit's own depickler
-//                   rebuilds them), mass (Z + isotope through cpp/pickle_tables.h), bond order
-//                   (BondType through the same header), and the SMARTS bond code.
+//                   noImplicit), TOTAL VALENCE (explicit + implicit valence, same guard), atom
+//                   ring membership and RING COUNT (count the pickled rings an atom appears in),
+//                   bond ring membership (the pickled rings name atoms; the bonds are the
+//                   consecutive pairs, which is exactly how RDKit's own depickler rebuilds them),
+//                   mass (Z + isotope through cpp/pickle_tables.h), bond order (BondType through
+//                   the same header), and the SMARTS bond code.
 //   NOT IN IT       nothing that the boundary needs. There is no field left on the Python side.
+//
+// TOTAL VALENCE COST THIS FILE NOTHING, and that is a measurement rather than a hope. SMARTS `v`
+// is the one fragment-pattern primitive the (n_atoms, 9) boundary could not answer, and the fix
+// on the reference path is one more Python call per atom -- but here the two halves were ALREADY
+// IN THE BLOB and were being skipped: property-flag bit 5 is `getExplicitValence()` and bit 6 is
+// `getImplicitValence()`, and RDKit's `getTotalValence()` is exactly their sum (0 of 575,571
+// atoms of cpp/hard.smi disagree). So the reader stopped throwing bit 5 away instead of asking
+// _extract.py to serialise a tenth field; cpp/verify_molpickle.py compares the result against
+// `Atom.GetTotalValence()` column-wise on both corpora.
 //
 // ONE SURPRISE WORTH THE LINE. `_GasteigerCharge` is a COMPUTED property, not a private one, so
 // `PrivateProps | AtomProps` does NOT contain it -- that flag pair pickles CIP codes and stops.
@@ -119,6 +130,11 @@ enum : std::uint8_t { BT_SINGLE = 1, BT_DOUBLE = 2, BT_TRIPLE = 3 };
 
 // Atom::HybridizationType::SP3. The pickler omits hybridisation when it equals this.
 inline constexpr int HYB_SP3 = 4;
+
+// Columns per row of the boundary's `atom_i`. Mirrored in src/hume/_extract.py's N_ATOM_INT and
+// in bindings.cpp; every stride in this file goes through it so a tenth column cannot be added
+// in one place and forgotten in another.
+inline constexpr std::size_t N_ATOM_INT = 10;
 
 class Error : public std::runtime_error {
  public:
@@ -261,7 +277,7 @@ struct Work {
 // where src/hume/_extract.py would need a whole new pair of arrays and another Python pass.
 // Pass nullptr for both and nothing changes for the callers that do not want them.
 struct Sink {
-  int *atom_i;      // (n, 9)  Z, deg, nH, fchg, hyb, arom, ring, cip, nring
+  int *atom_i;      // (n, 10) Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
   double *atom_d;   // (n, 2)  mass, gasteiger
   int *bond_i;      // (nb, 5) u, v, conjugated, in-ring, SMARTS bond code
   int *bond_s;      // (nb,)   E/Z as +/-1
@@ -334,7 +350,7 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
   int *AI = out.atom_i;
   double *AD = out.atom_d;
   for (int i = 0; i < n_atoms; i++) {
-    int *row = AI + (std::size_t)i * 9;
+    int *row = AI + (std::size_t)i * N_ATOM_INT;
     row[1] = 0;   // degree, accumulated over the bond loop
     row[6] = 0;   // in-ring boolean, from the ring section
     row[7] = 0;   // CIP, from the atom property section
@@ -345,18 +361,18 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
   // ---- atoms ----
   if (r.u8() != T_BEGINATOM) throw Error("expected BEGINATOM");
   for (int i = 0; i < n_atoms; i++) {
-    int *row = AI + (std::size_t)i * 9;
+    int *row = AI + (std::size_t)i * N_ATOM_INT;
     const int z = r.u8();
     const std::uint8_t flags = r.u8();
     const std::int32_t pf = r.i32();
 
-    int fchg = 0, hyb = HYB_SP3, n_expl_h = 0, impl_val = 0;
+    int fchg = 0, hyb = HYB_SP3, n_expl_h = 0, expl_val = 0, impl_val = 0;
     unsigned iso = 0;
     if (pf & (1 << 1)) fchg = r.i8();
     if (pf & (1 << 2)) r.skip(1);            // chiral tag -- the boundary carries CIP instead
     if (pf & (1 << 3)) hyb = r.u8();
     if (pf & (1 << 4)) n_expl_h = r.u8();
-    if (pf & (1 << 5)) r.skip(1);            // explicit valence
+    if (pf & (1 << 5)) expl_val = r.u8();    // getExplicitValence(); only written when > 0
     if (pf & (1 << 6)) impl_val = r.u8();
     if (pf & (1 << 7)) r.skip(1);            // radical electrons
     if (pf & (1 << 8)) iso = r.u32();
@@ -384,6 +400,11 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
     row[3] = fchg;
     row[4] = hyb;
     row[5] = (flags & 0x40) ? 1 : 0;
+    // SMARTS `v`. getTotalValence() == getExplicitValence() + getImplicitValence(), and the
+    // second of those is 0 when the atom is flagged noImplicit -- the same guard row[2] applies
+    // to the H count, and applied here for the same reason: it is RDKit's accessor, not an
+    // observation about what d_implicitValence happens to hold.
+    row[9] = expl_val + ((flags & 0x20) ? 0 : impl_val);
     AD[(std::size_t)i * 2] = mass_of(z, iso);
   }
 
@@ -419,8 +440,8 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
               : bt == BT_TRIPLE ? BIT_TRIPLE : 0) | ((flags & 0x40) ? BIT_AROM : 0);
     out.bond_s[b] = stereo;
     out.bond_d[b] = order_of(bt);
-    AI[(std::size_t)u * 9 + 1]++;
-    AI[(std::size_t)v * 9 + 1]++;
+    AI[(std::size_t)u * N_ATOM_INT + 1]++;
+    AI[(std::size_t)v * N_ATOM_INT + 1]++;
   }
 
   // (neighbour -> bond index), so the ring section can name a bond by its two atoms the way
@@ -464,8 +485,8 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
             const int a = idx();
             if (a < 0 || a >= n_atoms) throw Error("ring atom index out of range");
             w.ring[j] = a;
-            AI[(std::size_t)a * 9 + 8]++;             // ring count
-            AI[(std::size_t)a * 9 + 6] = 1;           // in-ring boolean
+            AI[(std::size_t)a * N_ATOM_INT + 8]++;             // ring count
+            AI[(std::size_t)a * N_ATOM_INT + 6] = 1;           // in-ring boolean
           }
           for (int j = 0; j < sz; j++) {
             const int a = w.ring[j], b2 = w.ring[(j + 1) % sz];
@@ -518,7 +539,7 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
               if (dt != D_STRING) throw Error("_CIPCode is not a string");
               std::uint32_t vlen;
               const char *v = r.str(vlen);
-              AI[(std::size_t)i * 9 + 7] = (vlen == 1 && v[0] == 'R') ? 1 : -1;
+              AI[(std::size_t)i * N_ATOM_INT + 7] = (vlen == 1 && v[0] == 'R') ? 1 : -1;
             } else {
               skip_value(r, dt);
             }

@@ -1,7 +1,13 @@
 // Standalone harness for src/hume_core/frag_matcher.h, in the shape of cpp/estate_typer.cpp:
 // read a flat dump of the boundary columns, print one line of counts per molecule, and let
-// cpp/verify_frag.py compare against the pinned RDKit.  Nothing here is wired into the
-// extension -- see the report for the wiring instructions.
+// cpp/verify_frag.py compare against the pinned RDKit.
+//
+// THE HEADER IS NOW WIRED INTO THE EXTENSION and this file is no longer the only way to reach it:
+// bindings.cpp's all_row() fills the same fragmatch::Mol from the boundary arrays.  This harness
+// stays because it grades the MATCHER on a graph built independently of that wiring, and because
+// it is the file the "ALL EXACT on 100,000" claim was made through.  Note it can no longer be the
+// wiring's oracle: cpp/verify_wiring.py grades the 76 columns against RDKit's own `Descriptors`
+// in-process, because this binary and the wiring share frag_matcher.h and could only agree.
 //
 //   c++ -O3 -std=c++17 -o cpp/frag cpp/frag.cpp
 //   ./cpp/frag < dump.txt > counts.txt
@@ -13,9 +19,10 @@
 //     n rows of:  z deg nH fchg arom nring tval
 //     nb rows of: u v border bring
 //
-// `tval` is RDKit's GetTotalValence().  It is the one column the (n_atoms, 9) boundary does not
-// carry and cannot derive -- see the header comment in frag_matcher.h for the 11,238-atom
-// counterexample.
+// `tval` is RDKit's GetTotalValence().  It is the column that made the boundary (n_atoms, 10):
+// it cannot be derived -- see the header comment in frag_matcher.h for the 11,238-atom
+// counterexample -- so it is carried, as `Atom.GetTotalValence()` on the reference path and as
+// the pickle's own explicit + implicit valence on the fast one.
 #include <cstdio>
 #include <vector>
 

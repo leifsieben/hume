@@ -38,8 +38,8 @@
 // cpp/hard.smi is 180.  There is a 5.5x margin.  `matchCount()` asserts if it ever sees 1000, so
 // that the day a corpus does spring this trap it fails loudly instead of quietly disagreeing.
 //
-// WHAT THE CALLER MUST SUPPLY.  All but one column is already at the boundary as of the
-// (n_atoms, 9) `atom_i` / (n_bonds, 5) `bond_i` layout:
+// WHAT THE CALLER MUST SUPPLY.  Every column is at the boundary as of the (n_atoms, 10) `atom_i`
+// / (n_bonds, 5) `bond_i` layout -- `tval` is the tenth, added for this family:
 //
 //   z      A_Z      GetAtomicNum()
 //   deg    A_DEG    GetDegree()          -- SMARTS `D`
@@ -48,7 +48,12 @@
 //   arom   A_AROM   GetIsAromatic()
 //   nring  A_NRING  RingInfo::NumAtomRings(i)   -- SMARTS `R<n>`; the BOOLEAN A_RING cannot
 //                                                  answer `[R1]` vs `[R2]`
+//   tval   A_TVAL   GetTotalValence()    -- SMARTS `v`; see below
 //   bond   B_U/B_V/B_RING/B_CODE
+//
+// `border` is NOT a boundary column and must not become one: it is RDKit's Bond::BondType integer
+// (AROMATIC = 12), and `esttyper::btypeFromBcode()` already turns `bond_i`'s B_CODE into exactly
+// that number -- verified equal on all 3,090,892 bonds of cpp/hard.smi.  One converter, not two.
 //
 // and two are DERIVED here rather than carried, because they are exact functions of the above
 // and a second source would be a second thing to keep in step.  Both verified over 575,571 atoms
@@ -57,12 +62,15 @@
 //   X (SMARTS total degree) = deg + nH                 == GetTotalDegree()
 //   H (SMARTS H count)      = nH + #neighbours with z==1   == GetTotalNumHs(True)
 //
-// THE ONE COLUMN THAT IS NOT DERIVABLE is SMARTS `v`, total valence.  `tval` must be supplied.
-// The obvious reconstruction -- round(sum of incident bond orders) + nH -- is WRONG on 11,238 of
-// those same 575,571 atoms, because RDKit folds aromatic bond contributions and hydrogens
-// together under its own rounding rule.  Pyrrole's `[nH]`: two aromatic bonds sum to 3.0 and it
-// carries one H, and RDKit's total valence is 3, not 4.  `v` is used by `fr_Imine` (`[Nv3]`),
-// `NumHDonors` (`v3`, `v4`) and `NumHAcceptors` (`v2`, `v3`), so it cannot be dropped.
+// THE ONE COLUMN THAT IS NOT DERIVABLE is SMARTS `v`, total valence, and it is why the boundary
+// grew a tenth `atom_i` column rather than this file growing a reconstruction.  The obvious one
+// -- round(sum of incident bond orders) + nH -- is WRONG on 11,238 of those same 575,571 atoms,
+// because RDKit folds aromatic bond contributions and hydrogens together under its own rounding
+// rule.  Pyrrole's `[nH]`: two aromatic bonds sum to 3.0 and it carries one H, and RDKit's total
+// valence is 3, not 4.  `v` is used by `fr_Imine` (`[Nv3]`), `NumHDonors` (`v3`, `v4`) and
+// `NumHAcceptors` (`v2`, `v3`), so it cannot be dropped either.  It reaches the boundary as
+// `Atom.GetTotalValence()` on the reference path and as the pickle's own explicit + implicit
+// valence on the fast path; the two agree column-wise on both corpora (cpp/verify_molpickle.py).
 //
 // SMARTS BOND SEMANTICS, same trap cpp/estate_tables.h documents.  `:` is BondOrder 12
 // (Bond::AROMATIC), a bond TYPE query, not a getIsAromatic() query; and the default bond written
@@ -144,7 +152,16 @@ struct Mol {
 // ---------------------------------------------------------------------------------------------
 class Matcher {
  public:
-  explicit Matcher(const Mol& m) : mol_(m) {
+  Matcher() : mol_(0) {}
+  explicit Matcher(const Mol& m) : mol_(0) { bind(m); }
+
+  // Point at a new molecule and clear the recursive-query cache.  Exists so a batch loop can
+  // hold ONE Matcher and pay for the cache's storage once: `assign` reuses the vector's capacity,
+  // where a fresh Matcher per molecule mallocs N_PATTERNS * n bytes every time.  The cache is
+  // cleared, not merely resized -- a stale `yes` from the previous molecule would be a wrong
+  // count with no symptom.
+  void bind(const Mol& m) {
+    mol_ = &m;
     cache_.assign((size_t)frag_prog::N_PATTERNS * (size_t)m.n, 0);
   }
 
@@ -164,7 +181,7 @@ class Matcher {
   }
 
  private:
-  const Mol& mol_;
+  const Mol* mol_;
   std::vector<uint8_t> cache_;
 
   // -- atom query tree --------------------------------------------------------------------
@@ -177,19 +194,19 @@ class Matcher {
       case frag_prog::OP_ATOMNULL: r = true; break;
       // AtomType fuses element and aromaticity: 1000+z is aromatic z, plain z is aliphatic z.
       case frag_prog::OP_ATOMTYPE:
-        r = (mol_.z[a] + 1000 * (mol_.arom[a] ? 1 : 0)) == q.val; break;
+        r = (mol_->z[a] + 1000 * (mol_->arom[a] ? 1 : 0)) == q.val; break;
       // AtomAtomicNum (`[#7]`) constrains the element and says NOTHING about aromaticity.
-      case frag_prog::OP_ATOMATOMICNUM: r = mol_.z[a] == q.val; break;
-      case frag_prog::OP_ATOMEXPLICITDEGREE: r = mol_.deg[a] == q.val; break;
-      case frag_prog::OP_ATOMTOTALDEGREE: r = mol_.tdeg[a] == q.val; break;
-      case frag_prog::OP_ATOMHCOUNT: r = mol_.hcount[a] == q.val; break;
-      case frag_prog::OP_ATOMFORMALCHARGE: r = mol_.fchg[a] == q.val; break;
+      case frag_prog::OP_ATOMATOMICNUM: r = mol_->z[a] == q.val; break;
+      case frag_prog::OP_ATOMEXPLICITDEGREE: r = mol_->deg[a] == q.val; break;
+      case frag_prog::OP_ATOMTOTALDEGREE: r = mol_->tdeg[a] == q.val; break;
+      case frag_prog::OP_ATOMHCOUNT: r = mol_->hcount[a] == q.val; break;
+      case frag_prog::OP_ATOMFORMALCHARGE: r = mol_->fchg[a] == q.val; break;
       // -1 is RDKit's sentinel for `[R]` == "in at least one ring", NOT a ring count of -1.
       case frag_prog::OP_ATOMINNRINGS:
-        r = (q.val < 0) ? (mol_.nring[a] != 0) : (mol_.nring[a] == q.val); break;
-      case frag_prog::OP_ATOMTOTALVALENCE: r = mol_.tval[a] == q.val; break;
-      case frag_prog::OP_ATOMISAROMATIC: r = (mol_.arom[a] ? 1 : 0) == q.val; break;
-      case frag_prog::OP_ATOMISALIPHATIC: r = (mol_.arom[a] ? 0 : 1) == q.val; break;
+        r = (q.val < 0) ? (mol_->nring[a] != 0) : (mol_->nring[a] == q.val); break;
+      case frag_prog::OP_ATOMTOTALVALENCE: r = mol_->tval[a] == q.val; break;
+      case frag_prog::OP_ATOMISAROMATIC: r = (mol_->arom[a] ? 1 : 0) == q.val; break;
+      case frag_prog::OP_ATOMISALIPHATIC: r = (mol_->arom[a] ? 0 : 1) == q.val; break;
       case frag_prog::OP_RECURSIVESTRUCTURE: r = recursive(q.val, a); break;
       default:
         std::fprintf(stderr, "fragmatch: atom opcode %d unimplemented\n", (int)q.op);
@@ -206,12 +223,12 @@ class Matcher {
       case frag_prog::OP_BONDAND: r = evalBond(q.lhs, e) && evalBond(q.rhs, e); break;
       case frag_prog::OP_BONDOR:  r = evalBond(q.lhs, e) || evalBond(q.rhs, e); break;
       case frag_prog::OP_BONDNULL: r = true; break;
-      case frag_prog::OP_BONDORDER: r = mol_.border[e] == q.val; break;
-      case frag_prog::OP_BONDINRING: r = (mol_.bring[e] ? 1 : 0) == q.val; break;
+      case frag_prog::OP_BONDORDER: r = mol_->border[e] == q.val; break;
+      case frag_prog::OP_BONDINRING: r = (mol_->bring[e] ? 1 : 0) == q.val; break;
       // RDKit's queryBondIsSingleOrAromatic, on the bond TYPE.  This is the default bond
       // written between two SMARTS atoms and is a different query from `-` and from `:`.
       case frag_prog::OP_SINGLEORAROMATICBOND:
-        r = (mol_.border[e] == BO_SINGLE || mol_.border[e] == BO_AROMATIC); break;
+        r = (mol_->border[e] == BO_SINGLE || mol_->border[e] == BO_AROMATIC); break;
       default:
         std::fprintf(stderr, "fragmatch: bond opcode %d unimplemented\n", (int)q.op);
         std::abort();
@@ -220,7 +237,7 @@ class Matcher {
   }
 
   bool recursive(int pat, int a) {
-    size_t key = (size_t)pat * (size_t)mol_.n + (size_t)a;
+    size_t key = (size_t)pat * (size_t)mol_->n + (size_t)a;
     uint8_t& c = cache_[key];
     if (c) return c == 1;
     std::vector<std::vector<int> > dummy;
@@ -307,7 +324,7 @@ class Matcher {
     if (P.na == 0) return false;
     const Plan& pl = plan(pat);
     std::vector<int> map(P.na, -1);
-    std::vector<char> used(mol_.n, 0);
+    std::vector<char> used(mol_->n, 0);
     return step(pat, pl, 0, map, used, firstOnly, anchor, out);
   }
 
@@ -334,7 +351,7 @@ class Matcher {
     // Candidate molecule atoms for this query atom.
     if (pl.parent[si] < 0) {
       // component root: anchored (recursive query / atomMatchesPattern) or a full scan
-      int lo = 0, hi = mol_.n;
+      int lo = 0, hi = mol_->n;
       if (si == 0 && anchor >= 0) { lo = anchor; hi = anchor + 1; }
       for (int a = lo; a < hi; ++a) {
         if (used[a] || !evalAtom(qroot, a)) continue;
@@ -350,9 +367,9 @@ class Matcher {
     } else {
       int pa = map[pl.parent[si]];
       const frag_prog::QBond& pb = QBONDS[pl.parentBond[si]];
-      for (int k = mol_.start[pa]; k < mol_.start[pa + 1]; ++k) {
-        int a = mol_.nbr[k];
-        if (used[a] || !evalBond(pb.root, mol_.nbond[k]) || !evalAtom(qroot, a)) continue;
+      for (int k = mol_->start[pa]; k < mol_->start[pa + 1]; ++k) {
+        int a = mol_->nbr[k];
+        if (used[a] || !evalBond(pb.root, mol_->nbond[k]) || !evalAtom(qroot, a)) continue;
         map[qa] = a; used[a] = 1;
         if (checkClosures(pat, pl, si, map)) {
           if (step(pat, pl, si + 1, map, used, firstOnly, anchor, out)) {
@@ -369,7 +386,7 @@ class Matcher {
   bool checkClosures(int pat, const Plan& pl, size_t si, const std::vector<int>& map) {
     for (size_t k = 0; k < pl.checks[si].size(); ++k) {
       const frag_prog::QBond& b = QBONDS[pl.checks[si][k]];
-      int e = mol_.bondBetween(map[b.u], map[b.v]);
+      int e = mol_->bondBetween(map[b.u], map[b.v]);
       if (e < 0 || !evalBond(b.root, e)) return false;
     }
     return true;
@@ -377,10 +394,20 @@ class Matcher {
 };
 
 // Count every named descriptor's pattern on one molecule.  `out` must have N_NAMED slots.
-inline void countAll(const Mol& m, int* out) {
-  Matcher mt(m);
+//
+// The overload taking a Matcher& is what a batch loop should call: it reuses the matcher's
+// recursive-query cache allocation across molecules instead of mallocing one per molecule.  Both
+// spellings run identical arithmetic -- `bind()` clears the cache, so the second molecule cannot
+// see the first one's answers.
+inline void countAll(const Mol& m, Matcher& mt, int* out) {
+  mt.bind(m);
   for (int i = 0; i < frag_prog::N_NAMED; ++i)
     out[i] = mt.matchCount(frag_prog::NAMED[i].pattern);
+}
+
+inline void countAll(const Mol& m, int* out) {
+  Matcher mt;
+  countAll(m, mt, out);
 }
 
 // ---------------------------------------------------------------------------------------------

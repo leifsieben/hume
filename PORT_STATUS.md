@@ -41,6 +41,7 @@ and `src/hume_core/estate_typer.h` computes **50** E-state columns.
 | EState | 50 | `src/hume_core/estate_typer.h`, `cpp/estate_tables.h` | 2,868,290 / 2,868,290 atoms exact on `cpp/hard.smi`; 100,000/100,000 column values vs mordred 1.2.0. 0.834 µs/mol vs 636. |
 | VSA binning | 59 | `src/hume_core/vsa_bins.h`, `cpp/vsa_tables.h` | **66/66 columns bit-exact vs RDKit** over 100,000 molecules, **5/5 vs mordred**, and all four per-atom vectors exact on 2,868,290 atoms. Labute ASA was the real work. |
 | RingCount + TopologicalCharge + PathCount | 81 | `src/hume_core/{ringcount,topocharge,pathcount}.h` | RingCount 49/49 and PathCount 11/11 bit-exact on 100,000. TopologicalCharge 12/21 bit-exact, the other 9 within 6.661e-16 relative — mordred disagrees with *itself* there on 21–70% of the corpus. **20.2 µs/mol against mordred's 11,602 (~575×).** |
+| rdkit_core fragments | 76 | `src/hume_core/frag_matcher.h`, `cpp/frag_program.h` | 74 SMARTS pattern counts + `NHOHCount` + `HeavyAtomCount`. **76/76 bit-exact vs RDKit's own `Descriptors` through the shipped wiring** on 5,000 molecules, every column exercised. Needed the tenth `atom_i` column, `tval`. 119.5 ± 7.80 µs/mol. |
 | InformationContent | 33 | `src/hume_core/infocontent.h`, `cpp/ic_tables.h` | Not exact-vs-mordred — mordred is ill-posed here. **42 columns bit-identical under renumbering**, order-0 control passes. `Ipc` has an open bug; see the header. |
 
 Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), RDKit `Chi*` (9),
@@ -61,7 +62,7 @@ else wired put together. It also still has the open `Ipc` bug.
 
 | family | n | agent |
 |---|---|---|
-| `rdkit_core` | 99 | needs a general SMARTS engine; stereo perception split off |
+| `rdkit_core` | 99 | 76 wired (`frag_matcher.h`); the rest is stereo perception + FpDensity |
 
 ## Still to port
 
@@ -74,8 +75,11 @@ fixed edges, summed. The contributions are already computed natively (Crippen fr
 Labute ASA and the bin machinery. `MoeType` resolves via `getattr` to the *same* code path and the
 *same* edges as the `rdkit_*` VSA columns, so it is not a separate implementation.
 
-**B. `rdkit_core`, 99.** Fragment counts (`fr_*`), H-bond donors/acceptors, ring and heteroatom
-counts. Mechanically the largest block and mostly SMARTS counting.
+**B. `rdkit_core`, 99 — 76 of them are DONE.** Fragment counts (`fr_*`), H-bond
+donors/acceptors, ring and heteroatom counts, all wired via `src/hume_core/frag_matcher.h`; see
+"2. DONE" in the handoff. What is left is `NumAtomStereoCenters` +
+`NumUnspecifiedAtomStereoCenters` (RDKit's `FindPotentialStereo`, a real subsystem) and
+`FpDensityMorgan1/2/3`; the other ~18 are computed elsewhere or trivial from the boundary.
 
 **C. Mordred Chi + walks, 55.** `Chi` 40 (`AXp-*`/`Xp-*` path, `Xc-*` cluster, `Xpc-*`
 path-cluster, `Xch-*` chain), `WalkCount` 6, `Constitutional` 4, `WienerIndex` 2,
@@ -215,8 +219,8 @@ directory.
 
 ## What is true right now
 
-    callable from the package (hume.featurize_all)   615 of 864
-    verified C++ NOT yet wired into the extension     76 (frag / rdkit_core)
+    callable from the package (hume.featurize_all)   691 of 864
+    verified C++ NOT yet wired into the extension      0
     total verified C++                               691
     still Python                                    ~173
 
@@ -226,8 +230,12 @@ Adding it is a table plus a line, but it re-shapes `cpp/values_ac.txt` from 486 
 i.e. it invalidates the verified artifact -- so it was deliberately left. Same class of census
 error as the 642.
 
+The 76 `rdkit_core` fragment columns ARE now wired (+76). See "2. DONE" below.
+
 `hume.featurize_all(smiles) -> (fp, X, ALL_COLUMNS)` works today: SMILES -> ECFP (2048, r=3,
-chirality) + 529 emitted columns, through ONE pickle parse, six headers, one boundary fill.
+chirality) + 1,091 emitted columns, through ONE pickle parse, seven headers, one boundary fill.
+The 691 is not the 1,091: `bench_e2e._survivors_covered` counts the members of the 865 and prints
+it next to the timing, so the two can never be read apart.
 
 ## The three things to do next, in priority order
 
@@ -247,21 +255,42 @@ H-graph construction in the harness.
 
   Remaining AC work: the tenth weight `Z`, 52 columns. See the note above on why it was left.
 
-**2. WIRE THE 76 FRAGMENT COLUMNS — and it is NOT mechanical, contrary to what this file said.**
-`src/hume_core/frag_matcher.h` + `cpp/frag_program.h` are ALL EXACT on 100,000 with a standalone
-harness, but `fragmatch::Mol` needs **`tval`, RDKit's `GetTotalValence()`, and the boundary does
-not carry it.** `atom_i` has Z, deg, nH, fchg, hyb, arom, ring, cip, nring — no valence. So this
-is a 10th `atom_i` column (both boundary paths, `extract()` AND `extract_pickles()`), a rebuild,
-and a re-verify of everything downstream, not a call added to `all_row()`.
+**2. DONE — the 76 fragment columns are wired.** `atom_i` is now **(n_atoms, 10)**; the tenth
+column is `tval`, SMARTS `v`.
 
-Do NOT try to derive `tval` from bond orders plus `nH`. RDKit's valence perception has its own
-rules for aromatic and dative bonds, and re-deriving perception C++-side is precisely the thing
-`_extract.py`'s docstring refuses to do for hybridisation — "the first place an 'exact' claim
-would quietly stop being true".
+  **`tval` did NOT need a new serialised field, and that is the finding worth keeping.** The
+  pickle was already carrying it and `molpickle.h` was throwing it away: atom property-flag
+  **bit 5 is `getExplicitValence()`** (previously `r.skip(1)`) and **bit 6 is
+  `getImplicitValence()`**, and `getTotalValence()` is exactly their sum — 0 of 575,571 atoms
+  of `hard.smi` disagree, measured through RDKit's own accessors. So the fast path reads two
+  bytes it was already stepping over, and only `extract()` pays a Python call. Both paths are
+  compared field-by-field by `cpp/verify_molpickle.py`, whose `FIELDS` now carries
+  `atom total valence`: **EXACT on 2,866,100 + 2,868,290 atoms**, both corpora.
 
-The `border` field is fine: `fragmatch` wants RDKit's `BondType` integer (AROMATIC = 12, not a
-bitmask), and `esttyper::btypeFromBcode()` already converts `bond_i`'s `B_CODE` to exactly that,
-verified equal on all 3,090,892 bonds of `hard.smi`.
+  Cost of the wider boundary, A/B in one process on the same 2,000 molecules (the "before" arm
+  is the same module source with the two `tval` lines removed): `extract()` 130.3 → 130.7
+  µs/mol, i.e. **+0.4 µs/mol**. `extract_pickles()` is unchanged by construction — the bytes
+  were already in the blob.
+
+  `border` was NOT free, and the earlier note here was wrong: `esttyper::btypeFromBcode()`
+  returns the one-hot **bitmask** (SINGLE 1, DOUBLE 2, TRIPLE **4**, AROMATIC **8**), while
+  `fragmatch` compares against RDKit's `BondType` **integer** (TRIPLE **3**, AROMATIC **12**).
+  `bindings.cpp`'s `frag_border()` reuses `btypeFromBcode` for the type DECISION — the part that
+  knows an order bit beats the aromatic flag — and adds a four-entry renumbering on top. That is
+  a table, not a second converter. Anything else maps to 0, which is exact rather than
+  approximate here: the only bond-order values in all 1,474 nodes of `cpp/frag_program.h` are
+  1, 2, 3 and 12, so a dative bond (17 to RDKit, 0 here) is indistinguishable to every query,
+  negation included.
+
+  Verified THROUGH THE WIRING, not through `cpp/frag`: `cpp/verify_wiring.py` now grades the 76
+  against RDKit's own `Descriptors` in-process. **76/76 EXACT, bitwise, on 5,000 molecules**, and
+  every column is exercised (the thinnest is `fr_azide`, nonzero on 7). Every pre-existing family
+  is unchanged in the same run, and `featurize_all[:, :182]` is still bit-identical to
+  `featurize_blocks` — through both readers.
+
+  **It is not cheap: 119.5 ± 7.80 µs/mol for 76 columns**, the second-largest family after
+  `infocontent`. Nothing has been optimised; `matchCount()` still allocates a vector of match
+  vectors per pattern per molecule (74 patterns), which is the obvious first lever.
 
 **3. `infocontent` IS THE PIPELINE: 399.9 ± 2.52 µs/mol for 42 columns.** 63% of all compute,
 2× the entire 182-column block, ~6× everything else wired combined, for 33 columns of the 865.
