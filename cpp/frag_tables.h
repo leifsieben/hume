@@ -14,7 +14,7 @@
 // `cpp/verify_frag.py check` compares SPEC and exits non-zero on drift.
 //
 //   rdkit  2025.09.2   (pin: 2025.9.2)
-//   SPEC_SHA256 = 24ca406d1ba08f50c1610c004f85e896825b4b6ce22a67645cd233c60b678b97
+//   SPEC_SHA256 = ed422b69eb0a409140bbddaa16d974ff6d326407a975eaa40b73c91adfa6fb08
 //   CSV_SHA256  = f491d016a2bbf7cb0c3ca4ab23662c0b0ad4e358b028938433ef3b44253a569c   (informational)
 
 #ifndef HUME_FRAG_TABLES_H
@@ -24,7 +24,7 @@
 
 namespace frag_tbl {
 
-constexpr const char SPEC_SHA256[] = "24ca406d1ba08f50c1610c004f85e896825b4b6ce22a67645cd233c60b678b97";
+constexpr const char SPEC_SHA256[] = "ed422b69eb0a409140bbddaa16d974ff6d326407a975eaa40b73c91adfa6fb08";
 
 // Counting mode.  Every row here is UNIQUE: RDKit takes the count as
 //     len(GetSubstructMatches(patt, uniquify=True))
@@ -132,7 +132,7 @@ constexpr Row ROWS[N_ROWS] = {
       "$([nH0,o,s;+0])]", CM_UNIQUE, 1, 0, 2, 7 },
   { "NOCount", "[#7,#8]", CM_UNIQUE, 1, 0, 0, 0 },
   { "NumHeteroatoms", "[!#6;!#1]", CM_UNIQUE, 1, 0, 0, 0 },
-  { "NumAmideBonds", "C(=[OX1])N", CM_UNIQUE, 3, 0, 0, 0 },
+  { "NumAmideBonds", "C(=O)N", CM_UNIQUE, 3, 0, 0, 0 },
   { "NumRotatableBonds", 
       "[!$(*#*)&!D1&!$(C(F)(F)F)&!$(C(Cl)(Cl)Cl)&!$(C(Br)(Br)Br)&!$(C([CH3])([CH3])[CH3])&!$([CD3"
       "](=[N,O,S])-!@[#7,O,S!D1])&!$([#7,O,S!D1]-!@[CD3]=[N,O,S])&!$([CD3](=[N+])-!@[#7!D1])&!$(["

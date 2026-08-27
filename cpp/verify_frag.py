@@ -88,8 +88,15 @@ NON_CSV = [
      "CalcNumLipinskiHBA; 4,000/4,000.  `[N,O]` is WRONG (aliphatic-only): differs on 1,781"),
     ("NumHeteroatoms", "[!#6;!#1]", "unique",
      "CalcNumHeteroatoms; 4,000/4,000"),
-    ("NumAmideBonds", "C(=[OX1])N", "unique",
-     "CalcNumAmideBonds; 6,000/6,000.  `C(=[OX1])[NX3]` and `[CX3](=[OX1])[NX3]` differ on 10"),
+    ("NumAmideBonds", "C(=O)N", "unique",
+     "CalcNumAmideBonds; 100,000/100,000.  The carbonyl O must NOT be constrained: `C(=[OX1])N` "
+     "agrees on 6,000 molecules and then fails on 8 of the full 100,000, every one of them a "
+     "DATIVE bond -- in COC(=O)CN1C(=O)S/C(=C\\\\c2ccc(O)cc2)C1=[O]->[SnH3] the carbonyl O also "
+     "donates to Sn, so its total degree is 2 and `[OX1]` rejects it while RDKit still counts "
+     "the amide.  Only 114 of the 100,000 molecules carry a dative bond at all, which is why a "
+     "6,000-molecule check called this right and was wrong.  `C(=O)-N` and `C(=O)[N]` are also "
+     "0/100,000; the second bond being SingleOrAromatic vs BondOrder-1 is not discriminated by "
+     "this corpus, so that choice is recorded rather than claimed"),
     ("NumRotatableBonds",
      "[!$(*#*)&!D1&!$(C(F)(F)F)&!$(C(Cl)(Cl)Cl)&!$(C(Br)(Br)Br)&!$(C([CH3])([CH3])[CH3])"
      "&!$([CD3](=[N,O,S])-!@[#7,O,S!D1])&!$([#7,O,S!D1]-!@[CD3]=[N,O,S])"
@@ -380,6 +387,93 @@ def cstr(s):
     return "\n      " + "\n      ".join('"%s"' % p for p in parts)
 
 
+
+
+# =============================================================================================
+# Corpus dump + per-column verification against the pinned RDKit.
+#
+#   UV=(uv run --isolated --no-project --python 3.11 --with "rdkit==2025.9.2" --with "numpy==2.4.6")
+#   "${UV[@]}" python cpp/verify_frag.py dump  N  > /tmp/frag_dump.txt
+#   c++ -O3 -std=c++17 -o cpp/frag cpp/frag.cpp && ./cpp/frag < /tmp/frag_dump.txt > /tmp/frag_cpp.txt
+#   "${UV[@]}" python cpp/verify_frag.py verify N /tmp/frag_cpp.txt
+# =============================================================================================
+def _mols(n):
+    from rdkit import Chem
+    out = []
+    for line in open(os.path.join(ROOT, "cpp", "hard.smi")):
+        if len(out) >= n:
+            break
+        m = Chem.MolFromSmiles(line.strip())
+        if m is not None:
+            out.append(m)
+    return out
+
+
+def cmd_dump():
+    require_pin()
+    from rdkit import Chem
+    n = int(sys.argv[2])
+    mols = _mols(n)
+    w = sys.stdout.write
+    w("%d\n" % len(mols))
+    for m in mols:
+        ri = m.GetRingInfo()
+        w("%d %d\n" % (m.GetNumAtoms(), m.GetNumBonds()))
+        for a in m.GetAtoms():
+            w("%d %d %d %d %d %d %d\n" % (
+                a.GetAtomicNum(), a.GetDegree(), a.GetTotalNumHs(False), a.GetFormalCharge(),
+                1 if a.GetIsAromatic() else 0, ri.NumAtomRings(a.GetIdx()), a.GetTotalValence()))
+        for b in m.GetBonds():
+            # Bond::BondType as an integer -- AROMATIC is 12.  int(GetBondType()) is exactly the
+            # number RDKit's own queryBondOrder compares against.
+            w("%d %d %d %d\n" % (b.GetBeginAtomIdx(), b.GetEndAtomIdx(), int(b.GetBondType()),
+                                 1 if b.IsInRing() else 0))
+    sys.stderr.write("RESOLVED rdkit %s   dumped %d molecules\n" % (rdkit.__version__, len(mols)))
+
+
+def cmd_verify():
+    require_pin()
+    import numpy
+    from rdkit import Chem
+    n = int(sys.argv[2])
+    cpp_path = sys.argv[3]
+    mols = _mols(n)
+    lines = [l.rstrip("\n") for l in open(cpp_path) if l.strip()]
+    names = lines[0].lstrip("#").split("\t")
+    rows = [list(map(int, l.split("\t"))) for l in lines[1:]]
+    if len(rows) != len(mols):
+        sys.exit("row count %d != molecule count %d" % (len(rows), len(mols)))
+
+    from rdkit.Chem import Descriptors
+    fm = dict(Descriptors._descList)
+    print("RESOLVED rdkit %s  numpy %s" % (rdkit.__version__, numpy.__version__))
+    print("molecules: %d   columns: %d" % (len(mols), len(names)))
+    exact = {}
+    firstbad = {}
+    for j, nm in enumerate(names):
+        fn = fm.get(nm)
+        ok = 0
+        for i, m in enumerate(mols):
+            want = int(fn(m))
+            got = rows[i][j]
+            if want == got:
+                ok += 1
+            elif nm not in firstbad:
+                firstbad[nm] = (Chem.MolToSmiles(m), want, got)
+        exact[nm] = ok
+    allok = True
+    print("\nper-column exact / total:")
+    for nm in names:
+        mark = "" if exact[nm] == len(mols) else "   <-- MISMATCH %s" % (firstbad[nm],)
+        if exact[nm] != len(mols):
+            allok = False
+        print("  %-26s %6d / %6d%s" % (nm, exact[nm], len(mols), mark))
+    print("\n%s" % ("ALL EXACT" if allok else "NOT EXACT"))
+    if not allok:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
-    {"tables": cmd_tables, "check": cmd_check, "inventory": cmd_inventory}[cmd]()
+    {"tables": cmd_tables, "check": cmd_check, "inventory": cmd_inventory,
+     "dump": cmd_dump, "verify": cmd_verify}[cmd]()

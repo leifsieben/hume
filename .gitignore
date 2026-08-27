@@ -129,3 +129,10 @@ cpp/ic_exact_ipc.txt
 cpp/ic_smis.txt
 cpp/ic_perception_moved.txt
 cpp/infocontent
+
+# Fragment SMARTS engine exchange files (frag_dump.txt is ~300 MB at the 100k scale).
+# Regenerate with cpp/verify_frag.py dump / ./cpp/frag. frag_tables.h and frag_program.h are
+# GENERATED but tracked -- they are the pinned spec, so their diff is how upstream drift shows.
+cpp/frag_dump.txt
+cpp/frag_counts.txt
+cpp/frag
