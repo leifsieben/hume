@@ -1,6 +1,6 @@
 """Fig A — does the representation respond when the CHEMISTRY changes?
 
-ONE script, ONE figure: figures/fig_a.png / .pdf  (panels a–m), plus figures/fig_a.csv as the
+ONE script, ONE figure: figures/fig_a.pdf (panels a–m), plus figures/build/fig_a.csv as the
 durable numeric record.
 
     python3 -m figures.fig_a
@@ -66,17 +66,17 @@ from pathlib import Path
 import numpy as np
 
 if __package__ in (None, ""):                       # allow `python figures/fig_a.py` too
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import matplotlib.pyplot as plt                                             # noqa: E402
 from matplotlib.patches import Patch                                        # noqa: E402
 
-from figures import arms as A                                               # noqa: E402
-from figures.style import (FS, STYLE, TINT_CONTROL, TINT_REF, check_font,   # noqa: E402
+import arms as A                                               # noqa: E402
+from style import (FS, STYLE, TINT_CONTROL, TINT_REF, check_font,   # noqa: E402
                            LEGEND_BOX, mark_empty, row_ncol, save)
 
 check_font()
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 FIGA = ROOT / "results" / "figures" / "figA"
 EMB = FIGA / "embeddings"
 INK = STYLE["ink"]
@@ -290,7 +290,7 @@ def main():
     plt.close(fig)
 
     # The durable record. Same resolution path as the bars, so the CSV cannot disagree with them.
-    with open(ROOT / "figures" / "fig_a.csv", "w", newline="") as fh:
+    with open(ROOT / "figures" / "build" / "fig_a.csv", "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["arm", "label", "mode", "klass", "relative_response", "q1", "q3", "n",
                     "matched_mw_reference_raw"])

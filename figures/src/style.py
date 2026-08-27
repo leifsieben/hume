@@ -1,6 +1,7 @@
 """Shared matplotlib style + save helper for the HUME paper figures.
 
-Every figure script starts with `from figures.style import ...` so the typography, sizes and
+Every figure script starts with `from style import ...` (figures/src is put on sys.path by
+the script itself) so the typography, sizes and
 output paths are identical across the paper. Figures are written to `figures/` as both PNG
 (screen/review) and PDF (vector, for LaTeX).
 
@@ -20,8 +21,22 @@ from pathlib import Path
 
 import matplotlib as mpl
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parents[2]
+# PDFs are the deliverable and sit alone at figures/; PNG (screen review) and CSV (per-figure
+# data dumps) go to figures/build/ so the folder a human opens contains only finished figures.
 OUTDIR = ROOT / "figures"
+BUILDDIR = ROOT / "figures" / "build"
+
+# A FLAT MIRROR OF EVERY FINISHED PDF, one directory up from the repo (Leif 2026-08-27: "one
+# folder /figures_out that is on the same level as the repo and just has the exported figures as
+# pdfs -- it makes it easier for me to look at them").
+#
+# Deliberately OUTSIDE the repository, so it is not version-controlled and cannot be confused
+# with the tracked artefacts beside the scripts. It is a convenience view, never a source: it is
+# overwritten on every render, nothing reads from it, and deleting it loses nothing. PDFs only --
+# the PNGs are for screen review and would just double the file count in a folder whose whole
+# purpose is being quick to scan.
+EXPORT_DIR = ROOT.parent / "figures_out"
 
 # ---------------------------------------------------------------------------------------------
 # ONE font, ONE size scale. These figures get combined into multi-panel layouts later, so every
@@ -99,6 +114,7 @@ def install():
         "legend.columnspacing": 1.0, "legend.labelspacing": 0.35,
     })
     OUTDIR.mkdir(parents=True, exist_ok=True)
+    BUILDDIR.mkdir(parents=True, exist_ok=True)
 
 
 # ONE LEGEND FRAME FOR THE WHOLE SET. A legend that sits ON the data needs an opaque box or the
@@ -195,11 +211,23 @@ def save(fig, name, formats=("png", "pdf"), subdir=None, wide=False):
     """
     check_no_empty_panels(fig, name)
     out = OUTDIR / subdir if subdir else OUTDIR
+    build = BUILDDIR / subdir if subdir else BUILDDIR
     out.mkdir(parents=True, exist_ok=True)
+    build.mkdir(parents=True, exist_ok=True)
     for ext in formats:
-        fig.savefig(out / f"{name}.{ext}")
+        fig.savefig((out if ext == "pdf" else build) / f"{name}.{ext}")
     rel = f"figures/{subdir}/{name}" if subdir else f"figures/{name}"
     print(f"  saved  {rel}." + "/".join(formats))
+    if "pdf" in formats:
+        # Mirror to the flat browse folder. Failing to write it must never break a render --
+        # it is a convenience, and the authoritative copy is the one beside the script.
+        try:
+            import shutil
+            EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(out / f"{name}.pdf", EXPORT_DIR / f"{name}.pdf")
+            print(f"  mirrored {EXPORT_DIR / (name + '.pdf')}")
+        except OSError as e:
+            print(f"  (could not mirror to {EXPORT_DIR}: {e})")
     if "pdf" in formats:
         w = _pdf_width_in(out / f"{name}.pdf")
         if wide:

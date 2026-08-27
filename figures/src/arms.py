@@ -101,8 +101,22 @@ SHADES = {
                "#164A38",   # [2] spare (dark)
                "#9ED3C0"],  # [3] spare (light)
     "desc":   ["#2E6FAF", "#6396CA", "#A3C3E2"],
-    "clm":    ["#8F2D3B", "#C04A55", "#E08A92"],
-    "graph":  ["#5B3D8F", "#8464B5", "#B9A5D6"],
+    # FIVE clm shades, not three: Figures B and C draw ChemBERTa-2 TWICE (the MLM and MTR
+    # pretraining variants, see the ARMS entries) and add CDDD, whose input is also a string.
+    # The MLM/MTR pair take ADJACENT shades [0]/[1] on purpose -- they are the same architecture
+    # on the same corpus and the figure's argument is that only the pretraining target differs,
+    # so they must read as a matched pair rather than as two unrelated models.
+    # SHADE ORDER WITHIN A FAMILY IS SET BY WHAT SITS ADJACENT IN A FIGURE, not by ARM_ORDER.
+    # Figure B draws CheMeleon beside MiniMol and ChemBERTa-2-MTR beside MoLFormer inside every
+    # group, five bars wide; on the first build those pairs were one shade apart and the panel
+    # was unreadable. Each pair now takes the family's darkest and lightest step. Two documented
+    # constraints survive: CheMeleon/Chemprop stay ADJACENT (same architecture, pretrained vs
+    # untrained -- a matched pair), and ChemBERTa MLM/MTR stay ADJACENT (the controlled
+    # pretraining ablation). The ramp is therefore NOT monotonic in ARM_ORDER, and separability
+    # wins over that, on the same reasoning that moved Morgan r=3 to the light end of the ambers.
+    "clm":    ["#8F2D3B", "#B03D49", "#C04A55", "#D9737C", "#E08A92"],
+    # FOUR graph shades: Uni-Mol joins MiniMol / CheMeleon / Chemprop.
+    "graph":  ["#5B3D8F", "#7A56A8", "#8464B5", "#B9A5D6"],
     "proxy":  ["#26303A", "#4E6273", "#7B8FA1", "#A8B7C4", "#D0D9E1"],
     "control": ["#8A8A8A", "#B4B4B4", "#2B2B2B"],
 }
@@ -136,6 +150,18 @@ ARMS = {
                               color=SHADES["anchor"][4]),
     # Its OWN family -- no fingerprint in this arm. See the note above FAMILY_COLORS.
     "desc": dict(label="RDKit + Mordred", family="desc", color=SHADES["desc"][0]),
+    # THE DESCRIPTOR BLOCK SPLIT BY LIBRARY, with no fingerprint. Figure B's x-axis walks from
+    # "one library alone" to "everything", and the point of the walk is that the DL embedding's
+    # contribution shrinks as the classical base gets more complete -- which needs the
+    # intermediate rungs to exist as arms, not just the endpoints.
+    "desc_rdkit": dict(label="RDKit only", family="desc", color=SHADES["desc"][1]),
+    # THE WITHIN-GROUP REFERENCE BAR. In Figure B colour means "which embedding was added" and
+    # the group name means "to which classical block", so the block-alone bar must carry ONE
+    # colour across every group -- otherwise colour would mean two things in one panel. Neutral
+    # grey, because it is the thing everything beside it is measured against.
+    "classical_base": dict(label="classical block alone", family="control",
+                           color=SHADES["control"][0]),
+    "desc_mordred": dict(label="Mordred only", family="desc", color=SHADES["desc"][2]),
 
     # ---- HUME (crimson) ---------------------------------------------------------------------
     # The `_predict` arms share their exact counterpart's colour and add a hatch. See module head.
@@ -143,24 +169,69 @@ ARMS = {
     "hume_core_custom": dict(label="HUME core + blocks", family="hume", color=SHADES["hume"][0]),
     "hume_core_predict": dict(label="HUME core, predicted", family="hume",
                               color=SHADES["hume"][1], hatch="///"),
-    "hume_core_custom_predict": dict(label="HUME core + blocks, predicted", family="hume",
+    "hume_core_custom_predict": dict(label="HUME + blocks, predicted", family="hume",
                                      color=SHADES["hume"][0], hatch="///"),
+    # FIGURE C splits "predicted" by WHICH PROXY did the predicting, so the hatch carries the
+    # proxy identity while the hue still says "this is HUME". Extending the hatch channel rather
+    # than the hue keeps the module-head rule intact: hatch means "predicted rather than
+    # computed", and now also which route. The proxies keep their own colours in the `proxy`
+    # family for figures that compare proxies to each other rather than to arms.
+    "hume_predict_ridge": dict(label="HUME, ridge-predicted", family="hume",
+                               color=SHADES["hume"][0], hatch="///"),
+    "hume_predict_gnn": dict(label="HUME, GNN-predicted", family="hume",
+                             color=SHADES["hume"][0], hatch="xxx"),
+    # THE WIDTH ABLATION (Leif 2026-08-27: "I just worry XGBoost might be overwhelmed with too
+    # many features"). Same descriptor block, ECFP folded to 1024 instead of 2048. It is a
+    # separate ARM and not a styling of the headline one, because if it wins it is what ships.
+    # Note Gate 1 already tested the descriptor half of that worry from two directions -- a
+    # supervised top-30 cherry-pick and an unsupervised PCA-64 -- and BOTH lost, so this arm
+    # isolates the remaining variable, which is fingerprint width rather than descriptor count.
+    "hume_1024": dict(label="HUME, ECFP-1024", family="hume", color=SHADES["hume"][3]),
+    # THE FINGERPRINT-ENCODING ABLATION (Leif 2026-08-27: "let's include in C just to see if we
+    # can pick up a trend there"). Same descriptor block, same radius, same width -- the
+    # fingerprint is COUNTS rather than binary. Counts strictly dominate binary in information,
+    # so if binary wins it is a generalisation effect at small n rather than an information one,
+    # and that is worth knowing before a default is picked by argument. Costs 1.08x to compute
+    # (28.37 vs 26.25 us/mol at r=3), so this is not a speed trade either way.
+    "hume_counts": dict(label="HUME, count fingerprint", family="hume", color=SHADES["hume"][2]),
 
     # ---- external chemical language models (violet) -----------------------------------------
     # THE NUMBER IN A CLM'S NAME IS PRETRAINING DATA, NOT PARAMETERS, and the two orderings are
     # opposite: ChemBERTa-77M-MTR is 3.4M parameters, MoLFormer-XL 44.4M, SMI-TED 358.1M. Never
     # print a name's number as a size.
-    "chemberta": dict(label="ChemBERTa-2", family="clm", color=SHADES["clm"][0],
-                      hf="DeepChem/ChemBERTa-77M-MTR"),
-    "molformer": dict(label="MoLFormer", family="clm", color=SHADES["clm"][1],
-                      hf="ibm-research/MoLFormer-XL-both-10pct"),
+    #
+    # CHEMBERTA IS TWO ARMS, AND THIS ENTRY USED TO BE A PROVENANCE BUG. It declared
+    # hf="DeepChem/ChemBERTa-77M-MTR" while gpu/fetch_hf.py downloaded ...-77M-MLM and the
+    # on-disk config.json says RobertaForMaskedLM. Every ChemBERTa number in Figure A is
+    # therefore the MLM checkpoint, under a registry entry naming the MTR one -- i.e. the paper
+    # would have printed the wrong model name. Found 2026-08-27.
+    #
+    # Splitting the arm turns that bug into the paper's cleanest experiment. The two checkpoints
+    # are the SAME architecture (3 layers, 384 hidden), the SAME 77M-molecule corpus and the
+    # same parameter count; the only difference is the pretraining target. MTR is multi-task
+    # regression onto 200 RDKit descriptors -- so the pair is a controlled ablation of
+    # "does supervising on descriptors make the embedding better?", run by the model's own
+    # authors and reported as "our model is better" rather than as a statement about
+    # descriptors. Figures B and C reinterpret it.
+    "chemberta_mlm": dict(label="ChemBERTa-2 (MLM)", family="clm", color=SHADES["clm"][1],
+                          hf="DeepChem/ChemBERTa-77M-MLM", desc_pretrained=False),
+    "chemberta_mtr": dict(label="ChemBERTa-2 (MTR)", family="clm", color=SHADES["clm"][0],
+                          hf="DeepChem/ChemBERTa-77M-MTR", desc_pretrained=True),
+    "molformer": dict(label="MoLFormer", family="clm", color=SHADES["clm"][4],
+                      hf="ibm-research/MoLFormer-XL-both-10pct", desc_pretrained=False),
+    # CDDD: a 2019 translation autoencoder whose latent vector was explicitly proposed as a
+    # DESCRIPTOR SUBSTITUTE -- the thesis of this paper, stated as a design goal seven years
+    # earlier. String input, hence the CLM family. Its released weights are TensorFlow 1.x, so
+    # it may need a pinned environment; if it cannot be run, the arm is dropped and said so,
+    # never silently omitted.
+    "cddd": dict(label="CDDD", family="clm", color=SHADES["clm"][3], desc_pretrained=False),
     # SELFIES-TED, not SMI-TED (Leif 2026-08-26: "more interesting model"). Both are IBM
     # encoder-decoders; SELFIES-TED reads SELFIES rather than SMILES, which makes it the only arm
     # on the plate whose input grammar cannot express an invalid molecule. That is exactly the
     # property Figure A's two notation controls are built to test, so it is the more informative
     # of the pair here. SMI-TED's weights stay on disk but no figure draws it.
     "selfies_ted": dict(label="SELFIES-TED", family="clm", color=SHADES["clm"][2],
-                        hf="ibm-research/materials.selfies-ted"),
+                        hf="ibm-research/materials.selfies-ted", desc_pretrained=False),
 
     # ---- external graph foundation models (blue) --------------------------------------------
     # `chemprop` is a randomly-initialised D-MPNN -- the architecture with NO pretraining. It is
@@ -168,9 +239,22 @@ ARMS = {
     # still responds to chemistry tells you how much of a graph model's sensitivity is
     # architectural rather than learned. CheMeleon is the same architecture pretrained, so the
     # two form a matched pair and must keep adjacent shades.
-    "minimol": dict(label="MiniMol", family="graph", color=SHADES["graph"][0]),
-    "chemeleon": dict(label="CheMeleon", family="graph", color=SHADES["graph"][1]),
-    "chemprop": dict(label="Chemprop, untrained", family="graph", color=SHADES["graph"][2]),
+    "minimol": dict(label="MiniMol", family="graph", color=SHADES["graph"][3],
+                    desc_pretrained=False),
+    # CheMeleon is PRETRAINED TO PREDICT MORDRED DESCRIPTORS. That is the paper's own pitch --
+    # descriptor pretraining beating masked-atom pretraining -- and it is why this arm carries
+    # desc_pretrained=True rather than because of anything measured here.
+    "chemeleon": dict(label="CheMeleon", family="graph", color=SHADES["graph"][0],
+                      desc_pretrained=True),
+    # Uni-Mol needs a CONFORMER, so it is the only arm here whose input is 3D. It stays in the
+    # graph family (it is a geometry-aware graph transformer, not a string model) and the label
+    # carries the 3D rather than a sixth hue: a new colour family for one arm costs the reader
+    # more than a two-character suffix does. It is also the arm most likely to legitimately BEAT
+    # descriptors on the QM panel, and the figure should show that rather than hide it.
+    "unimol": dict(label="Uni-Mol (3D)", family="graph", color=SHADES["graph"][2],
+                   desc_pretrained=False),
+    "chemprop": dict(label="Chemprop, untrained", family="graph", color=SHADES["graph"][1],
+                     desc_pretrained=False),
 
     # ---- the descriptor proxy ladder (blue) -- figures C/D ----------------------------------
     # These are not representations, they are the five candidate models for the PREDICT block.
@@ -186,9 +270,16 @@ ARMS = {
 # cannot put the same arms in two different orders -- which reads as two different comparisons.
 # Grouped classical -> HUME -> external, i.e. cheapest to most expensive at inference, which is
 # the axis the whole paper is about.
-ARM_ORDER = ["ecfp", "r3cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc", "desc",
+ARM_ORDER = ["ecfp", "r3cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
+             "desc_rdkit", "desc_mordred", "desc",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
-             "chemberta", "molformer", "selfies_ted", "minimol", "chemeleon", "chemprop"]
+             "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
+             # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all
+             # hume, then all GNN, then all CLM ... so the ordering from left to right makes
+             # comparisons easier"). Applies to every figure at once, which is the point of
+             # this list existing: two figures must not put the same arms in two orders.
+             "minimol", "chemeleon", "unimol", "chemprop",
+             "chemberta_mlm", "chemberta_mtr", "molformer", "selfies_ted", "cddd"]
 _unknown = set(ARM_ORDER) - set(ARMS)
 assert not _unknown, f"arms.py: ARM_ORDER names an arm that does not exist: {sorted(_unknown)}"
 
@@ -205,6 +296,43 @@ def color(key: str) -> str:
 
 def hatch(key: str):
     return ARMS.get(key, {}).get("hatch")
+
+
+# DESCRIPTOR PRETRAINING IS A THIRD VISUAL CHANNEL, and it has to be, because it is the whole
+# argument of Figure B. Hue is already spent on the model family and hatch on exact-vs-predicted,
+# so this rides on the bar EDGE: a heavy dark outline means "this model was pretrained to predict
+# molecular descriptors".
+#
+# It is a property of the MODEL, recorded here as data, and the figure decides how to draw it --
+# so a second figure cannot encode it a different way. Only external pretrained models carry the
+# flag; it is meaningless for a fingerprint or for HUME itself, and `is None` distinguishes "not
+# applicable" from an explicit False.
+#
+# The two arms flagged True are CheMeleon (pretrained on Mordred descriptors) and ChemBERTa-2-MTR
+# (multi-task regression on 200 RDKit descriptors). Both facts come from those models' own
+# papers, not from anything measured here -- if either turns out to be wrong on checking, the
+# flag is wrong and the figure's claim with it, so verify before publishing.
+EDGE_DESC_PRETRAINED = dict(edgecolor="#1A1A1A", linewidth=0.9)
+
+
+def desc_pretrained(key: str):
+    """True / False / None -- None meaning the question does not apply to this arm."""
+    return ARMS.get(key, {}).get("desc_pretrained")
+
+
+def bar_kw(key: str) -> dict:
+    """Every visual property of one arm's bar, in one place.
+
+    Figures call this instead of assembling colour + hatch + edge themselves, so the three
+    channels cannot drift apart between Figure B and Figure C.
+    """
+    kw = dict(color=color(key))
+    h = hatch(key)
+    if h:
+        kw["hatch"] = h
+    if desc_pretrained(key):
+        kw.update(EDGE_DESC_PRETRAINED)
+    return kw
 
 
 def order(keys) -> list:

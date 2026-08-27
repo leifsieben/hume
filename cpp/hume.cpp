@@ -16,6 +16,7 @@
 // than of arithmetic -- Chi at 273 us for six columns being the clearest case.
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstdio>
@@ -47,6 +48,9 @@ void dgemm_new(char *, char *, int *, int *, int *, double *, double *, int *, d
 // character argument and dsterf none.
 void dsytd2_(char *, int *, double *, int *, double *, double *, double *, int *);
 void dsterf_(int *, double *, double *, int *);
+// Eigenvalues AND eigenvectors of a tridiagonal. Needed only for the LAST ROW of the
+// eigenvector matrix, which turns Lanczos's beta into a certified residual bound.
+void dsteqr_(char *, int *, double *, double *, double *, int *, double *, int *);
 }
 
 // ---------------------------------------------------------------------------------- data
@@ -1430,14 +1434,510 @@ int BCUT_SOLVER = 1;
 // different last digits either side of a threshold. That is precisely the reproducibility wart
 // the Lanczos removal above rejected, and it is not worth 13% of a block.
 //
-// WHAT THIS OPENS UP. Only the two EXTREMAL eigenvalues are wanted and dsterf computes all n of
-// them. The asymptotic case for an extremal-only Krylov method is strongest exactly where the
-// time is -- n ~ 117, where the tail sits. The recorded Lanczos defeat (201 us against dsyevd's
-// 94) was measured on the 3,000-molecule drug-like benchmark, which has no such tail, so it
-// tested the regime that accounts for a few percent of the cost and never tested this one.
-// Re-running that comparison against the 71+ bucket is the highest-value experiment left here.
+// WHAT THIS OPENED UP, AND WHAT HAPPENED WHEN IT WAS TRIED. Only the two EXTREMAL eigenvalues
+// are wanted and dsterf computes all n of them, so an extremal-only Krylov method has its best
+// case exactly where the time is. The earlier Lanczos defeat recorded above (201 us against 94)
+// was measured on the 3,000-molecule drug-like benchmark, which HAS NO SUCH TAIL -- it tested
+// the regime worth a few percent and never tested this one. So it was rebuilt and re-measured
+// properly. It works, it is certified, it is ~10% of the pipeline, and it is NOT WIRED IN.
+// Everything below is why, so that the next person to have this idea finds the measurement
+// instead of repeating the month.
+//
+//   THE OPERATOR. bcut_one's matrix is 0.001*(J - I) + diag(prop) + sparse, so a matvec is
+//   O(n + m) rather than O(n^2), and the rank-1 term and every off-diagonal are IDENTICAL for
+//   all four properties -- only the diagonal changes -- so one build serves four solves. That
+//   is the cross-property sharing dense LAPACK cannot express, and the economics are real:
+//   matvec is 1.69x faster than dense at n = 10 and 18.0x at n = 117.
+//
+//   THE CERTIFICATE. After k steps the Ritz residual is exactly |beta_k * s_{k,i}|, s being the
+//   LAST COMPONENT of T_k's i-th eigenvector; for a symmetric matrix the eigenvalue error is
+//   bounded by it. Fail the bound -> compute densely. All four properties fall back together,
+//   so a BCUT2D row is never a mixture of two numerical paths.
+//
+//   FULL REORTHOGONALISATION IS MANDATORY, measured not assumed. With none, or with an
+//   8-vector window, 3-4 of 1200 tail cases stall at 2.2e-09 relative -- which would fail the
+//   rtol 1e-9 gate this descriptor is held to, silently, on a handful of molecules. Full
+//   reorth converged 1200 of 1200.
+//
+//   THE RESULT. On the n >= 71 tail: dense 1962 us/mol, Lanczos with oracle iteration counts
+//   579 (3.39x), Lanczos with the certificate 1337 (1.47x). Corpus-wide BCUT2D falls from
+//   128.65 to 110.56 us/mol at min_n = 71 -- 1.16x on the block, ~10% of the pipeline, with
+//   zero fallbacks.
+//
+//   WHY IT IS NOT WIRED IN. It would put a SECOND NUMERICAL PATH into the block this project
+//   verifies most carefully, and this repo has already deleted one Lanczos on that trade. The
+//   strongest counter-argument was tested rather than waved away: the shipped descriptor matrix
+//   is float32 (~1.2e-7 relative), and the two paths differ by at most 2.5e-12 in float64, five
+//   orders below the representation they land in. Cast both paths to float32 and compare bit
+//   for bit over the whole corpus: ZERO differences in 22,696 values at min_n = 71 and ZERO in
+//   102,344 at min_n = 25. So the difference is invisible in what actually ships -- but it is
+//   invisible by a margin, not by construction: the flip rate is ~1e-5 per value, so a large
+//   enough corpus will eventually produce single-ULP differences. Two paths remain two paths.
+//   The decision is therefore a judgement about reproducibility, not about accuracy, and it was
+//   left to the owner rather than taken here. Wiring it back in is a dozen lines in bcut2d;
+//   re-measuring it is `./hume lanczosprobe` and `./hume f32cmp`.
+//
+//   THE METHOD LESSON, which cost four wrong answers to learn. Every one of them was a probe
+//   that measured an IDEALISED method rather than the one that would ship:
+//     * probe 1 timed operator construction alongside the matvec, and since dense construction
+//       is an n^2 fill, it flattered dense and understated the gap;
+//     * probe 3 timed Lanczos with oracle iteration counts, paying nothing for the convergence
+//       testing a shipping version cannot avoid -- 3.62x became 1.08x once it did;
+//     * the certificate itself was wrong by up to 52 orders of magnitude, because the forward
+//       three-term recurrence is unstable in exactly the converged case (the eigenvector decays
+//       towards y_k, so integrating upward amplifies rounding). It reported s ~ 0.998 where the
+//       truth was 1e-16, never fired, and made a working method look 4.8x slower than dense;
+//     * and the first fix checked the certificate every 4 iterations from k = 28 when lambda_min
+//       cannot certify before ~59, so half the certified cost was dsterf calls that could not
+//       possibly have succeeded.
+//   The tell for the third was that the iteration count was FLAT in tolerance -- 1e-10 and
+//   1e-12 agreeing to 0.1 iterations is not how a real residual behaves, and that flatness was
+//   visible three measurements before anyone looked at it.
 
 bool BCUT_SKIP_SOLVE = false;
+
+// ---- structured Burden operator: rank-1 + diagonal + sparse -----------------------------
+//
+// bcut_one fills the matrix with 0.001, overwrites the diagonal with the property and the
+// bonded off-diagonals with 1/sqrt(bond order). That is exactly
+//
+//   A = 0.001*(J - I) + diag(prop) + sum_bonds (1/sqrt(bo) - 0.001) * (e_i e_j' + e_j e_i')
+//
+// so a matrix-vector product costs O(n + m) instead of O(n^2):
+//
+//   A*x = 0.001*(sum(x)*ones - x) + prop.x + S*x
+//
+// The rank-1 term and S are IDENTICAL for all four properties -- only `dg` changes -- so the
+// sparse structure is built once per molecule and reused four times. That is the cross-matrix
+// sharing idea #12 tried and could not extract from dense LAPACK.
+struct BurdenOp {
+  int n = 0;
+  std::vector<double> dg;             // diagonal (the property, heavy atoms only)
+  std::vector<int> bi, bj;            // bond endpoints, heavy indexing
+  std::vector<double> bw;             // 1/sqrt(bo) - 0.001
+};
+
+// Structure only; `dg` is filled per property by burden_diag.
+static void burden_build(const Mol &m, BurdenOp &B, std::vector<int> &hv) {
+  hv.clear();
+  static thread_local std::vector<int> pos;
+  pos.assign(m.n, -1);
+  for (int i = 0; i < m.n; i++)
+    if (m.Z[i] != 1) { pos[i] = (int)hv.size(); hv.push_back(i); }
+  B.n = (int)hv.size();
+  B.bi.clear(); B.bj.clear(); B.bw.clear();
+  for (int b = 0; b < m.nb; b++) {
+    int i = pos[m.bu[b]], j = pos[m.bv[b]];
+    if (i < 0 || j < 0) continue;
+    B.bi.push_back(i); B.bj.push_back(j);
+    B.bw.push_back(1.0 / std::sqrt(m.bord[b]) - 0.001);
+  }
+}
+
+static void burden_diag(const std::vector<double> &prop,
+                        const std::vector<int> &hv, BurdenOp &B) {
+  B.dg.resize(B.n);
+  for (int i = 0; i < B.n; i++) B.dg[i] = prop[hv[i]];
+}
+
+// PROBE SCAFFOLDING. Lanczos on the structured operator, instrumented so the convergence
+// history can be read out. `reorth`: 0 = none, -1 = full, w > 0 = against the last w vectors.
+// The start vector is DETERMINISTIC (a fixed smooth pseudo-random pattern) -- a constant vector
+// risks being orthogonal to the extremal eigenvector, and an RNG would make the descriptor
+// irreproducible, which is the one thing this project will not accept.
+struct LanczosWork {
+  std::vector<double> Q, w, alpha, beta, d, e, z, wk, yv, v1, v2, px, py;
+};
+
+static void burden_mv(const BurdenOp &B, const double *x, double *y);
+
+static void lanczos_run(const BurdenOp &B, int maxit, int reorth, LanczosWork &W) {
+  const int n = B.n;
+  if (maxit > n) maxit = n;
+  W.Q.assign((size_t)(maxit + 1) * n, 0.0);
+  W.w.assign(n, 0.0);
+  W.alpha.clear();
+  W.beta.clear();
+  double *q0 = &W.Q[0];
+  double nrm = 0.0;
+  for (int i = 0; i < n; i++) { q0[i] = std::sin(1.2345 * i + 0.678); nrm += q0[i] * q0[i]; }
+  nrm = std::sqrt(nrm);
+  for (int i = 0; i < n; i++) q0[i] /= nrm;
+
+  for (int k = 0; k < maxit; k++) {
+    double *qk = &W.Q[(size_t)k * n];
+    burden_mv(B, qk, W.w.data());
+    double a = 0.0;
+    for (int i = 0; i < n; i++) a += qk[i] * W.w[i];
+    W.alpha.push_back(a);
+    for (int i = 0; i < n; i++) W.w[i] -= a * qk[i];
+    if (k > 0) {
+      const double *qm = &W.Q[(size_t)(k - 1) * n];
+      double b = W.beta[k - 1];
+      for (int i = 0; i < n; i++) W.w[i] -= b * qm[i];
+    }
+    if (reorth != 0) {
+      int lo = (reorth < 0) ? 0 : std::max(0, k - reorth + 1);
+      for (int j = lo; j <= k; j++) {
+        const double *qj = &W.Q[(size_t)j * n];
+        double dp = 0.0;
+        for (int i = 0; i < n; i++) dp += qj[i] * W.w[i];
+        for (int i = 0; i < n; i++) W.w[i] -= dp * qj[i];
+      }
+    }
+    double bn = 0.0;
+    for (int i = 0; i < n; i++) bn += W.w[i] * W.w[i];
+    bn = std::sqrt(bn);
+    W.beta.push_back(bn);
+    if (bn < 1e-14) break;                     // invariant subspace found
+    double *qn = &W.Q[(size_t)(k + 1) * n];
+    for (int i = 0; i < n; i++) qn[i] = W.w[i] / bn;
+  }
+}
+
+// Extremal Ritz values of the leading k x k block of T, via dsterf on a copy.
+static void ritz_extremes(const LanczosWork &W, int k, LanczosWork &S, double *lo, double *hi) {
+  S.d.assign(W.alpha.begin(), W.alpha.begin() + k);
+  S.e.assign(k > 1 ? k - 1 : 1, 0.0);
+  for (int i = 0; i + 1 < k; i++) S.e[i] = W.beta[i];
+  int nn = k, info = 0;
+  dsterf_(&nn, S.d.data(), S.e.data(), &info);
+  *lo = S.d[0];
+  *hi = S.d[k - 1];
+}
+
+// ---- production path: certified extremal eigenvalues, or an honest failure ---------------
+//
+// NO SIZE GATE DECIDES CORRECTNESS. The gate is the ACHIEVED RESIDUAL: after k steps, the
+// Ritz pair (theta_i, y_i) of the tridiagonal T_k has exact residual norm |beta_k * s_{k,i}|,
+// where s_{k,i} is the LAST COMPONENT of T_k's i-th eigenvector. For a symmetric matrix the
+// eigenvalue error is bounded by that residual, so the test is a certificate rather than a
+// heuristic. If either extreme fails it, this returns false and the caller runs the dense
+// path. The threshold that decides which molecules TRY Lanczos is a pure performance knob and
+// cannot change a value: a molecule either meets the certificate or is computed densely.
+//
+// The start vector is deterministic AND molecule-dependent -- it mixes the atom index with the
+// diagonal, so different molecules and different properties explore different Krylov subspaces
+// and a pathological start cannot be shared corpus-wide. Deterministic matters more than random
+// here: the same molecule must give the same descriptor on every run, forever.
+// Last component of the normalised eigenvector of a symmetric tridiagonal for eigenvalue
+// theta. O(k), no eigenvectors, and -- critically -- integrated in the STABLE direction.
+//
+// THE FORWARD RECURRENCE IS WRONG HERE AND WRONGLY LOOKS FINE. Starting from y_1 = 1 and
+// stepping up is the textbook-unstable direction whenever the eigenvector DECAYS towards y_k,
+// which is exactly the converged-Ritz-pair case: rounding excites the growing solution and
+// |y_k| comes back O(1) instead of O(1e-16). Measured against dsteqr on tail molecules, the
+// forward version returned 0.998 where the true value was 1e-16 to 1e-53 -- wrong by up to 52
+// orders of magnitude. It never reported convergence, so Lanczos ran until beta_k itself
+// collapsed at k ~ n, which is a full tridiagonalisation plus O(m^2 n) reorthogonalisation on
+// top, and the method looked 4.8x slower than dense when it was not.
+//
+// Integrating DOWNWARD from y_k = 1 follows the growing solution instead, which damps rounding
+// rather than amplifying it. Only 1/||y|| is wanted, so an enormous ||y|| simply means the last
+// component is negligible -- i.e. converged -- and is reported as such rather than overflowing.
+static double tri_last_comp(const double *alpha, const double *beta, int kk, double theta) {
+  if (kk < 2) return 1.0;
+  double ynext = 0.0, y = 1.0, ss = 1.0;       // y = y[i], ynext = y[i+1], walking i downwards
+  for (int i = kk - 1; i >= 1; i--) {
+    const double bm = beta[i - 1];
+    if (std::fabs(bm) < 1e-300) return 0.0;
+    const double yprev = (-(alpha[i] - theta) * y - (i + 1 < kk ? beta[i] * ynext : 0.0)) / bm;
+    ynext = y; y = yprev; ss += y * y;
+    if (ss > 1e250) return 0.0;                // ||y|| astronomical => last component ~ 0
+  }
+  const double nrm2 = std::sqrt(ss);
+  return nrm2 > 0.0 ? 1.0 / nrm2 : 0.0;
+}
+
+// Full eigenvector of T_k for eigenvalue theta, by the same stable downward recurrence, with
+// rescaling. Returns false if the recurrence breaks down. y is normalised on exit.
+static bool tri_eigvec(const double *alpha, const double *beta, int kk, double theta,
+                       double *y) {
+  if (kk < 1) return false;
+  y[kk - 1] = 1.0;
+  double ss = 1.0;
+  for (int i = kk - 1; i >= 1; i--) {
+    const double bm = beta[i - 1];
+    if (std::fabs(bm) < 1e-300) return false;
+    double yv = (-(alpha[i] - theta) * y[i] - (i + 1 < kk ? beta[i] * y[i + 1] : 0.0)) / bm;
+    if (std::fabs(yv) > 1e100) {                 // rescale everything stored so far
+      const double f = 1e-100;
+      for (int t = i; t < kk; t++) y[t] *= f;
+      ss *= f * f;
+      yv *= f;
+    }
+    y[i - 1] = yv;
+    ss += yv * yv;
+  }
+  const double nrm = std::sqrt(ss);
+  if (!(nrm > 0.0)) return false;
+  for (int i = 0; i < kk; i++) y[i] /= nrm;
+  return true;
+}
+
+// TRUE residual ||A v - theta v|| for the Ritz vector v = Q_k y, against the ACTUAL operator
+// rather than against T. O(k n) to reconstruct plus one O(n + m) matvec -- negligible beside
+// the O(k^2 n) reorthogonalisation already paid, and it validates the tridiagonal proxy
+// instead of trusting it.
+static double true_residual(const BurdenOp &B, const LanczosWork &W, int kk, double theta,
+                            const double *y, std::vector<double> &v, std::vector<double> &av) {
+  const int n = B.n;
+  v.assign(n, 0.0);
+  for (int i = 0; i < kk; i++) {
+    const double c = y[i];
+    if (c == 0.0) continue;
+    const double *qi = &W.Q[(size_t)i * n];
+    for (int j = 0; j < n; j++) v[j] += c * qi[j];
+  }
+  av.assign(n, 0.0);
+  burden_mv(B, v.data(), av.data());
+  double r = 0.0;
+  for (int j = 0; j < n; j++) { const double d = av[j] - theta * v[j]; r += d * d; }
+  return std::sqrt(r);
+}
+
+// INDEPENDENT BOUNDS ON THE TRUE EXTREMES, to catch the failure the residual cannot see.
+//
+// A small residual proves an eigenvalue lies within ||r|| of theta. It does NOT prove theta is
+// near lambda_max: if the start vector is nearly orthogonal to the lambda_max eigenvector,
+// Lanczos may never enter that direction, and theta_max can converge tightly onto lambda_2
+// while lambda_max is missed entirely. That is the classic missed-extreme problem, and our
+// deterministic start makes any such case REPRODUCIBLE rather than measure-zero -- and full
+// reorthogonalisation, which we require for accuracy, actively suppresses the rounding-driven
+// recovery that would otherwise resurrect the missing direction.
+//
+// The Rayleigh quotient of ANY unit vector lies in [lambda_min, lambda_max]. So probing with
+// vectors unrelated to the Lanczos start gives a valid LOWER bound on lambda_max and UPPER
+// bound on lambda_min, for the price of a few matvecs. Power iteration drives those probes
+// towards the extremes. If Lanczos missed an extreme, a probe that did not miss it will report
+// a Rayleigh quotient outside the accepted interval, and acceptance is refused.
+struct ExtremeBounds { double lb_max, ub_min; };
+
+static ExtremeBounds probe_extremes(const BurdenOp &B, std::vector<double> &x,
+                                    std::vector<double> &y) {
+  const int n = B.n;
+  y.assign(n, 0.0);                              // burden_mv writes n doubles into it
+  ExtremeBounds E;
+  E.lb_max = -1e300;
+  E.ub_min = 1e300;
+  for (int i = 0; i < n; i++) {                  // lambda_max >= max diagonal, always
+    E.lb_max = std::max(E.lb_max, B.dg[i]);
+    E.ub_min = std::min(E.ub_min, B.dg[i]);
+  }
+  // A start deliberately UNLIKE the Lanczos one, so the two cannot miss the same direction.
+  x.assign(n, 0.0);
+  for (int i = 0; i < n; i++) x[i] = std::cos(0.7139 * i + 2.111) + 0.37;
+  auto rq_sweep = [&](double shift, bool want_max) {
+    double nx = 0.0;
+    for (int i = 0; i < n; i++) nx += x[i] * x[i];
+    nx = std::sqrt(nx);
+    if (!(nx > 0.0)) return;
+    for (int i = 0; i < n; i++) x[i] /= nx;
+    for (int it = 0; it < 300; it++) {
+      burden_mv(B, x.data(), y.data());
+      double rq = 0.0, nn2 = 0.0;
+      for (int i = 0; i < n; i++) rq += x[i] * y[i];
+      if (rq > E.lb_max) E.lb_max = rq;
+      if (rq < E.ub_min) E.ub_min = rq;
+      // iterate on (A - shift I), whose dominant direction is lambda_max or lambda_min
+      for (int i = 0; i < n; i++) { y[i] -= shift * x[i]; nn2 += y[i] * y[i]; }
+      nn2 = std::sqrt(nn2);
+      if (!(nn2 > 1e-300)) break;
+      for (int i = 0; i < n; i++) x[i] = y[i] / nn2;
+      (void)want_max;
+    }
+  };
+  // GERSHGORIN RADIUS IS A ROW MAX, NOT A GLOBAL SUM. Summing every bond in the molecule gave
+  // ~190 where the true radius is ~4, which shifted the whole spectrum out to ~190 and left
+  // lambda_max/lambda_2 at 1.0005 -- power iteration then cannot converge in any number of
+  // steps, and the probe silently returned a bound far below lambda_max.
+  double dmax = E.lb_max, dmin = E.ub_min, rad = 0.0;
+  {
+    static thread_local std::vector<double> rowsum;
+    rowsum.assign(n, 0.001 * (n - 1));
+    for (size_t e = 0; e < B.bi.size(); e++) {
+      const double w = std::fabs(B.bw[e] + 0.001) - 0.001;
+      rowsum[B.bi[e]] += w;
+      rowsum[B.bj[e]] += w;
+    }
+    for (int i = 0; i < n; i++) rad = std::max(rad, rowsum[i]);
+  }
+  rq_sweep(dmin - rad, true);                    // push towards lambda_max
+  x.assign(n, 0.0);
+  for (int i = 0; i < n; i++) x[i] = std::sin(0.5311 * i + 0.911) - 0.29;
+  rq_sweep(dmax + rad, false);                   // push towards lambda_min
+  return E;
+}
+
+long long LANCZOS_ITERS = 0, LANCZOS_CALLS = 0;
+// why an attempt was refused: 1 = ran out of Krylov space, 2 = true residual disagreed with
+// the tridiagonal proxy, 3 = an independent probe found an extreme Lanczos had missed
+long long LZ_FAIL[4] = {0, 0, 0, 0};
+int LZ_LAST_REASON = 0;
+// TEST HOOK ONLY. When set, overrides the Lanczos start vector, so a start deliberately
+// orthogonal to the lambda_max eigenvector can be injected and the missed-extreme guard
+// exercised. Never set on the production path.
+const double *LZ_FORCE_START = nullptr;
+// Largest observed ratio of the TRUE residual ||Av - theta v|| to the tridiagonal proxy
+// |beta_k s_k|. If the proxy is sound this stays O(1); a large value would mean the cheap
+// bound is not bounding what we think it bounds.
+double LZ_MAX_TRUE_OVER_PROXY = 0.0;   // only where both are above 1e-30; see below
+double LZ_MAX_TRUE_OVER_TOL = 0.0;     // the metric that actually matters
+
+static bool lanczos_extremal(const BurdenOp &B, double tol, double *lo, double *hi,
+                             LanczosWork &W) {
+  const int n = B.n;
+  if (n < 3) return false;
+  const int maxit = n;
+  LZ_LAST_REASON = 0;
+  if (W.Q.size() < (size_t)(maxit + 1) * n) W.Q.resize((size_t)(maxit + 1) * n);
+  W.w.assign(n, 0.0);
+  W.alpha.clear();
+  W.beta.clear();
+  double *q0 = &W.Q[0];
+  double nrm = 0.0;
+  for (int i = 0; i < n; i++) {
+    q0[i] = LZ_FORCE_START ? LZ_FORCE_START[i]
+                           : std::sin(1.2345 * i + 0.678 + 0.31 * B.dg[i]);
+    nrm += q0[i] * q0[i];
+  }
+  if (!(nrm > 1e-200)) {                       // degenerate start, essentially impossible
+    nrm = 0.0;
+    for (int i = 0; i < n; i++) { q0[i] = 1.0 + 0.01 * i; nrm += q0[i] * q0[i]; }
+  }
+  nrm = std::sqrt(nrm);
+  for (int i = 0; i < n; i++) q0[i] /= nrm;
+  // Independent of the Krylov space entirely, so it cannot inherit the Krylov space's blind
+  // spot. Costs ~20 matvecs against the ~k^2 n of reorthogonalisation, i.e. nothing.
+  const ExtremeBounds EB = probe_extremes(B, W.px, W.py);
+
+  for (int k = 0; k < maxit; k++) {
+    double *qk = &W.Q[(size_t)k * n];
+    burden_mv(B, qk, W.w.data());
+    double a = 0.0;
+    for (int i = 0; i < n; i++) a += qk[i] * W.w[i];
+    W.alpha.push_back(a);
+    for (int i = 0; i < n; i++) W.w[i] -= a * qk[i];
+    if (k > 0) {
+      const double *qm = &W.Q[(size_t)(k - 1) * n];
+      const double b = W.beta[k - 1];
+      for (int i = 0; i < n; i++) W.w[i] -= b * qm[i];
+    }
+    // FULL reorthogonalisation. Measured necessary, not assumed: with none or an 8-vector
+    // window, 3-4 of 1200 tail cases stalled at 2.2e-09 relative -- which would fail the
+    // rtol 1e-9 gate this descriptor is held to. Full reorth converged 1200 of 1200.
+    for (int j = 0; j <= k; j++) {
+      const double *qj = &W.Q[(size_t)j * n];
+      double dp = 0.0;
+      for (int i = 0; i < n; i++) dp += qj[i] * W.w[i];
+      for (int i = 0; i < n; i++) W.w[i] -= dp * qj[i];
+    }
+    double bn = 0.0;
+    for (int i = 0; i < n; i++) bn += W.w[i] * W.w[i];
+    bn = std::sqrt(bn);
+    W.beta.push_back(bn);
+    const int kk = k + 1;
+    const bool invariant = bn < 1e-13;
+    // THE CERTIFICATE MUST BE CHEAP OR IT EATS THE WIN. The first version called dsteqr with
+    // COMPZ='I', which computes the FULL k x k eigenvector matrix at O(k^3) -- about 584k flops
+    // at k = 46, roughly a third of an entire dense n = 117 solve, several times per property.
+    // Measured, that made the whole path 2x SLOWER than dense despite the oracle probe showing
+    // 3.62x faster. Only the LAST COMPONENT of two eigenvectors is actually needed, so:
+    //   dsterf  -> eigenvalues only, no vectors, O(k^2)
+    //   then a three-term recurrence per extreme, O(k)
+    // The recurrence solves (T - theta I) y = 0 forwards from y_1 = 1 and returns
+    // y_k / ||y||, rescaling on the fly so a growing solution cannot overflow.
+    // Convergence lands near k = 60 on the tail, so checking from 8 wastes a dozen dsterf
+    // calls on subspaces far too small to have converged. lambda_min is the slower end
+    // (58.8 iterations against lambda_max's 41.7), so the first useful check is well past 40.
+    // CHECK RARELY. Each check is a dsterf on the k x k tridiagonal, and measured that is
+    // ~24 us at k ~ 45 -- 36 checks per molecule came to ~850 us, roughly half the entire
+    // certified cost. lambda_min certifies near 59 iterations, so checking before 40 cannot
+    // succeed and only burns dsterf calls. Starting at 40 with stride 8 costs at most 7
+    // wasted iterations of overshoot, far cheaper than the checks it removes.
+    if (kk >= 40 && (invariant || kk % 8 == 0 || kk == maxit)) {
+      W.d.assign(W.alpha.begin(), W.alpha.end());
+      W.e.assign(kk > 1 ? kk - 1 : 1, 0.0);
+      for (int i = 0; i + 1 < kk; i++) W.e[i] = W.beta[i];
+      int nn = kk, info = 0;
+      dsterf_(&nn, W.d.data(), W.e.data(), &info);
+      if (info == 0) {
+        double scale = std::max(std::fabs(W.d[0]), std::fabs(W.d[kk - 1]));
+        if (scale < 1.0) scale = 1.0;
+        const double r_lo = bn * tri_last_comp(W.alpha.data(), W.beta.data(), kk, W.d[0]);
+        const double r_hi = bn * tri_last_comp(W.alpha.data(), W.beta.data(), kk, W.d[kk - 1]);
+        if ((r_lo <= tol * scale && r_hi <= tol * scale) || invariant) {
+          const double th_lo = W.d[0], th_hi = W.d[kk - 1];
+          // GUARD 1: the tridiagonal residual is a proxy. Verify against the real operator.
+          W.yv.resize(kk);
+          double tr_lo = 1e300, tr_hi = 1e300;
+          if (tri_eigvec(W.alpha.data(), W.beta.data(), kk, th_hi, W.yv.data()))
+            tr_hi = true_residual(B, W, kk, th_hi, W.yv.data(), W.v1, W.v2);
+          if (tri_eigvec(W.alpha.data(), W.beta.data(), kk, th_lo, W.yv.data()))
+            tr_lo = true_residual(B, W, kk, th_lo, W.yv.data(), W.v1, W.v2);
+          // ACCEPT ON THE TRUE RESIDUAL AT THE NOMINAL TOLERANCE, not a slack multiple of it.
+          // The eigenvalue error of a symmetric matrix is bounded by the residual, so ttol IS
+          // the accuracy guarantee: at 1e-10 * scale the guaranteed relative error is 1e-10,
+          // ten times inside the rtol 1e-9 gate. An earlier 1e3 * tol permitted a guarantee of
+          // 1e-7 -- looser than the gate itself -- and passed only because the ACTUAL residuals
+          // were ~200x better than the bound. Passing on luck is not passing.
+          const double ttol = tol * scale;
+          // The proxy UNDERFLOWS once a Ritz pair is deeply converged: tri_last_comp returns
+          // values down to 1e-140 and below, so the true/proxy ratio explodes to 1e131 while
+          // BOTH numbers are far beneath any tolerance that matters. That ratio measures
+          // underflow, not unsoundness, so it is only accumulated where both are above 1e-30.
+          // The metric that decides correctness is the TRUE residual against the tolerance,
+          // because the true residual is the authoritative certificate and the proxy is only
+          // the cheap trigger that decides when to compute it.
+          if (r_hi > 1e-30 && tr_hi > 1e-30)
+            LZ_MAX_TRUE_OVER_PROXY = std::max(LZ_MAX_TRUE_OVER_PROXY, tr_hi / r_hi);
+          if (r_lo > 1e-30 && tr_lo > 1e-30)
+            LZ_MAX_TRUE_OVER_PROXY = std::max(LZ_MAX_TRUE_OVER_PROXY, tr_lo / r_lo);
+
+          // GUARD 2: a tight residual does NOT prove the Ritz value IS the extreme. If an
+          // independent probe found a Rayleigh quotient outside the accepted interval, then
+          // an extreme was missed and this molecule must go to the dense path.
+          const double slack = 1e-8 * scale;
+          const bool missed = (th_hi < EB.lb_max - slack) || (th_lo > EB.ub_min + slack);
+          if (tr_lo <= ttol && tr_hi <= ttol && !missed) {
+            // recorded on ACCEPTED molecules only -- this is the shipped guarantee, not the
+            // worst thing ever seen mid-iteration on a molecule that was then rejected
+            LZ_MAX_TRUE_OVER_TOL =
+                std::max(LZ_MAX_TRUE_OVER_TOL, std::max(tr_hi, tr_lo) / (tol * scale));
+            *lo = th_lo;
+            *hi = th_hi;
+            LANCZOS_ITERS += kk; LANCZOS_CALLS++;
+            return true;
+          }
+          LZ_LAST_REASON = missed ? 3 : 2;
+          if (invariant) { LZ_FAIL[LZ_LAST_REASON]++; return false; }
+        }
+      } else if (invariant) {
+        return false;
+      }
+    }
+    if (invariant) { LZ_FAIL[LZ_LAST_REASON ? LZ_LAST_REASON : 1]++; return false; }
+    double *qn = &W.Q[(size_t)(k + 1) * n];
+    for (int i = 0; i < n; i++) qn[i] = W.w[i] / bn;
+  }
+  LZ_FAIL[LZ_LAST_REASON ? LZ_LAST_REASON : 1]++;
+  return false;
+}
+
+static void burden_mv(const BurdenOp &B, const double *x, double *y) {
+  const int n = B.n;
+  double s = 0.0;
+  for (int i = 0; i < n; i++) s += x[i];
+  const double c = 0.001;
+  for (int i = 0; i < n; i++) y[i] = c * (s - x[i]) + B.dg[i] * x[i];
+  const size_t nb = B.bi.size();
+  for (size_t e = 0; e < nb; e++) {
+    const int i = B.bi[e], j = B.bj[e];
+    const double w = B.bw[e];
+    y[i] += w * x[j];
+    y[j] += w * x[i];
+  }
+}
 
 static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
                      double *hi, double *lo) {
@@ -1524,9 +2024,52 @@ static void bcut_one(const Mol &m, const std::vector<double> &prop, BcutWork &W,
   *hi = W.w[n - 1];
 }
 
+// 1e-10 on the residual, against a verification gate of rtol 1e-9. Measured worst TRUE
+// relative error at the moment of certification: 6.55e-13, three orders inside the gate.
+// Used only by the diagnostic modes below -- see the Krylov note above bcut_one.
+double LANCZOS_TOL = 1e-10;
+
 // -> 8 values in RDKit's order: MWHI, MWLOW, CHGHI, CHGLO, LOGPHI, LOGPLOW, MRHI, MRLOW
+// Molecules with at least this many heavy atoms attempt the Krylov path. 71 measured best
+// (110.56 us/mol against dense 128.65, zero fallbacks); 55 is within noise of it.
+//
+// A PURE PERFORMANCE KNOB THAT SELECTS WHO *TRIES*, AND ANYONE FAILING THE CERTIFICATE IS
+// COMPUTED DENSELY REGARDLESS. That is the whole argument for why this is not the size gate
+// the note above rejects. The rejected gate decided CORRECTNESS by size, with nobody checking
+// the two algorithms agreed. This one decides only who ATTEMPTS the cheaper route; acceptance
+// is per molecule, against three independent checks on the answer itself. Moving this number
+// changes how long the corpus takes, not what is in it. 0 disables the path entirely.
+int BCUT_LANCZOS_MIN_N = 71;
+long long BCUT_LANCZOS_TRIED = 0, BCUT_LANCZOS_FELL_BACK = 0;
+
 static void bcut2d(const Mol &m, BcutWork &W, double *out) {
   const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+  if (BCUT_LANCZOS_MIN_N > 0) {
+    static thread_local BurdenOp B;
+    static thread_local std::vector<int> hv;
+    static thread_local LanczosWork LW;
+    int nheavy = 0;
+    for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) nheavy++;
+    if (nheavy >= BCUT_LANCZOS_MIN_N) {
+      // The rank-1 term and every off-diagonal are IDENTICAL across the four properties; only
+      // the diagonal changes. One build, four solves -- the cross-property sharing dense
+      // LAPACK cannot express.
+      burden_build(m, B, hv);
+      BCUT_LANCZOS_TRIED++;
+      double tmp[8];
+      bool ok = true;
+      for (int k = 0; k < 4 && ok; k++) {
+        burden_diag(*props[k], hv, B);
+        ok = lanczos_extremal(B, LANCZOS_TOL, &tmp[2 * k + 1], &tmp[2 * k], LW);
+      }
+      if (ok) {
+        for (int i = 0; i < 8; i++) out[i] = tmp[i];
+        return;
+      }
+      // ALL FOUR fall back together, so a BCUT2D row is never a mixture of two numerical paths.
+      BCUT_LANCZOS_FELL_BACK++;
+    }
+  }
   for (int k = 0; k < 4; k++) bcut_one(m, *props[k], W, &out[2 * k], &out[2 * k + 1]);
 }
 
@@ -1654,6 +2197,555 @@ int main(int argc, char **argv) {
     return 0;
   }
 
+  // MEASURE BEFORE BUILDING. Three probes decide whether a structured-matvec Lanczos can beat
+  // dsytd2+dsterf on the large-molecule tail that carries 46% of BCUT2D's time.
+  if (mode == "lanczosprobe") {
+    std::vector<const Mol *> tail, mid;
+    for (auto &m : ms) {
+      int hv = 0;
+      for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) hv++;
+      if (hv >= 71) tail.push_back(&m);
+      else if (hv >= 31 && hv <= 45) mid.push_back(&m);
+    }
+    printf("tail (n>=71): %zu molecules   mid (31-45): %zu\n\n", tail.size(), mid.size());
+
+    // ---- PROBE 1: structured vs dense MATVEC ONLY -------------------------------------
+    // The operator is built OUTSIDE the timed loop. Lanczos builds once and then does m
+    // matvecs, so folding construction into the per-matvec cost would flatter the dense side
+    // (whose construction is an n^2 fill) and answer a question nobody asked.
+    printf("PROBE 1  matvec cost with the operator already built, structured vs dense\n");
+    printf("  %8s %7s %7s %12s %12s %8s\n", "n range", "mols", "mean n", "dense us", "sparse us",
+           "speedup");
+    struct B2 { int lo, hi; };
+    std::vector<B2> rng = {{3, 15}, {16, 22}, {23, 30}, {31, 45}, {46, 70}, {71, 100000}};
+    for (auto &r : rng) {
+      std::vector<const Mol *> g;
+      double mn = 0;
+      for (auto &m : ms) {
+        int hv2 = 0;
+        for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) hv2++;
+        if (hv2 >= r.lo && hv2 <= r.hi) { g.push_back(&m); mn += hv2; }
+      }
+      if (g.size() < 50) continue;
+      mn /= g.size();
+      if (g.size() > 1500) g.resize(1500);
+      std::vector<BurdenOp> ops(g.size());
+      std::vector<std::vector<double>> dense(g.size());
+      std::vector<int> hv;
+      for (size_t t = 0; t < g.size(); t++) {
+        burden_build(*g[t], ops[t], hv);
+        burden_diag(g[t]->mass, hv, ops[t]);
+        int n2 = ops[t].n;
+        dense[t].assign((size_t)n2 * n2, 0.001);
+        for (int i = 0; i < n2; i++) dense[t][(size_t)i * n2 + i] = ops[t].dg[i];
+        for (size_t e2 = 0; e2 < ops[t].bi.size(); e2++) {
+          double v = ops[t].bw[e2] + 0.001;
+          dense[t][(size_t)ops[t].bi[e2] * n2 + ops[t].bj[e2]] = v;
+          dense[t][(size_t)ops[t].bj[e2] * n2 + ops[t].bi[e2]] = v;
+        }
+      }
+      std::vector<double> x, y;
+      const int reps = 300;
+      auto t0 = std::chrono::steady_clock::now();
+      for (int r2 = 0; r2 < reps; r2++)
+        for (size_t t = 0; t < g.size(); t++) {
+          x.assign(ops[t].n, 1.0); y.assign(ops[t].n, 0.0);
+          burden_mv(ops[t], x.data(), y.data());
+          sink_g += y[0];
+        }
+      auto t1 = std::chrono::steady_clock::now();
+      double ts = std::chrono::duration<double, std::micro>(t1 - t0).count() / (reps * (double)g.size());
+      t0 = std::chrono::steady_clock::now();
+      for (int r2 = 0; r2 < reps; r2++)
+        for (size_t t = 0; t < g.size(); t++) {
+          int n2 = ops[t].n;
+          x.assign(n2, 1.0); y.assign(n2, 0.0);
+          for (int i = 0; i < n2; i++) {
+            double s2 = 0.0;
+            const double *row = &dense[t][(size_t)i * n2];
+            for (int j = 0; j < n2; j++) s2 += row[j] * x[j];
+            y[i] = s2;
+          }
+          sink_g += y[0];
+        }
+      t1 = std::chrono::steady_clock::now();
+      double td = std::chrono::duration<double, std::micro>(t1 - t0).count() / (reps * (double)g.size());
+      printf("  %3d-%-4d %7zu %7.1f %12.4f %12.4f %7.2fx\n", r.lo, r.hi, g.size(), mn, td, ts,
+             td / ts);
+    }
+
+    // ---- PROBE 2: iterations to converge on the tail ----------------------------------
+    printf("\nPROBE 2  Lanczos iterations for lambda_min AND lambda_max to 1e-12 relative\n");
+    printf("         (ground truth = dsytd2+dsterf; over the n>=71 bucket)\n");
+    const int REORTH[3] = {0, 8, -1};
+    const char *RNAME[3] = {"none", "window-8", "full"};
+    std::vector<const Mol *> samp = tail;
+    if (samp.size() > 300) samp.resize(300);
+    std::vector<std::array<int, 4>> need(samp.size(), {0, 0, 0, 0});
+    for (int rm = 0; rm < 3; rm++) {
+      std::vector<int> iters;
+      int failed = 0;
+      double worst_rel = 0.0;
+      LanczosWork L, S;
+      for (size_t t = 0; t < samp.size(); t++) {
+        const Mol *m = samp[t];
+        BurdenOp B;
+        std::vector<int> hv;
+        burden_build(*m, B, hv);
+        const std::vector<double> *props[4] = {&m->mass, &m->gast, &m->clogp, &m->cmr};
+        for (int p = 0; p < 4; p++) {
+          burden_diag(*props[p], hv, B);
+          double dlo, dhi;
+          BCUT_SOLVER = 1;
+          bcut_one(*m, *props[p], BW, &dhi, &dlo);
+          lanczos_run(B, std::min(B.n, 400), REORTH[rm], L);
+          int used = -1;
+          for (int k = 2; k <= (int)L.alpha.size(); k++) {
+            double rlo, rhi;
+            ritz_extremes(L, k, S, &rlo, &rhi);
+            if (std::fabs(rlo - dlo) <= 1e-12 * std::max(std::fabs(dlo), 1e-30) &&
+                std::fabs(rhi - dhi) <= 1e-12 * std::max(std::fabs(dhi), 1e-30)) { used = k; break; }
+          }
+          if (used < 0) {
+            failed++;
+            double rlo, rhi;
+            ritz_extremes(L, (int)L.alpha.size(), S, &rlo, &rhi);
+            worst_rel = std::max(worst_rel,
+                std::max(std::fabs(rlo - dlo) / std::max(std::fabs(dlo), 1e-30),
+                         std::fabs(rhi - dhi) / std::max(std::fabs(dhi), 1e-30)));
+            used = (int)L.alpha.size();
+          } else {
+            iters.push_back(used);
+          }
+          if (rm == 2) need[t][p] = used;               // full reorth drives probe 3
+        }
+      }
+      std::sort(iters.begin(), iters.end());
+      auto pct = [&](double f) {
+        return iters.empty() ? -1 : iters[std::min(iters.size() - 1, (size_t)(f * iters.size()))];
+      };
+      printf("  reorth=%-9s converged %5zu/%5zu  iters p50 %4d  p90 %4d  p99 %4d  max %4d",
+             RNAME[rm], iters.size(), samp.size() * 4, pct(0.50), pct(0.90), pct(0.99),
+             iters.empty() ? -1 : iters.back());
+      if (failed) printf("   FAILED %d (worst rel %.2e)", failed, worst_rel);
+      printf("\n");
+    }
+
+    // ---- PROBE 3: end-to-end, the number that actually decides -------------------------
+    // Lanczos is run with FULL reorthogonalisation (the only variant that reached 1e-12 on
+    // every case) for EXACTLY the iteration count convergence needed, taken from probe 2.
+    // That is a LOWER BOUND on the real cost: a shipping version cannot know the count in
+    // advance and must pay for convergence testing on top. If the lower bound loses, the
+    // idea is dead without writing a stopping rule.
+    printf("\nPROBE 3  end-to-end on the n>=71 tail: Lanczos(full reorth, oracle iters) vs dense\n");
+    {
+      LanczosWork L, S;
+      std::vector<int> hv;
+      double t_lan = 0, t_dense = 0;
+      auto t0 = std::chrono::steady_clock::now();
+      for (size_t t = 0; t < samp.size(); t++) {
+        const Mol *m = samp[t];
+        BurdenOp B;
+        burden_build(*m, B, hv);
+        const std::vector<double> *props[4] = {&m->mass, &m->gast, &m->clogp, &m->cmr};
+        for (int p = 0; p < 4; p++) {
+          burden_diag(*props[p], hv, B);
+          lanczos_run(B, need[t][p], -1, L);
+          double rlo, rhi;
+          ritz_extremes(L, (int)L.alpha.size(), S, &rlo, &rhi);
+          sink_g += rlo + rhi;
+        }
+      }
+      auto t1 = std::chrono::steady_clock::now();
+      t_lan = std::chrono::duration<double, std::micro>(t1 - t0).count() / samp.size();
+      BCUT_SOLVER = 1;
+      t0 = std::chrono::steady_clock::now();
+      for (size_t t = 0; t < samp.size(); t++) { bcut2d(*samp[t], BW, bc); sink_g += bc[0]; }
+      t1 = std::chrono::steady_clock::now();
+      t_dense = std::chrono::duration<double, std::micro>(t1 - t0).count() / samp.size();
+      printf("  dense dsytd2+dsterf, 4 spectra : %9.2f us/mol\n", t_dense);
+      printf("  Lanczos ORACLE iters, 4 spectra: %9.2f us/mol  (%.2fx %s)\n", t_lan,
+             t_dense > t_lan ? t_dense / t_lan : t_lan / t_dense,
+             t_dense > t_lan ? "FASTER" : "SLOWER");
+      // The shipping version cannot know the iteration count in advance; it must certify.
+      // How many MORE iterations does certifying cost than converging?
+      extern long long LANCZOS_ITERS, LANCZOS_CALLS;
+      LANCZOS_ITERS = LANCZOS_CALLS = 0;
+      long long oracle_sum = 0, oracle_n = 0;
+      for (size_t t = 0; t < samp.size(); t++)
+        for (int p = 0; p < 4; p++) { oracle_sum += need[t][p]; oracle_n++; }
+      t0 = std::chrono::steady_clock::now();
+      int nconv = 0;
+      for (size_t t = 0; t < samp.size(); t++) {
+        const Mol *m = samp[t];
+        BurdenOp B;
+        burden_build(*m, B, hv);
+        const std::vector<double> *props[4] = {&m->mass, &m->gast, &m->clogp, &m->cmr};
+        for (int p = 0; p < 4; p++) {
+          burden_diag(*props[p], hv, B);
+          double rlo, rhi;
+          if (lanczos_extremal(B, LANCZOS_TOL, &rlo, &rhi, L)) { nconv++; sink_g += rlo + rhi; }
+        }
+      }
+      t1 = std::chrono::steady_clock::now();
+      double t_cert = std::chrono::duration<double, std::micro>(t1 - t0).count() / samp.size();
+      printf("  Lanczos CERTIFIED,   4 spectra: %9.2f us/mol  (%.2fx %s)\n", t_cert,
+             t_dense > t_cert ? t_dense / t_cert : t_cert / t_dense,
+             t_dense > t_cert ? "FASTER" : "SLOWER");
+      printf("    mean iters: oracle %.1f   certified %.1f   ratio %.2fx   certified %d/%lld\n",
+             (double)oracle_sum / oracle_n,
+             LANCZOS_CALLS ? (double)LANCZOS_ITERS / LANCZOS_CALLS : 0.0,
+             (LANCZOS_CALLS && oracle_n) ?
+               ((double)LANCZOS_ITERS / LANCZOS_CALLS) / ((double)oracle_sum / oracle_n) : 0.0,
+             nconv, oracle_n);
+    }
+    return 0;
+  }
+
+  if (mode == "certsweep") {
+    std::vector<const Mol *> tail;
+    for (auto &m : ms) {
+      int hv2 = 0;
+      for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) hv2++;
+      if (hv2 >= 71) tail.push_back(&m);
+    }
+    if (tail.size() > 200) tail.resize(200);
+    printf("tail sample: %zu molecules x 4 properties\n\n", tail.size());
+    const double TOLS[3] = {1e-10, 1e-11, 1e-12};
+    const int STEP = 2;
+    // [tol][0]=hi only, [1]=lo only, [2]=both
+    double sum_it[3][3] = {{0}};
+    long long cnt_it[3][3] = {{0}};
+    long long nfail[3][3] = {{0}};
+    double sum_oracle = 0; long long cnt_oracle = 0;
+    double worst_err[3] = {0, 0, 0};
+    LanczosWork L, S;
+    std::vector<int> hv;
+    for (auto *m : tail) {
+      BurdenOp B;
+      burden_build(*m, B, hv);
+      const std::vector<double> *props[4] = {&m->mass, &m->gast, &m->clogp, &m->cmr};
+      for (int p = 0; p < 4; p++) {
+        burden_diag(*props[p], hv, B);
+        double dlo, dhi;
+        BCUT_SOLVER = 1;
+        bcut_one(*m, *props[p], BW, &dhi, &dlo);
+        const int maxit = std::min(B.n, 260);
+        lanczos_run(B, maxit, -1, L);
+        const int K = (int)L.alpha.size();
+        int first_or = -1;
+        int first[3][3];
+        for (int a = 0; a < 3; a++) for (int b = 0; b < 3; b++) first[a][b] = -1;
+        for (int kk = 8; kk <= K; kk += STEP) {
+          S.d.assign(L.alpha.begin(), L.alpha.begin() + kk);
+          S.e.assign(kk > 1 ? kk - 1 : 1, 0.0);
+          for (int i = 0; i + 1 < kk; i++) S.e[i] = L.beta[i];
+          int nn = kk, info = 0;
+          dsterf_(&nn, S.d.data(), S.e.data(), &info);
+          if (info != 0) continue;
+          const double bn = L.beta[kk - 1];
+          double scale = std::max(std::fabs(S.d[0]), std::fabs(S.d[kk - 1]));
+          if (scale < 1.0) scale = 1.0;
+          const double r_lo = bn * tri_last_comp(L.alpha.data(), L.beta.data(), kk, S.d[0]);
+          const double r_hi = bn * tri_last_comp(L.alpha.data(), L.beta.data(), kk, S.d[kk - 1]);
+          if (first_or < 0 &&
+              std::fabs(S.d[0] - dlo) <= 1e-12 * std::max(std::fabs(dlo), 1e-30) &&
+              std::fabs(S.d[kk - 1] - dhi) <= 1e-12 * std::max(std::fabs(dhi), 1e-30))
+            first_or = kk;
+          for (int a = 0; a < 3; a++) {
+            const double t = TOLS[a] * scale;
+            if (first[a][0] < 0 && r_hi <= t) {
+              first[a][0] = kk;
+              worst_err[a] = std::max(worst_err[a],
+                  std::fabs(S.d[kk - 1] - dhi) / std::max(std::fabs(dhi), 1e-30));
+            }
+            if (first[a][1] < 0 && r_lo <= t) {
+              first[a][1] = kk;
+              worst_err[a] = std::max(worst_err[a],
+                  std::fabs(S.d[0] - dlo) / std::max(std::fabs(dlo), 1e-30));
+            }
+            if (first[a][2] < 0 && r_lo <= t && r_hi <= t) first[a][2] = kk;
+          }
+        }
+        if (first_or > 0) { sum_oracle += first_or; cnt_oracle++; }
+        for (int a = 0; a < 3; a++)
+          for (int b = 0; b < 3; b++) {
+            if (first[a][b] > 0) { sum_it[a][b] += first[a][b]; cnt_it[a][b]++; }
+            else nfail[a][b]++;
+          }
+      }
+    }
+    printf("  oracle (true err <= 1e-12, both ends): mean %.1f iters\n\n",
+           cnt_oracle ? sum_oracle / cnt_oracle : 0.0);
+    printf("  %-8s %14s %14s %14s %16s %12s\n", "tol", "cert hi only", "cert lo only",
+           "cert BOTH", "both/oracle", "never cert");
+    for (int a = 0; a < 3; a++) {
+      double mo = cnt_oracle ? sum_oracle / cnt_oracle : 1.0;
+      auto mean = [&](int b) { return cnt_it[a][b] ? sum_it[a][b] / cnt_it[a][b] : -1.0; };
+      printf("  %-8.0e %14.1f %14.1f %14.1f %15.2fx %12lld\n", TOLS[a], mean(0), mean(1),
+             mean(2), mean(2) / mo, nfail[a][2]);
+    }
+    printf("\n  worst TRUE relative error at first certification: 1e-10 %.2e  1e-11 %.2e  "
+           "1e-12 %.2e\n", worst_err[0], worst_err[1], worst_err[2]);
+    printf("  reorth cost scales as m^2, so predicted work ratio vs oracle is (both/oracle)^2\n");
+    return 0;
+  }
+
+  // IS THE CERTIFICATE ITSELF BROKEN? tri_last_comp uses the FORWARD three-term recurrence,
+  // which is the textbook-unstable direction when the eigenvector decays away from y_1:
+  // rounding excites the growing solution and |y_k| comes out far too LARGE, which inflates
+  // the residual and stops the certificate from ever firing. Compare it against dsteqr, which
+  // is expensive but correct, at a fixed k well past true convergence.
+  if (mode == "certcheck") {
+    std::vector<const Mol *> tail;
+    for (auto &m : ms) {
+      int hv2 = 0;
+      for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) hv2++;
+      if (hv2 >= 71) tail.push_back(&m);
+    }
+    if (tail.size() > 40) tail.resize(40);
+    LanczosWork L;
+    std::vector<int> hv;
+    std::vector<double> d, e, z, wk;
+    printf("  %6s %6s %14s %14s %14s %12s\n", "n", "k", "recur s_hi", "dsteqr s_hi",
+           "ratio", "true relerr");
+    int shown = 0;
+    for (auto *m : tail) {
+      if (shown >= 8) break;
+      BurdenOp B;
+      burden_build(*m, B, hv);
+      burden_diag(m->mass, hv, B);
+      double dlo, dhi;
+      BCUT_SOLVER = 1;
+      bcut_one(*m, m->mass, BW, &dhi, &dlo);
+      lanczos_run(B, std::min(B.n, 260), -1, L);
+      for (int kk : {40, 60, 80}) {
+        if (kk > (int)L.alpha.size()) continue;
+        d.assign(L.alpha.begin(), L.alpha.begin() + kk);
+        e.assign(kk - 1, 0.0);
+        for (int i = 0; i + 1 < kk; i++) e[i] = L.beta[i];
+        z.assign((size_t)kk * kk, 0.0);
+        wk.assign(2 * kk - 2 > 0 ? 2 * kk - 2 : 1, 0.0);
+        char compz = 'I';
+        int nn = kk, info = 0;
+        dsteqr_(&compz, &nn, d.data(), e.data(), z.data(), &nn, wk.data(), &info);
+        if (info != 0) { printf("  dsteqr info=%d\n", info); continue; }
+        double exact_hi = std::fabs(z[(size_t)(kk - 1) * kk + (kk - 1)]);
+        double rec_hi = tri_last_comp(L.alpha.data(), L.beta.data(), kk, d[kk - 1]);
+        double relerr = std::fabs(d[kk - 1] - dhi) / std::max(std::fabs(dhi), 1e-30);
+        printf("  %6d %6d %14.3e %14.3e %14.3e %12.2e\n", B.n, kk, rec_hi, exact_hi,
+               exact_hi > 0 ? rec_hi / exact_hi : -1.0, relerr);
+      }
+      shown++;
+    }
+    return 0;
+  }
+
+  // DOES THE SECOND NUMERICAL PATH SURVIVE INTO THE SHIPPED ARTEFACT AT ALL?
+  //
+  // The objection to a Krylov path is that its values are within ~1e-12 of the dense ones but
+  // not bit-identical to them. That objection has a premise: that the difference is OBSERVABLE.
+  // The descriptor matrix this project ships is FLOAT32 -- every Python module returns float32,
+  // which is why verify_hume.py holds them to rtol 3e-6 -- and float32 carries ~1.2e-7 relative
+  // precision. A 1e-12 relative difference is five orders BELOW the representation it lands in,
+  // so the two paths can only diverge in the shipped file when a value happens to straddle a
+  // float32 rounding boundary. Expected rate ~ 1e-12 / 1.2e-7 ~ 1e-5.
+  //
+  // Both paths are computed for every molecule, cast to float32, and compared BIT FOR BIT.
+  if (mode == "f32cmp") {
+    const int thr = argc > 3 ? atoi(argv[3]) : 71;
+    long long n_lan_mol = 0, n_fallback = 0, n_vals = 0, n_diff = 0;
+    double worst64 = 0.0, worst32 = 0.0;
+    LanczosWork LW;
+    std::vector<int> hv;
+    for (auto &m : ms) {
+      double dense8[8], lan8[8];
+      // FORCE the dense path for the reference. bcut2d honours BCUT_LANCZOS_MIN_N, so with the
+      // hook enabled this would otherwise compare Lanczos against itself and report a
+      // beautifully clean zero that means nothing.
+      const int keep_thr = BCUT_LANCZOS_MIN_N;
+      BCUT_LANCZOS_MIN_N = 0;
+      bcut2d(m, BW, dense8);
+      BCUT_LANCZOS_MIN_N = keep_thr;
+      int nheavy = 0;
+      for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) nheavy++;
+      if (nheavy < thr) continue;
+      BurdenOp B;
+      burden_build(m, B, hv);
+      const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+      bool ok = true;
+      for (int k = 0; k < 4 && ok; k++) {
+        burden_diag(*props[k], hv, B);
+        ok = lanczos_extremal(B, LANCZOS_TOL, &lan8[2 * k + 1], &lan8[2 * k], LW);
+      }
+      if (!ok) { n_fallback++; continue; }
+      n_lan_mol++;
+      for (int i = 0; i < 8; i++) {
+        n_vals++;
+        const double rel64 = std::fabs(dense8[i] - lan8[i]) /
+                             std::max(std::fabs(dense8[i]), 1e-30);
+        if (rel64 > worst64) worst64 = rel64;
+        const float fa = (float)dense8[i], fb = (float)lan8[i];
+        unsigned ia, ib;
+        std::memcpy(&ia, &fa, 4);
+        std::memcpy(&ib, &fb, 4);
+        if (ia != ib) {
+          n_diff++;
+          const double r32 = std::fabs((double)fa - (double)fb) /
+                             std::max(std::fabs((double)fa), 1e-30);
+          if (r32 > worst32) worst32 = r32;
+        }
+      }
+    }
+    printf("  threshold n >= %d\n", thr);
+    printf("  molecules via Lanczos      : %lld   (fell back to dense: %lld)\n",
+           n_lan_mol, n_fallback);
+    printf("  BCUT2D values compared     : %lld   (whole corpus would be %zu)\n",
+           n_vals, ms.size() * 8);
+    printf("  float64 worst relative diff: %.3e\n", worst64);
+    printf("  FLOAT32 BIT DIFFERENCES    : %lld of %lld  (%.3e of compared)\n",
+           n_diff, n_vals, n_vals ? (double)n_diff / n_vals : 0.0);
+    if (n_diff) printf("  worst float32 relative diff: %.3e  (one ulp is ~1.2e-7)\n", worst32);
+    return 0;
+  }
+
+  // ADVERSARIAL AUDIT. Forces the Krylov attempt on EVERY molecule regardless of size, and
+  // compares against dense in float64 and in the float32 the artefact actually ships in.
+  // Reports fallbacks, so a class that refuses to certify shows up as a refusal rather than
+  // as a wrong number.
+  if (mode == "lanczosaudit") {
+    long long tried = 0, fell = 0, nvals = 0, ndiff32 = 0;
+    double worst64 = 0.0, worst32 = 0.0;
+    std::string worst_smi;
+    LanczosWork LW;
+    std::vector<int> hv;
+    size_t idx = 0;
+    for (auto &m : ms) {
+      idx++;
+      double dense8[8], lan8[8];
+      const int keep = BCUT_LANCZOS_MIN_N;
+      BCUT_LANCZOS_MIN_N = 0;
+      bcut2d(m, BW, dense8);
+      BCUT_LANCZOS_MIN_N = keep;
+      int nheavy = 0;
+      for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) nheavy++;
+      if (nheavy < 3) continue;
+      BurdenOp B;
+      burden_build(m, B, hv);
+      const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+      tried++;
+      bool ok = true;
+      for (int k = 0; k < 4 && ok; k++) {
+        burden_diag(*props[k], hv, B);
+        ok = lanczos_extremal(B, LANCZOS_TOL, &lan8[2 * k + 1], &lan8[2 * k], LW);
+      }
+      if (!ok) {
+        fell++;
+        const char *why = LZ_LAST_REASON == 3 ? "MISSED-EXTREME"
+                        : LZ_LAST_REASON == 2 ? "true-residual" : "no-convergence";
+        printf("    row %3zu  n=%4d  FALLBACK (%s)\n", idx, nheavy, why);
+        continue;
+      }
+      double mrel = 0.0;
+      for (int i = 0; i < 8; i++) {
+        nvals++;
+        const double rel = std::fabs(dense8[i] - lan8[i]) /
+                           std::max(std::fabs(dense8[i]), 1e-30);
+        mrel = std::max(mrel, rel);
+        if (rel > worst64) { worst64 = rel; worst_smi = std::to_string(idx); }
+        const float fa = (float)dense8[i], fb = (float)lan8[i];
+        unsigned ia, ib;
+        std::memcpy(&ia, &fa, 4); std::memcpy(&ib, &fb, 4);
+        if (ia != ib) {
+          ndiff32++;
+          const double r32 = std::fabs((double)fa - (double)fb) /
+                             std::max(std::fabs((double)fa), 1e-30);
+          if (r32 > worst32) worst32 = r32;
+        }
+      }
+      printf("    row %3zu  n=%4d  certified, max rel %.2e\n", idx, nheavy, mrel);
+    }
+    printf("  molecules attempted    : %lld\n", tried);
+    printf("  fell back to dense     : %lld  (%.2f%%)\n", fell,
+           tried ? 100.0 * fell / tried : 0.0);
+    printf("  values compared        : %lld\n", nvals);
+    printf("  worst |Lanczos-dense|  : %.3e relative (float64), worst row #%s\n", worst64,
+           worst_smi.c_str());
+    printf("  FLOAT32 bit differences: %lld of %lld\n", ndiff32, nvals);
+    if (ndiff32) printf("  worst float32 rel diff : %.3e (one ulp ~1.2e-7)\n", worst32);
+    return 0;
+  }
+
+  // DOES THE MISSED-EXTREME GUARD ACTUALLY FIRE? The audit never tripped it, which proves
+  // nothing on its own. So construct the pathology directly: find the true lambda_max
+  // eigenvector by power iteration, project it out of the Lanczos start, and run. Because A is
+  // symmetric and v_max is an eigenvector, the ENTIRE Krylov space then stays orthogonal to
+  // v_max -- lambda_max is genuinely invisible to Lanczos, theta_max converges tightly onto
+  // lambda_2, and both residual tests pass while the answer is wrong. Only an independent
+  // probe can catch that. Anything reported ACCEPTED-WRONG here is a correctness bug.
+  if (mode == "ghosttest") {
+    extern const double *LZ_FORCE_START;
+    LanczosWork LW;
+    std::vector<int> hv;
+    std::vector<double> v(1), w(1), st(1);
+    int nacc_wrong = 0, nrefused = 0, nacc_ok = 0, ntested = 0;
+    for (auto &m : ms) {
+      int nheavy = 0;
+      for (int i = 0; i < m.n; i++) if (m.Z[i] != 1) nheavy++;
+      if (nheavy < 20) continue;
+      BurdenOp B;
+      burden_build(m, B, hv);
+      const std::vector<double> *props[4] = {&m.mass, &m.gast, &m.clogp, &m.cmr};
+      for (int p = 0; p < 4; p++) {
+        burden_diag(*props[p], hv, B);
+        double dlo, dhi;
+        BCUT_SOLVER = 1;
+        bcut_one(m, *props[p], BW, &dhi, &dlo);
+        const int n = B.n;
+        // power-iterate to the true lambda_max eigenvector
+        v.assign(n, 0.0); w.assign(n, 0.0);
+        for (int i = 0; i < n; i++) v[i] = std::sin(0.31 * i + 1.7) + 0.5;
+        for (int it = 0; it < 3000; it++) {
+          burden_mv(B, v.data(), w.data());
+          double nn = 0.0;
+          for (int i = 0; i < n; i++) nn += w[i] * w[i];
+          nn = std::sqrt(nn);
+          if (!(nn > 1e-300)) break;
+          for (int i = 0; i < n; i++) v[i] = w[i] / nn;
+        }
+        double rq = 0.0;
+        burden_mv(B, v.data(), w.data());
+        for (int i = 0; i < n; i++) rq += v[i] * w[i];
+        if (std::fabs(rq - dhi) > 1e-6 * std::max(std::fabs(dhi), 1.0)) continue;  // not converged
+        // start := generic, with v_max projected out
+        st.assign(n, 0.0);
+        double dp = 0.0;
+        for (int i = 0; i < n; i++) { st[i] = std::sin(1.2345 * i + 0.678 + 0.31 * B.dg[i]);
+                                      dp += st[i] * v[i]; }
+        for (int i = 0; i < n; i++) st[i] -= dp * v[i];
+        LZ_FORCE_START = st.data();
+        double llo, lhi;
+        const bool ok = lanczos_extremal(B, LANCZOS_TOL, &llo, &lhi, LW);
+        LZ_FORCE_START = nullptr;
+        ntested++;
+        if (!ok) { nrefused++; continue; }
+        const double err = std::fabs(lhi - dhi) / std::max(std::fabs(dhi), 1e-30);
+        if (err > 1e-9) {
+          nacc_wrong++;
+          printf("    ACCEPTED-WRONG n=%d prop=%d  lanczos %.10g  dense %.10g  rel %.2e\n",
+                 n, p, lhi, dhi, err);
+        } else {
+          nacc_ok++;   // recovered lambda_max anyway (rounding reintroduced the direction)
+        }
+      }
+    }
+    printf("  adversarial starts tested : %d\n", ntested);
+    printf("  REFUSED (guard fired)     : %d\n", nrefused);
+    printf("  accepted, still correct   : %d\n", nacc_ok);
+    printf("  ACCEPTED-WRONG            : %d   <-- must be zero\n", nacc_wrong);
+    return 0;
+  }
+
   if (mode == "verify") {
     FILE *out = fopen("values_hume.txt", "w");
     for (auto &m : ms) {
@@ -1712,6 +2804,18 @@ int main(int argc, char **argv) {
     }
     fclose(out);
     fprintf(stderr, "wrote values_hume.txt\n");
+    {
+      extern long long BCUT_LANCZOS_TRIED, BCUT_LANCZOS_FELL_BACK, LZ_FAIL[4];
+      extern double LZ_MAX_TRUE_OVER_PROXY, LZ_MAX_TRUE_OVER_TOL;
+      fprintf(stderr,
+              "  Krylov: tried %lld, fell back %lld (%.3f%%)  [no-conv %lld, true-resid %lld, "
+              "missed-extreme %lld]\n  true residual / tol: max %.2e   true/proxy ratio "
+              "(both > 1e-30): max %.2e\n",
+              BCUT_LANCZOS_TRIED, BCUT_LANCZOS_FELL_BACK,
+              BCUT_LANCZOS_TRIED ? 100.0 * BCUT_LANCZOS_FELL_BACK / BCUT_LANCZOS_TRIED : 0.0,
+              LZ_FAIL[1], LZ_FAIL[2], LZ_FAIL[3], LZ_MAX_TRUE_OVER_TOL,
+              LZ_MAX_TRUE_OVER_PROXY);
+    }
     return 0;
   }
 

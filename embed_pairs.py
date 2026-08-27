@@ -120,8 +120,21 @@ def _hf(smiles, path, batch=64, pool="mean"):
     return np.concatenate(outs).astype(np.float32)
 
 
-def arm_chemberta(smiles):
-    return _hf(smiles, ROOT / "models_hf" / "ChemBERTa-2")
+# TWO ChemBERTa-2 CHECKPOINTS, not one. They are the same architecture (3 layers, 384 hidden)
+# on the same 77M-molecule corpus, differing ONLY in the pretraining target: MLM is masked
+# language modelling, MTR is multi-task regression onto 200 RDKit descriptors. That makes the
+# pair a controlled ablation of "does supervising on descriptors help?", which Figures B and C
+# rest on -- so they are separate arms and the directory name says which is which.
+#
+# Until 2026-08-27 there was one arm called `chemberta` reading models_hf/ChemBERTa-2, which
+# holds the MLM weights, while figures/arms.py declared the MTR repo. Every published ChemBERTa
+# number was MLM under a label naming MTR.
+def arm_chemberta_mlm(smiles):
+    return _hf(smiles, ROOT / "models_hf" / "ChemBERTa-2-MLM")
+
+
+def arm_chemberta_mtr(smiles):
+    return _hf(smiles, ROOT / "models_hf" / "ChemBERTa-2-MTR")
 
 
 def arm_molformer(smiles):
@@ -233,7 +246,8 @@ def arm_chemprop(smiles):
 
 
 ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "desc": arm_desc,
-        "chemberta": arm_chemberta, "molformer": arm_molformer,
+        "chemberta_mlm": arm_chemberta_mlm, "chemberta_mtr": arm_chemberta_mtr,
+        "molformer": arm_molformer,
         "selfies_ted": arm_selfies_ted, "minimol": arm_minimol,
         "chemeleon": arm_chemeleon, "chemprop": arm_chemprop}
 

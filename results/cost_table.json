@@ -1,0 +1,651 @@
+{
+ "caveat": "MEASURED UNDER CONTENTION on a shared machine (other agents active). Timings are in-process, order-rotated and direction-alternated across cycles; us_mean/us_sd are over cycle means, not over molecules. A quiet-machine re-run is REQUIRED before publication.",
+ "corpus": "cpp/hard.smi-derived and data/surrogate/bench.npz-derived drug-like sets; mean 30.6 heavy atoms (57.8 atoms with H)",
+ "machine": "darwin arm64, shared/contended",
+ "size_buckets_us_per_mol": {
+  "note": "RDKit cost by heavy-atom bucket, 3000-molecule corpus, 3 reps. Shows the size tail.",
+  "buckets": [
+   {
+    "n_lo": 3,
+    "n_hi": 15,
+    "n_mols": 96,
+    "pct": 3.2,
+    "mean_n": 10.3,
+    "bcut2d": 83.7,
+    "estate": 29.2,
+    "ecfp": 14.07
+   },
+   {
+    "n_lo": 16,
+    "n_hi": 22,
+    "n_mols": 342,
+    "pct": 11.4,
+    "mean_n": 19.8,
+    "bcut2d": 155.6,
+    "estate": 75.3,
+    "ecfp": 22.66
+   },
+   {
+    "n_lo": 23,
+    "n_hi": 30,
+    "n_mols": 1049,
+    "pct": 35.0,
+    "mean_n": 27.0,
+    "bcut2d": 244.7,
+    "estate": 130.5,
+    "ecfp": 29.0
+   },
+   {
+    "n_lo": 31,
+    "n_hi": 45,
+    "n_mols": 1416,
+    "pct": 47.2,
+    "mean_n": 35.3,
+    "bcut2d": 329.4,
+    "estate": 218.3,
+    "ecfp": 37.32
+   },
+   {
+    "n_lo": 46,
+    "n_hi": 70,
+    "n_mols": 74,
+    "pct": 2.5,
+    "mean_n": 53.0,
+    "bcut2d": 618.9,
+    "estate": 471.5,
+    "ecfp": 54.01
+   }
+  ]
+ },
+ "stages": [
+  {
+   "stage": "smiles_parse",
+   "us_mean": 70.087,
+   "us_sd": 2.105,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 0,
+   "note": "Chem.MolFromSmiles. Paid once per molecule by every mode.",
+   "us_min": 67.265
+  },
+  {
+   "stage": "ecfp_r2_2048_counts",
+   "us_mean": 33.07,
+   "us_sd": 1.224,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 2048,
+   "note": "MorganGenerator r=2, count fp, includeChirality.",
+   "us_min": 31.586
+  },
+  {
+   "stage": "cpp_distance_matrix",
+   "us_mean": 6.94,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 0,
+   "note": "shared by four blocks | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_chi_k7",
+   "us_mean": 11.59,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 16,
+   "note": "chi0n..chi4n / chi0v..chi4v, path types | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_cycle_counts",
+   "us_mean": 5.33,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 33,
+   "note": "C3-C8 exact cycle counts (cycles.py block) | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_resistance",
+   "us_mean": 28.26,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 77,
+   "note": "incl. its own distance matrix + Laplacian pseudoinverse | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_balabanJ",
+   "us_mean": 12.49,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 2,
+   "note": "incl. distances; both weighted and unweighted | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_conjugation",
+   "us_mean": 7.79,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 24,
+   "note": "incl. distances | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_stereo",
+   "us_mean": 6.97,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 23,
+   "note": "incl. distances | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_estate_indices",
+   "us_mean": 7.66,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 0,
+   "note": "per-atom EState indices, incl. distances. Primitive, not columns. | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_kappa_hallkieralpha",
+   "us_mean": 3.11,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 4,
+   "note": "Kappa1-3 + HallKierAlpha | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_bcut2d",
+   "us_mean": 103.16,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 8,
+   "note": "4 Burden spectra, dsytd2+dsterf. 77% is the eigensolve. | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_ALL_BLOCKS_shared_D",
+   "us_mean": 174.35,
+   "us_sd": NaN,
+   "n_mols": 10000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/hume.cpp",
+   "columns": 182,
+   "note": "./hume bench headline: every block, distance matrices shared | single ./hume bench invocation, internal repetition; SD not captured by that harness."
+  },
+  {
+   "stage": "cpp_autocorrelation",
+   "us_mean": 24.87,
+   "us_sd": NaN,
+   "n_mols": 5000,
+   "n_reps": 10,
+   "impl": "C++ (ours) cpp/ac.cpp",
+   "columns": 486,
+   "note": "6 properties x 9 lags x 9 variants, H-EXPLICIT graph. Gasteiger charges arrive precomputed from the exporter and are NOT included here."
+  },
+  {
+   "stage": "cpp_crippen_typer",
+   "us_mean": 1.53,
+   "us_sd": NaN,
+   "n_mols": 100000,
+   "n_reps": 0,
+   "impl": "C++ (ours) cpp/crippen.cpp",
+   "columns": 0,
+   "note": "Per-atom Wildman-Crippen (logP, MR). Figure carried over from the session brief, not re-measured here. Replaces the 84 us RDKit SMARTS path."
+  },
+  {
+   "stage": "rdkit_labute_asa_contribs",
+   "us_mean": 5.78,
+   "us_sd": 0.183,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 0,
+   "note": "_CalcLabuteASAContribs, FORCED (uncached). ~4.4 us of this is boost::python list marshalling; the arithmetic is ~1 us.",
+   "us_min": 5.559
+  },
+  {
+   "stage": "rdkit_crippen_contribs",
+   "us_mean": 84.264,
+   "us_sd": 2.63,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 0,
+   "note": "_CalcCrippenContribs FORCED. 110 SMARTS patterns. THE CACHED READING IS 1.0 us AND IS A CACHE HIT, NOT A COST.",
+   "us_min": 81.162
+  },
+  {
+   "stage": "rdkit_gasteiger",
+   "us_mean": 11.318,
+   "us_sd": 1.621,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 0,
+   "note": "ComputeGasteigerCharges nIter=12, heavy-atom graph.",
+   "us_min": 10.546
+  },
+  {
+   "stage": "rdkit_tpsa",
+   "us_mean": 0.613,
+   "us_sd": 0.713,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 1,
+   "note": "CalcTPSA.",
+   "us_min": 0.389
+  },
+  {
+   "stage": "rdkit_sssr",
+   "us_mean": 13.511,
+   "us_sd": 0.737,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 0,
+   "note": "GetSymmSSSR.",
+   "us_min": 12.822
+  },
+  {
+   "stage": "rdkit_estate_indices_PYTHON",
+   "us_mean": 188.428,
+   "us_sd": 11.89,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "PYTHON (RDKit)",
+   "columns": 0,
+   "note": "rdkit.Chem.EState.EState.EStateIndices -- PURE PYTHON O(n^2) double loop. cpp/hume.cpp does this in 7.66 us incl. distances: 25x.",
+   "us_min": 178.377
+  },
+  {
+   "stage": "rdkit_bcut2d",
+   "us_mean": 299.995,
+   "us_sd": 11.934,
+   "n_mols": 3000,
+   "n_reps": 13,
+   "impl": "C++ (RDKit) via Python call",
+   "columns": 8,
+   "note": "rdMolDescriptors.BCUT2D. cpp/hume.cpp does it in 103 us: 2.9x.",
+   "us_min": 288.109
+  },
+  {
+   "stage": "mordred_Autocorrelation",
+   "us_mean": 53654.1,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 606,
+   "note": "Mordred family cost for its full 606-column output (not just the surviving columns). Median over rotated cycles; min 35901 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_Chi",
+   "us_mean": 12014.5,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 56,
+   "note": "Mordred family cost for its full 56-column output (not just the surviving columns). Median over rotated cycles; min 10668 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_PathCount",
+   "us_mean": 9080.9,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 21,
+   "note": "Mordred family cost for its full 21-column output (not just the surviving columns). Median over rotated cycles; min 7880 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_InformationContent",
+   "us_mean": 5848.4,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 42,
+   "note": "Mordred family cost for its full 42-column output (not just the surviving columns). Median over rotated cycles; min 5214 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_BaryszMatrix",
+   "us_mean": 5419.9,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 104,
+   "note": "Mordred family cost for its full 104-column output (not just the surviving columns). Median over rotated cycles; min 3695 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_MolecularDistanceEdge",
+   "us_mean": 3135.0,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 19,
+   "note": "Mordred family cost for its full 19-column output (not just the surviving columns). Median over rotated cycles; min 2600 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_EState",
+   "us_mean": 2507.7,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 316,
+   "note": "Mordred family cost for its full 316-column output (not just the surviving columns). Median over rotated cycles; min 2235 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_TopologicalCharge",
+   "us_mean": 1166.6,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 21,
+   "note": "Mordred family cost for its full 21-column output (not just the surviving columns). Median over rotated cycles; min 812 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_MoeType",
+   "us_mean": 713.7,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 53,
+   "note": "Mordred family cost for its full 53-column output (not just the surviving columns). Median over rotated cycles; min 645 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_KappaShapeIndex",
+   "us_mean": 645.4,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 3,
+   "note": "Mordred family cost for its full 3-column output (not just the surviving columns). Median over rotated cycles; min 564 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_BalabanJ",
+   "us_mean": 594.7,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 1,
+   "note": "Mordred family cost for its full 1-column output (not just the surviving columns). Median over rotated cycles; min 515 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_RingCount",
+   "us_mean": 497.5,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 138,
+   "note": "Mordred family cost for its full 138-column output (not just the surviving columns). Median over rotated cycles; min 447 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_WalkCount",
+   "us_mean": 489.1,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 21,
+   "note": "Mordred family cost for its full 21-column output (not just the surviving columns). Median over rotated cycles; min 435 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_Framework",
+   "us_mean": 367.3,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 1,
+   "note": "Mordred family cost for its full 1-column output (not just the surviving columns). Median over rotated cycles; min 302 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_SLogP",
+   "us_mean": 356.3,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 2,
+   "note": "Mordred family cost for its full 2-column output (not just the surviving columns). Median over rotated cycles; min 293 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_CarbonTypes",
+   "us_mean": 313.6,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 11,
+   "note": "Mordred family cost for its full 11-column output (not just the surviving columns). Median over rotated cycles; min 279 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_VdwVolumeABC",
+   "us_mean": 298.0,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 1,
+   "note": "Mordred family cost for its full 1-column output (not just the surviving columns). Median over rotated cycles; min 257 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_DetourMatrix",
+   "us_mean": 277.2,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 14,
+   "note": "Mordred family cost for its full 14-column output (not just the surviving columns). Median over rotated cycles; min 251 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_LogS",
+   "us_mean": 231.4,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 1,
+   "note": "Mordred family cost for its full 1-column output (not just the surviving columns). Median over rotated cycles; min 196 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_CPSA",
+   "us_mean": 225.0,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 2,
+   "note": "Mordred family cost for its full 2-column output (not just the surviving columns). Median over rotated cycles; min 197 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_TopoPSA",
+   "us_mean": 192.0,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 2,
+   "note": "Mordred family cost for its full 2-column output (not just the surviving columns). Median over rotated cycles; min 146 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_FragmentComplexity",
+   "us_mean": 174.6,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 1,
+   "note": "Mordred family cost for its full 1-column output (not just the surviving columns). Median over rotated cycles; min 151 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "mordred_AcidBase",
+   "us_mean": 164.3,
+   "us_sd": NaN,
+   "n_mols": 350,
+   "n_reps": 9,
+   "impl": "PYTHON (Mordred)",
+   "columns": 2,
+   "note": "Mordred family cost for its full 2-column output (not just the surviving columns). Median over rotated cycles; min 131 us. THIS IS WHAT RUNS TODAY."
+  },
+  {
+   "stage": "rdkit_qed",
+   "us_mean": 551.27,
+   "us_sd": NaN,
+   "n_mols": 1200,
+   "n_reps": 11,
+   "impl": "PYTHON (RDKit)",
+   "columns": 1,
+   "note": "rdkit.Chem.QED.qed: ~116 structural-alert SMARTS + DeleteSubstructs + Crippen + TPSA. Median over 11 rotated cycles."
+  },
+  {
+   "stage": "rdkit_SPS",
+   "us_mean": 306.17,
+   "us_sd": NaN,
+   "n_mols": 1200,
+   "n_reps": 11,
+   "impl": "PYTHON (RDKit)",
+   "columns": 1,
+   "note": "rdkit.Chem.SpacialScore, pure Python per-atom loop. O(n) work; the cost is Python. Median over 11 rotated cycles."
+  },
+  {
+   "stage": "rdkit_AvgIpc",
+   "us_mean": 255.54,
+   "us_sd": NaN,
+   "n_mols": 1200,
+   "n_reps": 11,
+   "impl": "PYTHON (RDKit)",
+   "columns": 1,
+   "note": "characteristic polynomial of the adjacency matrix, O(n^4)-ish, pure Python. Median over 11 rotated cycles."
+  },
+  {
+   "stage": "rdkit_EState_VSA_plus_VSA_EState",
+   "us_mean": 356.79,
+   "us_sd": NaN,
+   "n_mols": 1200,
+   "n_reps": 11,
+   "impl": "PYTHON (RDKit)",
+   "columns": 21,
+   "note": "pure Python; two EState index computations at force=1. Median over 11 rotated cycles."
+  },
+  {
+   "stage": "ridge_inference_d_out_8",
+   "us_mean": 0.261,
+   "us_sd": 0.086,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 8,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_d_out_16",
+   "us_mean": 0.238,
+   "us_sd": 0.012,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 16,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_d_out_33",
+   "us_mean": 0.354,
+   "us_sd": 0.013,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 33,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_d_out_41",
+   "us_mean": 0.389,
+   "us_sd": 0.042,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 41,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_d_out_74",
+   "us_mean": 0.535,
+   "us_sd": 0.079,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 74,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_d_out_110",
+   "us_mean": 0.679,
+   "us_sd": 0.117,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 110,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_d_out_166",
+   "us_mean": 0.878,
+   "us_sd": 0.088,
+   "n_mols": 1024,
+   "n_reps": 9,
+   "impl": "BLAS sgemm (Accelerate), single-threaded",
+   "columns": 166,
+   "note": "d_in=2747 (2048 ecfp + 699 core), float32, batch 1024, OMP_NUM_THREADS=1."
+  },
+  {
+   "stage": "ridge_inference_one_molecule_at_a_time",
+   "us_mean": 7.529,
+   "us_sd": 0.29,
+   "n_mols": 1024,
+   "n_reps": 11,
+   "impl": "BLAS sgemv, single-threaded",
+   "columns": 165,
+   "note": "SAME matmul unbatched: 6.6x SLOWER than batched. Batching is load-bearing for the surrogate's cost claim."
+  },
+  {
+   "stage": "ridge_inference_sparse_ecfp_gather",
+   "us_mean": 6.514,
+   "us_sd": 0.184,
+   "n_mols": 1024,
+   "n_reps": 11,
+   "impl": "numpy gather + sgemm",
+   "columns": 165,
+   "note": "NEGATIVE RESULT: exploiting ECFP sparsity (66 of 2048 on-bits) is 5.7x SLOWER than the dense GEMM. Accelerate's dense sgemm is already at AMX throughput; the gather destroys it."
+  }
+ ]
+}
