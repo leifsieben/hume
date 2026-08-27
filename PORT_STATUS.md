@@ -10,9 +10,9 @@ Regenerate this census with the snippet at the bottom. Do not hand-edit the coun
 
 | | columns |
 |---|---|
-| ported and verified in C++ | **469** |
-| in flight | **81** |
-| still Python | **~293** |
+| ported and verified in C++ | **561** |
+| in flight | **~180** |
+| still Python | **~124** |
 | (already native, counted under an RDKit-family label) | ~22 |
 
 **A warning about the number 182.** `hume.featurize_blocks` returns 182 columns and they are
@@ -28,6 +28,8 @@ and `src/hume_core/estate_typer.h` computes **50** E-state columns.
 |---|---|---|---|
 | Autocorrelation | 419 | `cpp/ac.cpp`, `cpp/ac_weights.h`, `cpp/ac_tables.h` | ATS/AATS/ATSC/AATSC/MATS/GATS × 9 weights. The nine weight vectors are computed in C++, not handed in — that removed 473.9 µs/mol, the single largest item in the pipeline. |
 | EState | 50 | `src/hume_core/estate_typer.h`, `cpp/estate_tables.h` | 2,868,290 / 2,868,290 atoms exact on `cpp/hard.smi`; 100,000/100,000 column values vs mordred 1.2.0. 0.834 µs/mol vs 636. |
+| VSA binning | 59 | `src/hume_core/vsa_bins.h`, `cpp/vsa_tables.h` | **66/66 columns bit-exact vs RDKit** over 100,000 molecules, **5/5 vs mordred**, and all four per-atom vectors exact on 2,868,290 atoms. Labute ASA was the real work. |
+| InformationContent | 33 | `src/hume_core/infocontent.h`, `cpp/ic_tables.h` | Not exact-vs-mordred — mordred is ill-posed here. **42 columns bit-identical under renumbering**, order-0 control passes. `Ipc` has an open bug; see the header. |
 
 Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), RDKit `Chi*` (9),
 `BalabanJ` (1), and the four `*EStateIndex` reductions.
