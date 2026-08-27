@@ -16,7 +16,10 @@ build-backend = "scikit_build_core.build"
 name = "hume"
 version = "0.1.0"
 description = "Verified molecular descriptor blocks, computed in C++"
-requires-python = ">=3.10"
+# >=3.11, not >=3.10: the pinned numpy 2.4.6 does not support 3.10, and uv warns that the two
+# disagree. Note mordred 1.2.0 needs 3.11 exactly (it imports `distutils`, removed in 3.12), so
+# the Mordred comparison env is 3.11 while the package itself is developed on 3.12.
+requires-python = ">=3.11"
 # Lower bounds only, on purpose. HUME computes its descriptors itself; rdkit supplies parsing
 # and perceived atom/bond properties. Those perceptions DO drift across releases, so values are
 # version-relative -- that belongs in `spec`, not in a hard pin that would fight the user's

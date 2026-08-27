@@ -127,7 +127,51 @@ SPEC = [
                             "LOGPHI", "LOGPLOW", "MRHI", "MRLOW"])]
 
 
+# --------------------------------------------------------------------------------------------
+# THE CANARY. A VERSION BANNER IS NOT EVIDENCE.
+#
+# This exists because a run printed `rdkit 2025.09.2` at startup and produced 2026.03.5's
+# numbers. `rdkit.__version__` reports what the `rdkit` PACKAGE says about itself; it does not
+# prove which shared library the process is actually executing. A `uv pip install` landing mid-run
+# unlinks the old dylibs, but a process that has already mapped them keeps running against them --
+# so the banner and the arithmetic can disagree, and the banner is the half that lies.
+#
+# The canary is a NUMBER, computed here, by this process, in the same interpreter that produces
+# the comparison. The molecule is a furan fused into a large macrocycle, chosen because the two
+# candidate RDKits disagree about it maximally: 2025.09.2 perceives 10 aromatic atoms in it and
+# 2026.03.5 perceives ZERO. BCUT2D_MRLOW reads that difference out as a float. If the value does
+# not match, the library in memory is not the library on the label and nothing downstream is
+# worth reading. Both numbers below are measured, not copied.
+#
+# It is printed at BOTH ends, because a swap can also happen *during* a 98,905-molecule run.
+_CANARY_SMILES = "O=C1CCNCCNNNCCNCCC(=O)c2ccc(o2)COCOCc2ccc1o2"
+_CANARY_EXPECT = -0.07665884800196521     # rdkit 2025.09.2; 2026.03.5 gives -0.11838835882829626
+
+
+def _canary() -> float:
+    from rdkit.Chem import Descriptors
+    return Descriptors.BCUT2D_MRLOW(Chem.MolFromSmiles(_CANARY_SMILES))
+
+
+def _banner(when: str) -> float:
+    import rdkit
+    c = _canary()
+    print(f"# ENV {when}: rdkit {rdkit.__version__} numpy {np.__version__}  "
+          f"# CANARY {when}: {c!r}", flush=True)
+    return c
+
+
 def main() -> None:
+    c0 = _banner("START")
+    if c0 != _CANARY_EXPECT:
+        raise SystemExit(
+            f"CANARY MISMATCH. This process computed {c0!r} for the pinned reference molecule; "
+            f"rdkit 2025.09.2 gives {_CANARY_EXPECT!r}. The RDKit actually executing is not the "
+            f"one this verification is pinned to, whatever the version string above says -- most "
+            f"likely a `uv pip install` changed site-packages while an interpreter was already "
+            f"running, or the venv drifted. Fix the environment and re-run; results from this "
+            f"process would be a wrong answer wearing the right label.")
+
     smis = HERE.joinpath("mols.smi").read_text().split()
     got = np.loadtxt(HERE / "values_hume.txt", ndmin=2)
     assert got.shape[1] == len(SPEC), f"C++ wrote {got.shape[1]} cols, SPEC has {len(SPEC)}"
@@ -170,6 +214,17 @@ def main() -> None:
             k = int(np.argmax(~passed))
             print(f"      worst: {np.array(smis)[keep][k]}")
             print(f"      c++ {a[k]!r}  ref {b[k]!r}")
+    # Re-check at the END. The run takes minutes over 98,905 molecules, which is ample time for
+    # an install elsewhere to swap site-packages underneath it; a start-only check would miss
+    # exactly the case that has already bitten this project.
+    c1 = _banner("END")
+    if c1 != c0:
+        raise SystemExit(
+            f"CANARY MOVED DURING THE RUN: {c0!r} at start, {c1!r} at end. The RDKit in this "
+            f"process changed while it was computing, so the results above are a mixture of two "
+            f"libraries and none of them can be trusted. Re-run on a quiet environment.")
+    print(f"  CANARY STABLE  {c1!r}")
+
     print("\n" + ("ALL EXACT" if ok else "DISAGREEMENT"))
     raise SystemExit(0 if ok else 1)
 
