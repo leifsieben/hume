@@ -192,10 +192,12 @@ static void profile(const char *path) {
   infoic::CodeBuilder cb;
   infoic::Profile p;
   Row r;
-  auto t0 = std::chrono::steady_clock::now();
+  // CPU time, not wall: see the CpuClock note in infocontent.h. On this box a wall-clock
+  // profile of the same binary on the same input reported one phase at 74 us and at 601 us on
+  // consecutive runs; the CPU-time breakdown is stable to a few percent under the same load.
+  const double t0 = infoic::CpuClock::nowUs();
   for (const Mol &m : g_mols) infoic::compute(m, r, &cb, &p);
-  const double wall =
-      std::chrono::duration<double, std::micro>(std::chrono::steady_clock::now() - t0).count();
+  const double wall = infoic::CpuClock::nowUs() - t0;
   const double nm = (double)g_mols.size();
   double codes = 0, group = 0, ent = 0;
   for (int o = 0; o < infoic::N_ORDERS; o++) { codes += p.codes[o]; group += p.group[o]; ent += p.entropy[o]; }
@@ -203,9 +205,10 @@ static void profile(const char *path) {
   for (const Mol &m : g_mols) heavy += m.n;
   std::printf("\nWHERE THE TIME GOES  |  %zu molecules, mean %.1f heavy atoms, %.1f with H added"
               "  |  CONTENDED MACHINE\n", g_mols.size(), heavy / nm, p.atoms / nm);
-  std::printf("  wall %.1f us/mol (instrumented; `bench` is the uninstrumented figure)\n\n", wall / nm);
+  std::printf("  CPU %.1f us/mol (instrumented; `bench` is the uninstrumented wall figure)\n\n", wall / nm);
   std::printf("  %-22s %10s %8s\n", "phase", "us/mol", "%");
   std::printf("  %-22s %10.2f %7.1f%%\n", "H-graph build + B", p.build / nm, 100 * p.build / wall);
+  std::printf("  %-22s %10.2f %7.1f%%\n", "path DFS (all orders)", p.dfs / nm, 100 * p.dfs / wall);
   std::printf("  %-22s %10.2f %7.1f%%\n", "code construction", codes / nm, 100 * codes / wall);
   std::printf("  %-22s %10.2f %7.1f%%\n", "sort + class grouping", group / nm, 100 * group / wall);
   std::printf("  %-22s %10.2f %7.1f%%\n", "entropies (7 x 6 cols)", ent / nm, 100 * ent / wall);
@@ -219,7 +222,201 @@ static void profile(const char *path) {
                 (double)p.paths[o] / nm, (double)p.classes[o] / nm);
   }
   std::printf("\n  paths/mol is the number of root-to-leaf paths the layered tree enumerates --\n"
-              "  the quantity that decides both the code cost and the bytes the sort moves.\n");
+              "  the quantity that decides both the DFS cost and the bytes the sort moves.\n");
+  std::printf("  Since 2026-08-28 ONE depth-5 DFS emits every path of every order, so the\n"
+              "  enumeration is charged to `path DFS` and `code construction` holds only the\n"
+              "  order-0 atomic-number count; `sort + class grouping` is per order as before.\n");
+}
+
+// ============================================================================================
+// keycheck -- THE COLLISION EVIDENCE.
+//
+// infocontent.h replaced a 24-byte path key, ordered by memcmp, with a 128-bit packed PKey.
+// The claim is that the replacement is an INJECTION whose numeric order is the memcmp order of
+// the bytes -- not a hash with a small collision probability. This checks the claim the only way
+// that is worth anything: it rebuilds the ORIGINAL byte keys here, from the git-HEAD algorithm
+// transcribed below, and requires that the partition they induce is IDENTICAL to the one PKey
+// induces -- same number of classes, same class SIZES, same class ORDER, and the same atom in
+// each -- for every molecule at every order.
+//
+// It also reports, per molecule per order, DISTINCT BYTE CODES vs DISTINCT PKey CODES. Those two
+// counts differing by one anywhere is exactly what a collision would look like, and it is the
+// instrumentation the brief asked for. Because the map is injective they cannot differ, and the
+// run over cpp/hard.smi is what turns that from an argument into a measurement.
+// ============================================================================================
+namespace refkey {
+
+enum { KEY_BYTES = 24 };
+struct Key { uint8_t b[KEY_BYTES]; };
+inline bool keyLess(const Key &x, const Key &y) { return std::memcmp(x.b, y.b, KEY_BYTES) < 0; }
+
+// Transcribed from src/hume_core/infocontent.h at git HEAD (CodeBuilder::codeFor / walk), the
+// implementation PKey replaces. Deliberately unoptimised: it is the reference, not the product.
+struct Ref {
+  const infoic::HGraph *g = nullptr;
+  std::vector<int32_t> dist, stamp;
+  std::vector<int32_t> bfs;
+  int32_t epoch = 0;
+
+  void reset(const infoic::HGraph &gg) {
+    g = &gg;
+    dist.assign(gg.N, -1);
+    stamp.assign(gg.N, 0);
+    epoch = 0;
+  }
+
+  void codeFor(int root, int order, std::vector<Key> &out) {
+    out.clear();
+    ++epoch;
+    bfs.clear();
+    bfs.push_back(root);
+    stamp[root] = epoch;
+    dist[root] = 0;
+    for (size_t h = 0; h < bfs.size(); h++) {
+      const int u = bfs[h];
+      if (dist[u] >= order) continue;
+      for (int e = g->start[u]; e < g->start[u + 1]; e++) {
+        const int v = g->nbr[e];
+        if (stamp[v] != epoch) { stamp[v] = epoch; dist[v] = dist[u] + 1; bfs.push_back(v); }
+      }
+    }
+    Key k;
+    std::memset(k.b, 0, KEY_BYTES);
+    k.b[0] = g->z[root];
+    k.b[1] = g->deg[root];
+    walk(root, 0, order, 2, k, out);
+    std::sort(out.begin(), out.end(), keyLess);
+  }
+
+  void walk(int u, int d, int order, int pos, Key &k, std::vector<Key> &out) {
+    bool leaf = true;
+    if (d < order) {
+      for (int e = g->start[u]; e < g->start[u + 1]; e++) {
+        const int v = g->nbr[e];
+        if (stamp[v] != epoch || dist[v] != d + 1) continue;
+        leaf = false;
+        const uint8_t s0 = k.b[pos], s1 = k.b[pos + 1], s2 = k.b[pos + 2];
+        k.b[pos] = g->sym[e];
+        k.b[pos + 1] = g->z[v];
+        k.b[pos + 2] = g->deg[v];
+        walk(v, d + 1, order, pos + 3, k, out);
+        k.b[pos] = s0; k.b[pos + 1] = s1; k.b[pos + 2] = s2;
+      }
+    }
+    if (leaf) {
+      Key t = k;
+      t.b[pos] = 0xFF;
+      for (int q = pos + 1; q < KEY_BYTES; q++) t.b[q] = 0;
+      out.push_back(t);
+    }
+  }
+};
+
+}  // namespace refkey
+
+static int keycheck(const char *path) {
+  load(path);
+  infoic::CodeBuilder cb;
+  refkey::Ref ref;
+  std::vector<refkey::Key> paths;
+  long long nmol = 0, ncmp = 0, badpart = 0, badcount = 0;
+  long long distinctBytes = 0, distinctPk = 0;
+  for (const Mol &m : g_mols) {
+    infoic::HGraph g;
+    g.build(m);
+    const int A = g.N;
+    cb.reset(g);
+    cb.buildAll();
+    ref.reset(g);
+    for (int order = 1; order <= infoic::MAX_ORDER; order++) {
+      // reference: byte blobs, one per atom
+      std::vector<uint8_t> arena;
+      std::vector<int32_t> off(A + 1, 0);
+      for (int i = 0; i < A; i++) {
+        ref.codeFor(i, order, paths);
+        for (const refkey::Key &k : paths) arena.insert(arena.end(), k.b, k.b + refkey::KEY_BYTES);
+        off[i + 1] = (int32_t)arena.size();
+      }
+      const uint8_t *ar = arena.data();
+      const int32_t *of = off.data();
+      std::vector<int32_t> ri(A), pi(A);
+      for (int i = 0; i < A; i++) { ri[i] = i; pi[i] = i; }
+      std::sort(ri.begin(), ri.end(), [ar, of](int32_t x, int32_t y) {
+        const int32_t lx = of[x + 1] - of[x], ly = of[y + 1] - of[y];
+        const int c = std::memcmp(ar + of[x], ar + of[y], (size_t)std::min(lx, ly));
+        return c != 0 ? c < 0 : lx < ly;
+      });
+      const infoic::PKey *pa = cb.arena[order].data();
+      const int32_t *po = cb.off[order].data();
+      std::sort(pi.begin(), pi.end(), [pa, po](int32_t x, int32_t y) {
+        const int32_t lx = po[x + 1] - po[x], ly = po[y + 1] - po[y];
+        const int32_t n = lx < ly ? lx : ly;
+        const infoic::PKey *px = pa + po[x], *py = pa + po[y];
+        for (int32_t q = 0; q < n; q++) {
+          if (px[q].hi != py[q].hi) return px[q].hi < py[q].hi;
+          if (px[q].lo != py[q].lo) return px[q].lo < py[q].lo;
+        }
+        return lx < ly;
+      });
+      // class boundaries under each encoding
+      std::vector<int> rc, pc;
+      for (int a = 0; a < A;) {
+        int b = a + 1;
+        const int32_t la = of[ri[a] + 1] - of[ri[a]];
+        while (b < A) {
+          const int32_t lb = of[ri[b] + 1] - of[ri[b]];
+          if (lb != la || std::memcmp(ar + of[ri[a]], ar + of[ri[b]], (size_t)la) != 0) break;
+          b++;
+        }
+        rc.push_back(b - a);
+        a = b;
+      }
+      for (int a = 0; a < A;) {
+        int b = a + 1;
+        const int32_t la = po[pi[a] + 1] - po[pi[a]];
+        while (b < A) {
+          const int32_t lb = po[pi[b] + 1] - po[pi[b]];
+          if (lb != la) break;
+          bool same = true;
+          for (int32_t q = 0; q < la; q++)
+            if (!(pa[po[pi[a]] + q] == pa[po[pi[b]] + q])) { same = false; break; }
+          if (!same) break;
+          b++;
+        }
+        pc.push_back(b - a);
+        a = b;
+      }
+      distinctBytes += (long long)rc.size();
+      distinctPk += (long long)pc.size();
+      if (rc.size() != pc.size()) badcount++;
+      if (rc != pc) badpart++;
+      // and the atoms themselves, in the same order
+      if (ri != pi) {
+        // A tie inside a class is not a difference: only the CLASS boundaries are load bearing.
+        // Compare the sorted atom set within each class instead.
+        std::vector<int32_t> a1 = ri, a2 = pi;
+        int at = 0;
+        for (size_t c = 0; c < rc.size() && c < pc.size(); c++) {
+          std::sort(a1.begin() + at, a1.begin() + at + rc[c]);
+          std::sort(a2.begin() + at, a2.begin() + at + pc[c]);
+          at += rc[c];
+        }
+        if (a1 != a2) badpart++;
+      }
+      ncmp++;
+    }
+    nmol++;
+  }
+  std::printf("\nkeycheck  |  %lld molecules x %d orders = %lld partitions compared\n", nmol,
+              infoic::MAX_ORDER, ncmp);
+  std::printf("  distinct codes, ORIGINAL 24-byte keys : %lld\n", distinctBytes);
+  std::printf("  distinct codes, 128-bit PKey          : %lld\n", distinctPk);
+  std::printf("  partitions where the two DISAGREE     : %lld   (class count %lld)\n", badpart,
+              badcount);
+  std::printf("  %s\n", (badpart || badcount || distinctBytes != distinctPk)
+                            ? "*** FAIL: the packed key is not faithful ***"
+                            : "OK -- same classes, same sizes, same order, zero collisions");
+  return (badpart || badcount || distinctBytes != distinctPk) ? 1 : 0;
 }
 
 int main(int argc, char **argv) {
@@ -230,6 +427,8 @@ int main(int argc, char **argv) {
     return values(argc > 2 ? argv[2] : "cpp/ic_in0.txt", argc > 3 ? argv[3] : "cpp/ic_out0.txt");
   if (!std::strcmp(cmd, "bench")) { bench(argc > 2 ? argv[2] : "cpp/ic_in0.txt"); return 0; }
   if (!std::strcmp(cmd, "profile")) { profile(argc > 2 ? argv[2] : "cpp/ic_in0.txt"); return 0; }
-  std::fprintf(stderr, "usage: infocontent [values IN OUT | bench IN | profile IN | flip]\n");
+  if (!std::strcmp(cmd, "keycheck")) return keycheck(argc > 2 ? argv[2] : "cpp/ic_in0.txt");
+  std::fprintf(stderr,
+               "usage: infocontent [values IN OUT | bench IN | profile IN | keycheck IN | flip]\n");
   return 1;
 }

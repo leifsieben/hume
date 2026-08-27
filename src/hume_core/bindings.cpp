@@ -38,6 +38,7 @@
 #include "infocontent.h"
 #include "molpickle.h"
 #include "pathcount.h"
+#include "rdkcore.h"
 #include "ringcount.h"
 #include "topocharge.h"
 #include "topomisc.h"
@@ -57,9 +58,11 @@ static void need(bool cond, const char *what) {
 // transposed descriptors.
 static constexpr int N_ATOM_INT = 10;  // Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
 static constexpr int N_ATOM_DBL = 2;   // mass, gasteiger      (Crippen is computed here)
-static constexpr int N_BOND_INT = 5;   // u, v, conjugated, in-ring, SMARTS bond code
+static constexpr int N_BOND_INT = 6;   // u, v, conjugated, in-ring, SMARTS code, BondType int
 static_assert(N_ATOM_INT == (int)molpickle::N_ATOM_INT,
               "bindings.cpp and molpickle.h disagree on the atom_i stride");
+static_assert(N_BOND_INT == (int)molpickle::N_BOND_INT,
+              "bindings.cpp and molpickle.h disagree on the bond_i stride");
 
 // Column offsets inside a row of atom_i / bond_i, so the two loops below and the Crippen fill
 // cannot drift apart on what column 4 means.
@@ -75,7 +78,22 @@ static_assert(N_ATOM_INT == (int)molpickle::N_ATOM_INT,
 // rounding rule. See src/hume_core/frag_matcher.h.
 enum { A_Z = 0, A_DEG = 1, A_NH = 2, A_FCHG = 3, A_HYB = 4, A_AROM = 5, A_RING = 6, A_CIP = 7,
        A_NRING = 8, A_TVAL = 9 };
-enum { B_U = 0, B_V = 1, B_CONJ = 2, B_RING = 3, B_CODE = 4 };
+// B_BTYPE is RDKit's Bond::BondType INTEGER (SINGLE 1, DOUBLE 2, TRIPLE 3, AROMATIC 12,
+// DATIVE 17, ...), which B_CODE deliberately does not carry: the SMARTS code answers "is the
+// order one SMARTS can name" and "is the aromatic flag set" and collapses everything else to
+// zero. That collapse is exact for every query in cpp/frag_program.h and WRONG for the Morgan
+// fingerprint, which hashes the enum value -- cpp/hard.smi has 114 DATIVE bonds. See
+// src/hume/_extract.py; the pickle path pays nothing for it.
+enum { B_U = 0, B_V = 1, B_CONJ = 2, B_RING = 3, B_CODE = 4, B_BTYPE = 5 };
+
+// The two block columns `Phi` is a function of. calcPhi computes kappa1 and kappa2 from the
+// SAME P1 / P2 / alpha that calcKappa1 and calcKappa2 do, so it is exactly the product of the
+// two columns blocks_row() has already written -- recomputing it would mean paying
+// findAllPathsOfLengthN(mol, 2) a second time for a number already in the row. The 182 block
+// names live in src/hume/_columns.py, not here, so these two indices are EXPORTED and asserted
+// against that list at import; a reordered block tail is an AssertionError naming the column.
+static constexpr int B_KAPPA1 = HUME_NBLOCK_COLS - 12;
+static constexpr int B_KAPPA2 = HUME_NBLOCK_COLS - 11;
 
 // --------------------------------------------------------------------------------------------
 // Crippen: the same five quantities cpp/export_crippen.py writes, read out of the arrays
@@ -193,7 +211,7 @@ static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, Arr
        "offset arrays must have n_mol + 1 entries");
   need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 10)");
   need(atom_d.ndim() == 2 && atom_d.shape(1) == N_ATOM_DBL, "atom_d must be (n_atoms, 2)");
-  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 5)");
+  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 6)");
   need(atom_i.shape(0) == atom_d.shape(0), "atom_i and atom_d disagree on n_atoms");
   need(bond_i.shape(0) == bond_d.shape(0) && bond_i.shape(0) == bond_s.shape(0),
        "bond arrays disagree on n_bonds");
@@ -424,7 +442,12 @@ enum {
   // duplicate names in hume.ALL_COLUMNS, which is worse than the naming gap it would close.
   OFF_ALIAS  = OFF_CONSTIT + constit::N_COLS,
   N_ALIAS_COLS = 1,
-  N_ALL_COLS = OFF_ALIAS + N_ALIAS_COLS,
+  // The last of rdkit_core that is not a substructure count: 13 ring predicates, HeavyAtomMolWt,
+  // FractionCSP3, Phi and the three Morgan fingerprint densities. It is LAST in the layout on
+  // purpose -- every pre-existing column keeps its index, so an A/B of the extension across this
+  // change compares like with like rather than a shifted row.
+  OFF_RDKCORE = OFF_ALIAS + N_ALIAS_COLS,
+  N_ALL_COLS = OFF_RDKCORE + rdkcore::N_COLS,
 };
 
 // B_CODE -> the bond-order number `fragmatch` compares against, which is RDKit's Bond::BondType
@@ -549,6 +572,8 @@ struct AllWork {
   topomisc::Mol wm;
   topomisc::Scratch ws;
   constit::Mol km;
+  rdkcore::Mol dm;
+  rdkcore::Scratch ds;
   std::vector<int32_t> rp_loc;       // the molecule's ring CSR, rebased to start at 0
   AllWork() : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES), fcount(frag_prog::N_NAMED) {}
 };
@@ -572,14 +597,14 @@ struct AllWork {
 enum : unsigned {
   F_BLOCKS = 1u, F_VSA = 2u, F_ESTATE = 4u, F_RING = 8u, F_PATH = 16u, F_TOPO = 32u, F_IC = 64u,
   F_AC = 128u, F_FRAG = 256u, F_CHI = 512u, F_TOPOMISC = 1024u, F_CONSTIT = 2048u,
-  F_ALIAS = 4096u,
-  F_ALL = 8191u,
+  F_ALIAS = 4096u, F_RDKCORE = 8192u,
+  F_ALL = 16383u,
 };
 
 //! Families that need the hydrogen-added blob parsed. Autocorrelation descriptors that graph
 //! directly; constit reads only its Gasteiger charges off it (RNCG/RPCG). Keeping the two in one
 //! predicate is what stops `["constit"]` from silently getting a null charge array -- and what
-//! stops it from paying for Autocorrelation's 486 columns to get one.
+//! stops it from paying for Autocorrelation's 540 columns to get one.
 static constexpr unsigned F_NEEDS_H = F_AC | F_CONSTIT;
 
 static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, const int *BS,
@@ -693,7 +718,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   for (int c = 0; c < infoic::N_IC; c++) out[OFF_IC + c] = W.irow.v[c];
   }
 
-  // ---- Autocorrelation: 486 columns, on the HYDROGEN-ADDED graph ----
+  // ---- Autocorrelation: 540 columns, on the HYDROGEN-ADDED graph ----
   // Every field here comes from the second blob, parsed by the same molpickle.h reader into the
   // same boundary layout -- `nh` is `GetTotalNumHs()` AFTER AddHs (normally 0, but `dv` adds it
   // to the explicit-H neighbour count and mordred reads it, so it is carried rather than
@@ -826,8 +851,10 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     //          properties are computed and verified in constit.h today.
     //   `SPS`  waits on RDKit's POTENTIAL stereo perception (`FindMolChiralCenters`
     //          includeUnassigned + `FindPotentialStereoBonds`), which the boundary's
-    //          ASSIGNED-only `cip` and `bond_s` columns cannot answer. The same boundary
-    //          addition unblocks `NumAtomStereoCenters` and `NumUnspecifiedAtomStereoCenters`.
+    //          ASSIGNED-only `cip` and `bond_s` columns cannot answer. It does NOT unblock
+    //          `NumAtomStereoCenters` / `NumUnspecifiedAtomStereoCenters` -- those read the
+    //          LEGACY `_ChiralityPossible` flag, a different perception that disagrees with this
+    //          one on 262 of 4,000 corpus molecules. See the note in src/hume_core/constit.h.
     // They are emitted as NaN and NAMED, not dropped: a missing column reads as an oversight,
     // and a faked one reads as an answer.
     in.qedAlerts = -1;
@@ -841,6 +868,37 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   // mordred/SLogP.py in full is `return Crippen.MolLogP(self.mol)`. It is the SAME double as
   // vsa_bins.h's MolLogP, copied rather than recomputed, so the two can never disagree.
   if (fams & F_ALIAS) out[OFF_ALIAS] = out[OFF_VSA + vsabin::C_MOLLOGP];
+
+  // ---- the last 19 rdkit_core columns ------------------------------------------------------
+  // THE RING SET IS THE SAME REPAIRED ONE RingCount GETS, arriving as the boundary CSR rather
+  // than from a second perception -- see the note at the top of this section and the divergence
+  // recorded in src/hume_core/rdkcore.h. `Phi` reads Kappa1 and Kappa2 out of the block row
+  // above rather than recomputing findAllPathsOfLengthN(mol, 2).
+  if (fams & F_RDKCORE) {
+    W.dm.alloc(n, nb);
+    for (int i = 0; i < n; i++) {
+      const int *r = ai + (ssize_t)i * N_ATOM_INT;
+      W.dm.z[i] = r[A_Z];
+      W.dm.deg[i] = r[A_DEG];
+      W.dm.nH[i] = r[A_NH];
+      W.dm.fchg[i] = r[A_FCHG];
+      W.dm.nring[i] = r[A_NRING];
+      W.dm.mass[i] = AD[(ssize_t)(a0 + i) * N_ATOM_DBL];
+      W.dm.aw[i] = (r[A_Z] >= 0 && r[A_Z] < pickletab::N_Z) ? pickletab::ATOMIC_WEIGHT[r[A_Z]]
+                                                            : 0.0;
+    }
+    for (int b = 0; b < nb; b++) {
+      const int *r = bi + (ssize_t)b * N_BOND_INT;
+      W.dm.bu[b] = r[B_U];
+      W.dm.bv[b] = r[B_V];
+      W.dm.barom[b] = (r[B_CODE] & 8) ? 1 : 0;     // the SMARTS code's AROMATIC FLAG bit
+      W.dm.btype[b] = r[B_BTYPE];
+    }
+    for (int q = 0; q < n_rings; q++)
+      W.dm.add_ring(ring_at + ring_ptr[q], ring_ptr[q + 1] - ring_ptr[q]);
+    rdkcore::compute(W.dm, out[OFF_BLOCKS + B_KAPPA1], out[OFF_BLOCKS + B_KAPPA2],
+                     out + OFF_RDKCORE, W.ds);
+  }
 }
 
 static unsigned family_mask(const py::object &families) {
@@ -849,7 +907,7 @@ static unsigned family_mask(const py::object &families) {
       {"blocks", F_BLOCKS}, {"vsa", F_VSA}, {"estate", F_ESTATE}, {"ringcount", F_RING},
       {"pathcount", F_PATH}, {"topocharge", F_TOPO}, {"infocontent", F_IC},
       {"autocorr", F_AC}, {"frag", F_FRAG}, {"chi", F_CHI}, {"topomisc", F_TOPOMISC},
-      {"constit", F_CONSTIT}, {"alias", F_ALIAS}};
+      {"constit", F_CONSTIT}, {"alias", F_ALIAS}, {"rdkcore", F_RDKCORE}};
   unsigned mask = F_BLOCKS;   // never optional; see the note on the enum
   for (auto h : families) {
     const std::string want = py::cast<std::string>(h);
@@ -939,6 +997,7 @@ static py::list all_column_names_tail() {
   // The alias block. `qed` and `SPS` above it are NaN today and are named anyway; so is this,
   // for the opposite reason -- it is a real value under a second name.
   out.append(py::str("SLogP"));
+  for (int c = 0; c < rdkcore::N_COLS; c++) out.append(py::str(rdkcore::col_name(c)));
   return out;
 }
 
@@ -947,7 +1006,7 @@ static py::list all_column_names_tail() {
 // and a per-atom comparison is strictly stronger than watching four BCUT2D columns agree.
 static py::array_t<double> crippen_pairs(ArrI atom_off, ArrI bond_off, ArrI atom_i, ArrI bond_i) {
   need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 10)");
-  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 5)");
+  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 6)");
   need(atom_off.ndim() == 1 && bond_off.ndim() == 1 && atom_off.shape(0) >= 1 &&
        atom_off.shape(0) == bond_off.shape(0), "offsets must be 1-D and the same length");
   const ssize_t nm = atom_off.shape(0) - 1;
@@ -1030,7 +1089,11 @@ PYBIND11_MODULE(_core, mod) {
       py::arg("infocontent") = (int)OFF_IC, py::arg("autocorr") = (int)OFF_AC,
       py::arg("frag") = (int)OFF_FRAG, py::arg("chi") = (int)OFF_CHI,
       py::arg("topomisc") = (int)OFF_TOPOMISC, py::arg("constit") = (int)OFF_CONSTIT,
-      py::arg("alias") = (int)OFF_ALIAS, py::arg("end") = (int)N_ALL_COLS);
+      py::arg("alias") = (int)OFF_ALIAS, py::arg("rdkcore") = (int)OFF_RDKCORE,
+      py::arg("end") = (int)N_ALL_COLS);
+  // Exported so src/hume/__init__.py can assert them BY NAME against _columns.py, which is where
+  // the 182 block names live. See the note on B_KAPPA1.
+  mod.attr("BLOCK_KAPPA_COLS") = py::make_tuple((int)B_KAPPA1, (int)B_KAPPA2);
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"),
           py::arg("families") = py::none(),

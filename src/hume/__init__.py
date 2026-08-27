@@ -44,11 +44,19 @@ ALL_COLUMNS: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail())
 # are NaN on every molecule, because each is blocked on a boundary field that does not exist yet:
 #
 #   qed  needs qedAlerts -- the count of QED's 116 structural-alert SMARTS that match
-#   SPS  needs stereo perception (FindPotentialStereo), which also blocks
-#        NumAtomStereoCenters and NumUnspecifiedAtomStereoCenters -- one addition buys three
+#   SPS  needs RDKit's NEW stereo perception -- FindPotentialStereo, reached through
+#        FindMolChiralCenters(includeUnassigned=True, useLegacyImplementation=False), plus
+#        FindPotentialStereoBonds. It is NOT in the pickle and is not derivable from `cip`.
+#
+# ONE ADDITION DOES NOT BUY THREE, and the note that used to stand here said it did.
+# `NumAtomStereoCenters` / `NumUnspecifiedAtomStereoCenters` do NOT use FindPotentialStereo:
+# Code/GraphMol/Descriptors/Lipinski.cpp counts atoms carrying `_ChiralityPossible`, which is the
+# LEGACY `MolOps::assignStereochemistry(cleanIt, force, flagPossible)` perception. The two answer
+# differently on 262 of 4,000 corpus molecules, so `SPS` and the two counts need two different
+# perceptions, and only the legacy one is already in the blob. See the handoff note.
 #
 # They are named rather than dropped so the schema is stable across the port. But COVERAGE MUST
-# NOT COUNT THEM: "790 of 864 have a name" and "788 produce a value" are different claims, and
+# NOT COUNT THEM: "842 of 864 have a name" and "840 produce a value" are different claims, and
 # this project has already overstated its position twice by conflating a column count with a
 # capability. Use `covered = set(ALL_COLUMNS) - set(PENDING_COLUMNS)` when reporting.
 #
@@ -57,6 +65,15 @@ ALL_COLUMNS: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail())
 PENDING_COLUMNS: tuple[str, ...] = ("qed", "SPS")
 N_ALL_COLS: int = _core.N_ALL_COLS
 FAMILY_OFFSETS: dict = dict(_core.ALL_OFFSETS)
+
+# `Phi` is computed in C++ as Kappa1 * Kappa2 / heavy-atom count, reading the two out of the
+# block row rather than paying findAllPathsOfLengthN(mol, 2) a second time. The extension resolves
+# those two by INDEX; the names live here, so this is the check that the index still points at the
+# column it was written for. A reordered block tail fails at import naming what moved.
+assert tuple(COLUMNS[i] for i in _core.BLOCK_KAPPA_COLS) == ("Kappa1", "Kappa2"), (
+    f"the extension reads Phi's inputs from block columns {tuple(_core.BLOCK_KAPPA_COLS)}, "
+    f"which _columns.py names {tuple(COLUMNS[i] for i in _core.BLOCK_KAPPA_COLS)}"
+)
 
 assert len(ALL_COLUMNS) == N_ALL_COLS, (
     f"extension emits {N_ALL_COLS} columns, {len(ALL_COLUMNS)} are named"
@@ -130,12 +147,12 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     two agree bit-for-bit on the 182 they share; there is no `reader` here only because nothing
     has asked for one yet, not because the arrays could not be filled the other way.
 
-    WHAT IS NOT IN X, stated here because a column count invites the opposite assumption: the 52
-    Autocorrelation columns built on mordred's `Z` weight. The other nine weights are here (486
-    columns, on the hydrogen-added molecule `extract_pickles` serialises alongside), but
-    `cpp/ac_weights.h` implements nine of mordred's ten and the tenth is a bare atomic number.
+    ALL TEN AUTOCORRELATION WEIGHTS ARE HERE NOW -- 540 columns, on the hydrogen-added molecule
+    `extract_pickles` serialises alongside. The `Z` weight (bare atomic number) used to be the
+    documented gap and closed the last 52 members of the 865 that Autocorrelation owed.
     `bench_e2e.py` counts how many of the 865 these columns actually cover and prints it next to
-    the timing, so the ratio and the coverage are never read apart.
+    the timing, so the ratio and the coverage are never read apart -- ALL_COLUMNS is the larger
+    number and always has been.
     """
     from rdkit.Chem import rdFingerprintGenerator as rfg
 

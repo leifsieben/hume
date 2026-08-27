@@ -1,5 +1,5 @@
 // Mordred's Autocorrelation block as a header the extension can call: 6 variants x 9 lags x
-// 9 weights = 486 columns, on the HYDROGEN-ADDED graph.
+// 10 weights = 540 columns, on the HYDROGEN-ADDED graph.
 //
 // WHAT THIS IS. cpp/ac.cpp was a standalone program -- a text loader, this computation, and a
 // main(). Its arithmetic is verified against cpp/ac_reference.py, which was written first and
@@ -17,10 +17,10 @@
 // molpickle.h reader. See the note on `Pickles.h_blobs` for why the charges cannot simply be
 // derived from the heavy-atom molecule's.
 //
-// ONE PASS OVER PAIRS, NOT NINE LAGS x NINE WEIGHTS OF MATRIX WORK. The obvious implementation
-// builds B_k = (D == k) for each lag and evaluates w^T B_k w per weight: 81 matrix products of
-// an n x n matrix. Instead every unordered pair is visited once, its distance read, and the nine
-// weights accumulated into that lag's bucket -- O(n^2 * 9) rather than O(n^2 * 81), and the
+// ONE PASS OVER PAIRS, NOT NINE LAGS x TEN WEIGHTS OF MATRIX WORK. The obvious implementation
+// builds B_k = (D == k) for each lag and evaluates w^T B_k w per weight: 90 matrix products of
+// an n x n matrix. Instead every unordered pair is visited once, its distance read, and the ten
+// weights accumulated into that lag's bucket -- O(n^2 * 10) rather than O(n^2 * 90), and the
 // distance matrix is traversed a single time.
 //
 // The conventions that are not guessable, all inherited from cpp/ac_reference.py:
@@ -30,14 +30,25 @@
 //
 // A WEIGHT WITH A NON-FINITE ATOM IS NaN FOR ITS 54 COLUMNS, NOT A DROPPED MOLECULE. mordred
 // fails one AtomicProperty at a time, so a selenium molecule loses the 54 `se` columns and keeps
-// the other 432.
+// the other 486. `Z` is the one weight that can never take this path -- GetAtomicNum() is never
+// NaN, so its 54 columns survive every molecule; see ac_weights.h.
 //
-// THE 52 COLUMNS THIS DOES NOT COMPUTE, stated here so a column count cannot imply otherwise.
-// The 865 contain 419 Autocorrelation columns across TEN weights; cpp/ac_weights.h implements
-// NINE. The tenth is mordred's `Z` (bare atomic number), and its 52 surviving columns --
-// {ATS,AATS,ATSC,AATSC,MATS,GATS} x lags x `Z` -- are not produced by this header. Adding it is
-// a table and a line in ac_weights.h, plus re-running cpp/ac.cpp's verification at 540 columns
-// instead of 486; it is not done here because that changes the shape of the verified artifact.
+// ALL TEN WEIGHTS ARE HERE. This header computed nine for a while and said so; the tenth, `Z`,
+// closes the 52 members of the 865 that were the last Autocorrelation gap
+// ({ATS,AATS,ATSC,AATSC} x lags 0-8 + {MATS,GATS} x lags 1-8, all suffixed `Z`; mordred defines
+// no MATS0/GATS0, so it is 52 of the 54 emitted). Adding it re-shaped cpp/values_ac.txt from 486
+// columns to 540, which is why it was deferred rather than difficult: the artifact whose md5
+// proved the header lift changed nothing had to be regenerated.
+//
+// WHAT IS PROVEN ABOUT THE 486, EXACTLY. Projecting the new 540-column values_ac.txt back onto
+// its 486 non-`Z` columns -- same %.12g text, drop every tenth field -- reproduces the old md5
+// 7f08884f8700c23fd41e2a5315870a2e BYTE FOR BYTE over all 98,905 molecules. Adding the tenth
+// weight moved no cell of the other nine. That is a statement about this file's arithmetic and
+// it stands on its own; the mordred grade of the 54 new columns is cpp/verify_ac.py's to make
+// and belongs in PORT_STATUS.md next to its version banner, not asserted here.
+//
+// `Z` is APPENDED as weight index 9 rather than inserted in mordred's getter order, so no
+// pre-existing column changed its name.
 #ifndef HUME_AUTOCORR_H
 #define HUME_AUTOCORR_H
 
@@ -45,7 +56,7 @@
 #include <cstdio>
 #include <vector>
 
-// The nine weight vectors and the element tables they read, generated from mordred itself by
+// The ten weight vectors and the element tables they read, generated from mordred itself by
 // cpp/gen_ac_tables.py. Included from cpp/ rather than copied so there is exactly one of each in
 // the repository -- the same arrangement crippen_typer.h has with cpp/crippen_tables.h.
 #include "../../cpp/ac_weights.h"
@@ -55,14 +66,14 @@ namespace autocorr {
 inline constexpr int NL = 9;    // lags 0..8
 inline constexpr int NVAR = 6;  // ATS, AATS, ATSC, AATSC, MATS, GATS -- this order is fixed
 inline constexpr int BIG = 1 << 20;
-inline constexpr int N_COLS = NVAR * NL * NW;   // 486
+inline constexpr int N_COLS = NVAR * NL * NW;   // 540 = 6 x 9 x 10
 
 // out is laid out [variant][lag][weight]. This is the order cpp/values_ac.txt is written in and
 // the order verify_ac.py reads, so it is part of the format rather than an implementation
 // detail: col_name() below is the only place that has to know it.
 inline const char *col_name(int i) {
   static const char *VAR[NVAR] = {"ATS", "AATS", "ATSC", "AATSC", "MATS", "GATS"};
-  static const char *WT[NW] = {"c", "d", "dv", "i", "p", "v", "se", "pe", "are"};
+  static const char *WT[NW] = {"c", "d", "dv", "i", "p", "v", "se", "pe", "are", "Z"};
   static char buf[16][24];
   static int slot = 0;
   const int q = i % NW, k = (i / NW) % NL, v = i / (NL * NW);

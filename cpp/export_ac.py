@@ -26,13 +26,15 @@ and there is no table for it. Everything else here is a field read.
 
 `n_implicit_H` is GetTotalNumHs(), the Hs *still implicit after AddHs* -- normally 0, but `dv`
 adds it to the explicit-H neighbour count and Mordred reads it, so it is carried rather than
-assumed. Isotope is NOT carried: all nine getters read GetAtomicNum(), so [2H] weighs what [H]
-weighs. (Mordred's mass weight `m` would need it; `m` is not one of these nine.)
+assumed. Isotope is NOT carried: all ten getters read GetAtomicNum(), so [2H] weighs what [H]
+weighs. (Mordred's mass weight `m` would need it; `m` is not one of these ten. Nor is the tenth
+weight `Z` a reason to carry it: `Z` is GetAtomicNum() itself, which is what `z` above already
+is.)
 
 MOLECULES ARE NO LONGER DROPPED FOR A NON-FINITE WEIGHT. The old code dropped any molecule whose
-nine vectors were not all finite, which quietly removed 5,519 of the 100k adversarial corpus --
+vectors were not all finite, which quietly removed 5,519 of the 100k adversarial corpus --
 precisely the rare-element molecules the corpus exists to test. Mordred fails one AtomicProperty
-at a time, so a selenium molecule loses its 54 `se` columns and keeps the other 432; ac.cpp now
+at a time, so a selenium molecule loses its 54 `se` columns and keeps the other 486; ac.cpp now
 reproduces that per weight. The only guard left is on the one float this file still writes: a
 non-finite Gasteiger charge is written as the SENTINEL -1e30, not as the token `nan`, because
 libc++'s `istream >> double` does not parse "nan" -- it sets failbit and leaves the value zero,

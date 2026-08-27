@@ -1476,9 +1476,17 @@ inline void compute(const Mol& m, const Inputs& in, double* out, double tpsa) {
 //                              useLegacyImplementation=False)}
 //          stereoBond[e] = after `rdmolops.FindPotentialStereoBonds(Chem.Mol(m))`,
 //                          bond e is DOUBLE and its GetStereo() != STEREONONE
-//      This is the same `FindPotentialStereo` subsystem `NumAtomStereoCenters` and
-//      `NumUnspecifiedAtomStereoCenters` are waiting on, so one boundary addition unblocks three
-//      columns rather than one.  Do NOT try to derive it: it is a perception, not a graph query.
+//      Do NOT try to derive it: it is a perception, not a graph query.
+//
+//      IT IS NOT, HOWEVER, THE SAME PERCEPTION `NumAtomStereoCenters` AND
+//      `NumUnspecifiedAtomStereoCenters` WANT, and this note used to claim it was ("one boundary
+//      addition unblocks three columns").  Measured at rdkit 2025.09.2:
+//      Code/GraphMol/Descriptors/Lipinski.cpp counts atoms carrying `_ChiralityPossible`, set by
+//      the LEGACY `MolOps::assignStereochemistry(cleanIt, force, flagPossible)` -- not by
+//      FindPotentialStereo.  The two atom sets differ on 262 of 4,000 cpp/hard.smi molecules.  So
+//      those two columns cost nothing (the flag is already in the pickle, explicit-property bit
+//      0x8, and the chiral tag is already in atom-property flag bit 2) while `SPS` still needs a
+//      real boundary addition of its own.
 //
 //    * `qed` needs `qedAlerts`, the count of rdkit QED's 116 structural-alert SMARTS that match.
 //      The cheapest correct route is to make src/hume_core/frag_matcher.h's `Matcher` take its

@@ -15,10 +15,17 @@ So this checks the WIRING, against an oracle outside it, family by family:
   EState (158)      RDKit's EState.AtomTypes.TypeAtoms + EState.EStateIndices, recombined into
                     N<t> and S<t> exactly as mordred's AtomTypeEState does. This is the check
                     that the `S*` columns really are weighted by BlockWork::ES.
-  Autocorr (486)    `./cpp/ac`, the binary that wrote the evidence, fed a SECOND independent
-                    construction of the hydrogen-added graph (charges, mordred's getter and all)
-                    built here from RDKit. Graded at %.12g because that is the oracle's own
-                    output format; see check_autocorr for why that is the right limit.
+  Autocorr (540)    TWO oracles, because one of them cannot decide the question. `./cpp/ac`, the
+                    binary that wrote the evidence, fed a SECOND independent construction of the
+                    hydrogen-added graph (charges, mordred's getter and all) built here from
+                    RDKit -- that grades the GRAPH, and only the graph, since `cpp/ac` includes
+                    the same src/hume_core/autocorr.h the wiring does and could otherwise only
+                    agree with itself. Then MORDRED ITSELF, in this process, on the same
+                    molecules: its own AddHs, its own Gasteiger charges, its own accumulation.
+                    Reported per weight, with mordred's tenth weight `Z` -- the 52 columns that
+                    were the family's last gap in the 865 -- on its own line, so "the nine did
+                    not move" and "the tenth is right" are two readable facts rather than one
+                    merged pass line.
   RingCount (49)    the owner's own binary, cpp/ringcount, fed the same molecules through
   PathCount (11)    cpp/topo_io.h's text format, written here from the molecule as given and the
   TopoCharge (21)   ring set `_rings.rings_for` supplies -- the shipped inputs, not tidier ones.
@@ -34,6 +41,10 @@ So this checks the WIRING, against an oracle outside it, family by family:
   SLogP (1)         mordred is not importable, so the RDKit-graded families still run in `.venv`.
                     `qed` and `SPS` are excluded from the 43: they are NaN by construction today
                     and `--nan-audit` checks that they are NaN and that nothing ELSE is.
+  rdkcore (19)      RDKit's own `Descriptors`, in this process: the thirteen ring predicates,
+                    HeavyAtomMolWt, FractionCSP3, Phi and the three Morgan fingerprint densities.
+                    Graded bitwise, with the 32-in-100,000 repaired-ring-set population split out
+                    and reported the way `constit`'s is.
   Fragments (76)    RDKit's own `Descriptors`, in this process, on the same molecules -- the
                     oracle OUTSIDE the code path, not cpp/frag's standalone harness, which shares
                     src/hume_core/frag_matcher.h with the wiring and so could only confirm that
@@ -219,17 +230,134 @@ def write_ac_io(mols, path: Path) -> None:
     path.write_text("\n".join(out) + "\n")
 
 
+def check_autocorr_mordred(mols, X) -> int:
+    """The 540 Autocorrelation columns against MORDRED ITSELF, in this process.
+
+    WHY THIS EXISTS ALONGSIDE check_autocorr. That one feeds `./cpp/ac` a second, independent
+    H-added graph -- which tests the GRAPH the wiring builds, and nothing else, because `cpp/ac`
+    and the extension both `#include src/hume_core/autocorr.h` and so can only ever agree with
+    each other on the ARITHMETIC. This one asks mordred, so the wiring is graded end to end
+    against the thing it claims to reproduce: mordred does its own `Chem.AddHs`, its own
+    `ComputeGasteigerCharges` on that graph, and its own accumulation, and none of it is ours.
+
+    A DIFFERENT COMPARISON FROM cpp/verify_ac.py, on purpose. That file grades cpp/values_ac.txt,
+    the 98,905-molecule artifact, at the oracle's own `%.12g`. This grades the MATRIX THE PACKAGE
+    RETURNS on a few thousand molecules at full float64 -- so the two answer different questions
+    ("is the block mordred" vs "does featurize_all hand the block the right molecule") and neither
+    stands in for the other.
+
+    GRADED AT A SCALED TOLERANCE, not bitwise, for the reason cpp/verify_ac.py's own comment
+    gives: ATSC and AATSC are sums of CENTRED products, which cancel, so a cell whose true value
+    is near zero is the difference of terms of order one and the two summation orders cannot agree
+    relatively. Same constants as that harness (rel 1e-8, absolute floor 1e-8 of the column's own
+    median scale); the max observed deviation is printed per weight whether or not it passed.
+
+    NaN-NESS IS GRADED SEPARATELY AND STRICTLY. mordred returns an Error object for a lag no pair
+    reaches, and this file maps that to NaN; a cell that is NaN on one side and finite on the
+    other is a failure in its own right, because letting NaN == NaN pass would let a family that
+    returned nothing at all look perfect.
+    """
+    try:
+        _numpy_shim()
+        import mordred
+        from mordred import Autocorrelation as AC, Calculator
+    except Exception as e:                                     # noqa: BLE001
+        print(f"  {'autocorr vs mordred':26s} SKIPPED -- mordred not importable here ({e}); the "
+              f"540 Autocorrelation columns are graded against cpp/ac only in this run")
+        return 0
+    if mordred.__version__ != "1.2.0":
+        raise SystemExit(f"WRONG MORDRED: {mordred.__version__}")
+
+    lo = OFF["autocorr"]
+    hi = min(v for v in OFF.values() if v > lo)
+    ac_names = NAMES[lo:hi]
+    # PULLED APART BY NAME, not rebuilt from a retyped (variant, lag, weight) triple: the names
+    # come from autocorr.h's col_name() through _core, so if the C++ ever emits a name mordred
+    # cannot construct, this raises instead of quietly grading 539 columns.
+    objs = []
+    for nm in ac_names:
+        for v in ("AATSC", "AATS", "ATSC", "ATS", "MATS", "GATS"):   # longest prefix first
+            if nm.startswith(v):
+                k, w = int(nm[len(v)]), nm[len(v) + 1:]
+                objs.append(getattr(AC, v)(k, w))
+                break
+        else:
+            raise SystemExit(f"SPEC DRIFT: {nm!r} is not an Autocorrelation column name")
+    calc = Calculator(objs)
+    assert [str(d) for d in calc.descriptors] == ac_names, "mordred reordered the descriptors"
+
+    W = np.empty((len(mols), len(ac_names)))
+    for i, m in enumerate(mols):
+        for j, v in enumerate(calc(m)):
+            try:
+                W[i, j] = float(v)
+            except Exception:                                  # noqa: BLE001 -- a mordred Error
+                W[i, j] = np.nan
+    got = X[:, lo:hi]
+
+    RTOL, SCALE_FRAC = 1e-8, 1e-8
+    bad_val = np.zeros(len(ac_names), int)
+    bad_nan = np.zeros(len(ac_names), int)
+    worst = np.zeros(len(ac_names))
+    for j in range(len(ac_names)):
+        a, b = got[:, j], W[:, j]
+        na, nb = np.isnan(a), np.isnan(b)
+        bad_nan[j] = int((na != nb).sum())
+        ok = ~na & ~nb
+        if ok.any():
+            scale = float(np.median(np.abs(b[ok])))
+            if not np.isfinite(scale) or scale == 0.0:
+                scale = float(np.max(np.abs(b[ok]))) or 1.0
+            atol = SCALE_FRAC * scale
+            worst[j] = float((np.abs(a[ok] - b[ok]) / np.maximum(np.abs(b[ok]), atol)).max())
+            bad_val[j] = int((np.abs(a[ok] - b[ok]) > atol + RTOL * np.abs(b[ok])).sum())
+
+    # PER WEIGHT, WITH THE NEW ONE MARKED. `Z` was added after the other nine had been verified
+    # and the artifact checksummed, so the useful shape of this table is "did the nine move" next
+    # to "is the tenth right" -- a single family-level EXACT line answers neither.
+    weights = ["c", "d", "dv", "i", "p", "v", "se", "pe", "are", "Z"]
+    print(f"  {'autocorr vs mordred':26s} per weight, {len(mols)} molecules, "
+          f"{len(ac_names)} columns (rel {RTOL:g}, abs floor {SCALE_FRAC:g} x column scale):")
+    bad = 0
+    for w in weights:
+        sel = [j for j, nm in enumerate(ac_names) if _ac_weight(nm) == w]
+        bv, bn = int(bad_val[sel].sum()), int(bad_nan[sel].sum())
+        bad += sum(1 for j in sel if bad_val[j] + bad_nan[j])
+        print(f"    {w:6s} {len(sel):4d} cols  {'EXACT' if not (bv or bn) else 'MISMATCH'}"
+              f"   value err {bv:6d}   NaN err {bn:6d}   max dev {worst[sel].max():.3e}"
+              f"{'   <- NEW' if w == 'Z' else ''}")
+    n_old = sum(1 for nm in ac_names if _ac_weight(nm) != "Z")
+    ok_old = sum(1 for j, nm in enumerate(ac_names)
+                 if _ac_weight(nm) != "Z" and not (bad_val[j] + bad_nan[j]))
+    ok_new = sum(1 for j, nm in enumerate(ac_names)
+                 if _ac_weight(nm) == "Z" and not (bad_val[j] + bad_nan[j]))
+    print(f"    {ok_old} / {n_old} pre-existing columns exact through the wiring"
+          f"   |   {ok_new} / {len(ac_names) - n_old} new `Z` columns exact")
+    return bad
+
+
+def _ac_weight(name: str) -> str:
+    """The weight suffix of an Autocorrelation column name: everything after the lag digit."""
+    for v in ("AATSC", "AATS", "ATSC", "ATS", "MATS", "GATS"):
+        if name.startswith(v):
+            return name[len(v) + 1:]
+    raise ValueError(name)
+
+
 def check_autocorr(mols, X, tmp: Path) -> int:
-    """The 486 Autocorrelation columns against `./cpp/ac`, the binary that produced the evidence.
+    """The 540 Autocorrelation columns against `./cpp/ac`, the binary that produced the evidence.
+
+    THIS CHECKS THE GRAPH, NOT THE ARITHMETIC, and that limit is structural rather than a choice:
+    `cpp/ac` includes src/hume_core/autocorr.h, the same header the extension does, so it can only
+    confirm that the accumulation agrees with itself. What it CAN catch is the wiring -- a wrong
+    H-added graph, a wrong charge, a wrong `nh` -- because the input it is fed here is a second,
+    independent construction (see write_ac_io). check_autocorr_mordred above is the one that grades
+    the arithmetic, against mordred itself, and it is where the 540 are really decided.
 
     GRADED AT %.12g, NOT BITWISE, and the reason is the oracle's format rather than the
     arithmetic: `./ac verify` writes cpp/values_ac.txt with `%.12g`, and that file is the
-    verified artifact, so widening it would change what the evidence is. That the ARITHMETIC is
-    unchanged by the header refactor is established separately and exactly -- cpp/ac.cpp now
-    includes src/hume_core/autocorr.h instead of carrying its own copy, and values_ac.txt over
-    all 98,905 molecules is byte-identical (same md5) before and after. What is left for this to
-    catch is the wiring: a wrong graph, a wrong charge, a wrong `nh`, and every one of those
-    moves a value far above the twelfth digit.
+    verified artifact, so widening it would change what the evidence is. Every wiring fault this
+    can catch moves a value far above the twelfth digit.
     """
     exe = ROOT / "cpp" / "ac"
     if not exe.exists():
@@ -448,6 +576,130 @@ def check_mordred(mols, X) -> int:
     return bad
 
 
+# src/hume_core/rdkcore.h's 19 columns, in the order it emits them. The first thirteen are the
+# ones that read the ring set and therefore have a deliberately-different population; the last six
+# do not.
+RDKCORE_RINGCOLS = 13
+
+
+def check_rdkcore(mols, X) -> int:
+    """The last 19 `rdkit_core` columns against RDKit's own `Descriptors`, in this process.
+
+    THE ORACLE IS OUTSIDE THE CODE PATH, which is the whole discipline of this file: RDKit's
+    Lipinski.cpp / MolProps.cpp / ConnectivityDescriptors.cpp / MorganGenerator.cpp, called here,
+    not a standalone binary that includes src/hume_core/rdkcore.h and could only agree with itself.
+    Sixteen of the nineteen are integer counts or ratios of them, so "exact" is bitwise with
+    nowhere to hide; `HeavyAtomMolWt`, `Phi` and the three `FpDensityMorgan*` are float64 and are
+    ALSO graded bitwise -- they are a sum in atom-index order, a product of two block columns, and
+    an integer over an integer, and none of them has a reordering to hide behind.
+
+    A FRESH `Chem.Mol(m)` PER CALL, AND IT IS NOT DEFENSIVE. `_FingerprintDensity` MEMOISES the
+    fingerprint on the molecule object it is handed, and `all_cols` above has already run
+    `extract_pickles`, which calls `Chem.AssignStereochemistry(cleanIt=True, force=True)` on the
+    caller's molecule. Grading against a mutated, cached oracle is how a wiring harness passes
+    while measuring nothing.
+
+    ONE POPULATION IS DELIBERATELY DIFFERENT, exactly as it is for `constit`. The wiring feeds
+    these columns the REPAIRED ring set (`_rings.rings_for`, the same one RingCount gets) while
+    RDKit reads its own raw `GetSymmSSSR`, and the two differ on 32 of the 100,000 corpus
+    molecules. Those are excluded from the graded population and reported separately, and anything
+    that moves there OUTSIDE the thirteen ring predicates is a failure: the other six do not read
+    the ring SET at all. (`FpDensityMorgan*` reads ring MEMBERSHIP, per atom, through `atom_i`'s
+    `nring` column -- RDKit's own raw count. The repair only ever adds or drops a
+    symmetry-equivalent ring of a size already present, so no atom changes ring membership under
+    it, and those three columns are graded on the whole population.)
+    """
+    # A DEFENSIVE SKIP RATHER THAN A KeyError, because this file is run from two environments
+    # (.venv and .venv-mordred) whose extensions are installed separately: an env that still has
+    # a pre-rdkcore `hume._core` should grade the families it does have and say so, not die.
+    if "rdkcore" not in OFF:
+        print(f"  {'rdkcore vs RDKit':26s} SKIPPED -- this environment's hume._core predates the "
+              f"rdkcore family (no 'rdkcore' offset); reinstall it to grade the 19 columns")
+        return 0
+    lo = OFF["rdkcore"]
+    names = NAMES[lo:lo + 19]
+    fns = dict(Descriptors._descList)
+    missing = [n for n in names if n not in fns]
+    if missing:
+        raise SystemExit(f"SPEC DRIFT: RDKit's Descriptors no longer produces {missing}")
+    want = np.empty((len(mols), len(names)))
+    for j, nm in enumerate(names):
+        f = fns[nm]
+        for i, m in enumerate(mols):
+            want[i, j] = float(f(Chem.Mol(m)))
+    got = X[:, lo:lo + len(names)]
+
+    ringdiff = np.array([sorted(sorted(int(i) for i in r) for r in rings_for(m)) !=
+                         sorted(sorted(int(i) for i in r) for r in Chem.GetSymmSSSR(m))
+                         for m in mols])
+    keep = ~ringdiff
+    # `Phi` IS NOT BITWISE AGAINST RDKit AND WAS NEVER GOING TO BE, and the reason is inherited
+    # rather than introduced here. calcPhi is `kappa1 * kappa2 / heavy` over the SAME kappas
+    # calcKappa1 / calcKappa2 return, and this repo's Kappa1 / Kappa2 have been graded at rtol
+    # 1e-9 against RDKit since they were ported (cpp/verify_hume.py's TOL table) -- HallKierAlpha
+    # falls back to `rB0(Z)/rB0(C) - 1` for the elements RDKit has no tabulated alpha for (As, Sn,
+    # Te and friends are in this corpus) and the last bits of that division differ. So Phi is
+    # graded TWICE, and the two answer different questions:
+    #
+    #   * bitwise against `Kappa1 * Kappa2 / GetNumHeavyAtoms()` computed HERE from the row's own
+    #     Kappa columns -- which is the wiring claim, and the thing this file exists to test;
+    #   * at a tolerance against RDKit's own Phi, printed NEXT TO the same measure on Kappa1 and
+    #     Kappa2 so the deviation can be seen to be theirs and not the multiplication's.
+    j_phi = names.index("Phi")
+    bit = [j for j in range(len(names)) if j != j_phi]
+    bad = report("rdkcore vs RDKit", got[np.ix_(keep, bit)], want[np.ix_(keep, bit)],
+                 [names[j] for j in bit],
+                 note=f"  [{int(ringdiff.sum())} molecules excluded: repaired ring set != "
+                      f"GetSymmSSSR; Phi graded separately below]")
+    k1, k2 = X[:, col("Kappa1")], X[:, col("Kappa2")]
+    A = np.array([m.GetNumHeavyAtoms() for m in mols], dtype=np.float64)
+    bad += report("Phi vs its own Kappa cols", got[:, j_phi:j_phi + 1],
+                  (k1 * k2 / np.where(A > 0, A, 1.0))[:, None], ["Phi"],
+                  note="  [the wiring claim: bitwise, no tolerance]")
+    wk = np.array([[Descriptors.Kappa1(Chem.Mol(m)), Descriptors.Kappa2(Chem.Mol(m))]
+                   for m in mols])
+    bad += report("Phi vs RDKit", got[:, j_phi:j_phi + 1], want[:, j_phi:j_phi + 1], ["Phi"],
+                  tol=1e-9)
+    bad += report("  its inputs vs RDKit", np.column_stack([k1, k2]), wk, ["Kappa1", "Kappa2"],
+                  tol=1e-9, note="  [pre-existing; cpp/verify_hume.py grades these at the same "
+                                 "rtol]")
+    if ringdiff.any():
+        moved = []
+        for j, nm in enumerate(names):
+            if j == j_phi:
+                continue                      # not bitwise anywhere; see above
+            g, w = got[ringdiff, j], want[ringdiff, j]
+            same = (g.view(np.uint64) == w.view(np.uint64)) | (np.isnan(g) & np.isnan(w))
+            if not same.all():
+                moved.append((nm, int((~same).sum())))
+        print(f"  {'  ring-set population':26s} {int(ringdiff.sum())} molecules, columns that "
+              f"move: {[m[0] for m in moved] or 'none'}")
+        for nm, k in moved:
+            ok = names.index(nm) < RDKCORE_RINGCOLS
+            print(f"    {nm:22s} differs on {k}   "
+                  f"{'EXPECTED (reads the ring set)' if ok else 'UNEXPECTED'}")
+        if any(names.index(nm) >= RDKCORE_RINGCOLS for nm, _ in moved):
+            bad += 1
+
+    print(f"\n  per-column, {len(mols)} molecules from cpp/hard.smi "
+          f"(`excl` = the deliberately-different ring-set population):")
+    n_ex = int(ringdiff.sum())
+    for j, nm in enumerate(names):
+        g, w = got[:, j], want[:, j]
+        if j == j_phi:
+            dev = float(np.max(np.abs(g - w) / np.maximum(np.abs(w), 1.0)))
+            print(f"    {nm:26s} {'':6s}   {'':6s}   max rel dev vs RDKit {dev:.3e}"
+                  f"   (rtol 1e-9, inherited from Kappa1/Kappa2)   excl {n_ex}")
+            continue
+        same = (g.view(np.uint64) == w.view(np.uint64)) | (np.isnan(g) & np.isnan(w))
+        n_ok = int(same[keep].sum())
+        nz = int(np.count_nonzero(np.nan_to_num(w)))
+        print(f"    {nm:26s} {n_ok:6d} / {int(keep.sum()):6d}"
+              f"   {'EXACT' if n_ok == int(keep.sum()) else 'MISMATCH'}"
+              f"   nonzero on {nz:6d}   excl {n_ex}")
+    return bad
+
+
 def nan_audit(mols, X) -> int:
     """WHICH cells of the three new families are non-finite, and whether that is the two known
     placeholders or something nobody decided.
@@ -477,8 +729,101 @@ def nan_audit(mols, X) -> int:
 
 
 # --------------------------------------------------------------------------------------------
+def main_rdkcore(n_want: int) -> int:
+    """`cpp/verify_wiring.py N rdkcore` -- the 19 new columns ONLY, over the whole corpus.
+
+    WHY A SEPARATE ENTRY POINT RATHER THAN A BIGGER `N`. House rule 5 wants exactness reported on
+    all 100,000 molecules of cpp/hard.smi; the full run cannot be asked for that, because the VSA
+    arm alone calls 65 RDKit descriptors per molecule and the mordred arm is minutes per thousand.
+    This runs the same `check_rdkcore` -- same oracle, same code path, same in-process comparison
+    -- in batches over the whole file, and accumulates.
+    """
+    smis = [s for s in (ROOT / "cpp" / "hard.smi").read_text().split("\n") if s][:n_want]
+    print(f"{len(smis)} molecules from cpp/hard.smi, rdkcore only\n")
+    if "rdkcore" not in OFF:
+        raise SystemExit("this environment's hume._core has no rdkcore family; reinstall it")
+    lo = OFF["rdkcore"]
+    names = NAMES[lo:lo + 19]
+    fns = dict(Descriptors._descList)
+    j_phi = names.index("Phi")
+    n_ok = [0] * len(names)
+    n_graded = 0
+    n_excl = 0
+    nz = [0] * len(names)
+    phi_dev = 0.0
+    kap_dev = 0.0
+    moved_excl: dict[str, int] = {}
+    B = 2000
+    for lo_i in range(0, len(smis), B):
+        chunk = [Chem.MolFromSmiles(t) for t in smis[lo_i:lo_i + B]]
+        if any(m is None for m in chunk):
+            raise ValueError("unparseable SMILES in the corpus")
+        X = all_cols(chunk)
+        got = X[:, lo:lo + len(names)]
+        want = np.empty((len(chunk), len(names)))
+        for j, nm in enumerate(names):
+            f = fns[nm]
+            for i, m in enumerate(chunk):
+                want[i, j] = float(f(Chem.Mol(m)))
+        ringdiff = np.array([sorted(sorted(int(i) for i in r) for r in rings_for(m)) !=
+                             sorted(sorted(int(i) for i in r) for r in Chem.GetSymmSSSR(m))
+                             for m in chunk])
+        keep = ~ringdiff
+        n_excl += int(ringdiff.sum())
+        n_graded += int(keep.sum())
+        k1 = X[:, col("Kappa1")]
+        k2 = X[:, col("Kappa2")]
+        wk = np.array([[Descriptors.Kappa1(Chem.Mol(m)), Descriptors.Kappa2(Chem.Mol(m))]
+                       for m in chunk])
+        kap_dev = max(kap_dev, float(np.max(np.abs(np.column_stack([k1, k2]) - wk) /
+                                            np.maximum(np.abs(wk), 1.0))))
+        for j in range(len(names)):
+            g, w = got[:, j], want[:, j]
+            nz[j] += int(np.count_nonzero(np.nan_to_num(w)))
+            if j == j_phi:
+                phi_dev = max(phi_dev, float(np.max(np.abs(g - w) /
+                                                    np.maximum(np.abs(w), 1.0))))
+                # the wiring claim is still bitwise, on every molecule
+                A = np.array([m.GetNumHeavyAtoms() for m in chunk], dtype=np.float64)
+                own = k1 * k2 / np.where(A > 0, A, 1.0)
+                n_ok[j] += int(np.count_nonzero(g.view(np.uint64) == own.view(np.uint64)))
+                continue
+            same = (g.view(np.uint64) == w.view(np.uint64)) | (np.isnan(g) & np.isnan(w))
+            n_ok[j] += int(same[keep].sum())
+            if ringdiff.any() and not same[ringdiff].all():
+                moved_excl[names[j]] = moved_excl.get(names[j], 0) + int((~same[ringdiff]).sum())
+        print(f"  {lo_i + len(chunk):7d} / {len(smis)} ...", flush=True)
+
+    bad = 0
+    print(f"\n  per-column, {len(smis)} molecules, {n_graded} graded and {n_excl} on the "
+          f"deliberately-different ring set:")
+    for j, nm in enumerate(names):
+        if j == j_phi:
+            ok = n_ok[j] == len(smis)
+            print(f"    {nm:26s} {n_ok[j]:7d} / {len(smis):7d} bitwise vs its own Kappa columns"
+                  f"   {'EXACT' if ok else 'MISMATCH'}   max rel dev vs RDKit {phi_dev:.3e}")
+            bad += not ok
+            bad += phi_dev > 1e-9
+            continue
+        ok = n_ok[j] == n_graded
+        print(f"    {nm:26s} {n_ok[j]:7d} / {n_graded:7d}"
+              f"   {'EXACT' if ok else 'MISMATCH'}   nonzero on {nz[j]:7d}")
+        bad += not ok
+    print(f"    {'Kappa1/Kappa2 vs RDKit':26s} max rel dev {kap_dev:.3e}  (rtol 1e-9, "
+          f"pre-existing -- this is what Phi inherits)")
+    print(f"\n  on the {n_excl} excluded molecules the columns that move are: "
+          f"{moved_excl or 'none'}")
+    for nm in moved_excl:
+        if names.index(nm) >= RDKCORE_RINGCOLS:
+            print(f"    UNEXPECTED: {nm} does not read the ring set")
+            bad += 1
+    print("\nRDKCORE EXACT" if not bad else f"\n{bad} COLUMNS DISAGREE")
+    return 0 if not bad else 1
+
+
 def main() -> int:
     n_want = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
+    only = sys.argv[2] if len(sys.argv) > 2 else None
     # THE NUMERIC CANARY, not the version banner. cpp/verify_hume.py's note in full: a process can
     # print `rdkit 2025.09.2` and execute another version's arithmetic out of unlinked-but-still-
     # mapped dylibs, which has happened in this repo. The number is computed here, by this
@@ -491,6 +836,8 @@ def main() -> int:
         raise SystemExit(f"CANARY MISMATCH: {canary!r}, expected -0.07665884800196521 (rdkit "
                          f"2025.09.2). The RDKit executing is not the one on the label.")
     print(f"{_core.N_ALL_COLS} columns, offsets {dict(OFF)}\n")
+    if only == "rdkcore":
+        return main_rdkcore(n_want)
 
     smis = [s for s in (ROOT / "cpp" / "hard.smi").read_text().split("\n") if s]
     rng = np.random.default_rng(0)
@@ -573,6 +920,12 @@ def main() -> int:
             names = NAMES[lo:lo + n_cols]
             bad += report(f"{name} vs cpp/{name}", X[:, lo:lo + n_cols], want, names, tol)
         bad += check_autocorr(mols, X, tmp)
+    # TWO ORACLES FOR ONE FAMILY, and only the second grades the arithmetic. `cpp/ac` above shares
+    # src/hume_core/autocorr.h with the wiring and can only confirm the accumulation agrees with
+    # itself; mordred is outside the code path entirely, builds its own H-added graph and its own
+    # charges, and is what the 540 columns claim to reproduce. Needs the mordred interpreter, and
+    # says so rather than passing silently when it is not there.
+    bad += check_autocorr_mordred(mols, X)
 
     # ---- InformationContent: numbering invariance, which is the only well-posed claim ---------
     # The family's own width, not "everything after it" -- Autocorrelation now sits below
@@ -617,6 +970,10 @@ def main() -> int:
         print(f"    {nm:24s} {n_ok:6d} / {len(mols):6d}"
               f"   {'EXACT' if n_ok == len(mols) else 'MISMATCH'}"
               f"   nonzero on {nz}")
+
+    # ---- the last 19 rdkit_core columns, against RDKit's own Descriptors ---------------------
+    print()
+    bad += check_rdkcore(mols, X)
 
     # ---- the three mordred families and the alias --------------------------------------------
     print()

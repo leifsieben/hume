@@ -1,8 +1,15 @@
 """Is the C++ Autocorrelation block exactly Mordred?
 
-    ./ac verify mols_h.txt && python cpp/verify_ac.py
+    cd cpp && ./ac verify mols_h.txt
+    .venv-mordred/bin/python cpp/verify_ac.py [n_mols]
 
-Compares all 486 cells (6 variants x 9 lags x 9 weights) per molecule against Mordred itself,
+NEEDS THE MORDRED INTERPRETER, not `.venv`: mordred 1.2.0 imports `distutils` (python 3.11 only)
+and needs numpy 1.x. `.venv-mordred` is that environment. Asking for it wrongly fails SILENTLY --
+`uv` resolves mordred DOWN to 0.6.0, a different library, rather than erroring, when numpy 2 is
+also requested -- so this file checks `mordred.__version__` and refuses to grade anything else,
+and prints RDKit's numeric canary rather than trusting the version banner.
+
+Compares all 540 cells (6 variants x 9 lags x 10 weights) per molecule against Mordred itself,
 not against ac_reference.py -- the NumPy reference exists to pin the spec, and checking the C++
 against it would only prove the two agree with each other.
 
@@ -10,19 +17,38 @@ NaN is a VALUE here, not a failure: Mordred returns NaN for a lag no pair reache
 molecule small enough that lag 8 is empty must produce NaN on both sides. Mismatched
 NaN-ness is counted as an error in its own right, because silently treating NaN == NaN as a
 pass would let a block that returns nothing look perfect.
+
+THE 486 ARE RE-GRADED ALONGSIDE THE 54, and the split is printed. `Z`, mordred's tenth weight,
+was added after the 486-column values_ac.txt had already been verified and checksummed, so this
+run has two jobs: show the new weight is right, and show the nine that were already right did
+not move. A pass line that merged them would only prove the first. The `weight` table below is
+per weight for that reason, and the summary counts `Z` separately from the rest.
+
+ALL 54 `Z` COLUMNS ARE GRADED, BUT ONLY 52 ARE MEMBERS OF THE 865. `MATS0Z` and `GATS0Z` are
+computable -- mordred answers 1.0 and 0.0 for them, as it does for `MATS0c`/`GATS0c` -- they
+simply do not survive into the deduplicated census, the same way the other weights' lag-0
+MATS/GATS do not. So they are checked here like any other column and counted as coverage
+nowhere: 54 graded, at most 52 ever claimed as coverage.
 """
 from __future__ import annotations
 
+import multiprocessing as mp
+import sys
 from pathlib import Path
 
 import numpy as np
+import rdkit
 from rdkit import Chem, RDLogger
+from rdkit.Chem import Descriptors
 
 RDLogger.DisableLog("rdApp.*")
 HERE = Path(__file__).resolve().parent
 VARIANTS = ["ATS", "AATS", "ATSC", "AATSC", "MATS", "GATS"]
 LAGS = list(range(9))
-WEIGHTS = ["c", "d", "dv", "i", "p", "v", "se", "pe", "are"]
+# `Z` LAST, matching cpp/ac_weights.h's append rather than mordred's own getter order: the point
+# of appending is that none of the 486 pre-existing columns changes name or meaning.
+WEIGHTS = ["c", "d", "dv", "i", "p", "v", "se", "pe", "are", "Z"]
+NEW = "Z"      # the weight added after the 486-column artifact was verified; reported separately
 # TOLERANCE IS SCALED PER COLUMN, because these are SUMS WITH CANCELLATION and neither a pure
 # relative nor a pure absolute test is correct for them.
 #
@@ -38,24 +64,89 @@ WEIGHTS = ["c", "d", "dv", "i", "p", "v", "se", "pe", "are"]
 # harness found elsewhere were off by 1e-1.
 RTOL, SCALE_FRAC = 1e-8, 1e-8
 
+NAMES = [(v, k, w) for v in VARIANTS for k in LAGS for w in WEIGHTS]
+CANARY_SMI = "O=C1CCNCCNNNCCNCCC(=O)c2ccc(o2)COCOCc2ccc1o2"
+CANARY = -0.07665884800196521
 
-def main() -> None:
+_CALC = None
+
+
+def _init() -> None:
+    """One Calculator per worker. Building it is not free and it is stateless across molecules."""
+    global _CALC
     from mordred import Autocorrelation as AC, Calculator
 
-    smis = HERE.joinpath("mols_h.smi").read_text().split()
-    got = np.loadtxt(HERE / "values_ac.txt", ndmin=2)
-    names = [(v, k, w) for v in VARIANTS for k in LAGS for w in WEIGHTS]
-    assert got.shape[1] == len(names), f"C++ wrote {got.shape[1]}, expected {len(names)}"
-    assert len(smis) == len(got), f"{len(smis)} smiles vs {len(got)} rows"
+    RDLogger.DisableLog("rdApp.*")
+    _CALC = Calculator([getattr(AC, v)(k, w) for v, k, w in NAMES])
 
-    calc = Calculator([getattr(AC, v)(k, w) for v, k, w in names])
-    ref = np.full_like(got, np.nan)
+
+def _rows(smis: list[str]) -> np.ndarray:
+    out = np.full((len(smis), len(NAMES)), np.nan)
     for i, s in enumerate(smis):
-        for j, r in enumerate(calc(Chem.MolFromSmiles(s))):
+        for j, r in enumerate(_CALC(Chem.MolFromSmiles(s))):
             try:
-                ref[i, j] = float(r)
-            except Exception:
+                out[i, j] = float(r)
+            except Exception:      # noqa: BLE001 -- a mordred Error object; NaN is the answer
                 pass
+    return out
+
+
+def read_values(path: Path, n_cols: int, n_rows: int) -> np.ndarray:
+    """values_ac.txt, streamed a line at a time.
+
+    NOT np.loadtxt: the 540-column file is 708 MB of text and loadtxt builds it through Python
+    objects. The row count and column count are both asserted per line, so a short or long row
+    stops the run here rather than shifting every comparison after it -- the same discipline
+    ac.cpp's loader applies to its input.
+    """
+    out = np.empty((n_rows, n_cols))
+    with path.open() as f:
+        for i, line in enumerate(f):
+            if i >= n_rows:
+                break
+            row = np.fromstring(line, sep=" ")
+            if row.size != n_cols:
+                raise ValueError(f"row {i} has {row.size} columns, expected {n_cols}")
+            out[i] = row
+    return out
+
+
+def main() -> None:
+    import mordred
+
+    n_want = int(sys.argv[1]) if len(sys.argv) > 1 else 0
+    # THE NUMERIC CANARY, checked in the interpreter that computes the reference. PORT_STATUS.md:
+    # a process can print the right RDKit version and execute another one's arithmetic out of
+    # unlinked-but-still-mapped dylibs. A version banner is not evidence; this number is.
+    canary = Descriptors.BCUT2D_MRLOW(Chem.MolFromSmiles(CANARY_SMI))
+    print(f"mordred {mordred.__version__}   rdkit {rdkit.__version__}   numpy {np.__version__}   "
+          f"python {sys.version.split()[0]}   CANARY {canary!r}")
+    if canary != CANARY:
+        raise SystemExit(f"CANARY MISMATCH: {canary!r}, expected {CANARY!r}. The RDKit executing "
+                         f"is not the one on the label.")
+    if mordred.__version__ != "1.2.0":
+        raise SystemExit(f"WRONG MORDRED: {mordred.__version__}. uv resolves mordred DOWN to "
+                         f"0.6.0 next to numpy 2 rather than erroring.")
+
+    smis = HERE.joinpath("mols_h.smi").read_text().split()
+    n_file = sum(1 for _ in HERE.joinpath("values_ac.txt").open())
+    assert len(smis) == n_file, f"{len(smis)} smiles vs {n_file} rows in values_ac.txt"
+    if n_want:
+        smis = smis[:n_want]
+    names = NAMES
+    got = read_values(HERE / "values_ac.txt", len(names), len(smis))
+
+    # ACROSS PROCESSES, because mordred is ~78 ms/mol here and the corpus is 98,905 molecules --
+    # over two hours on one core, and the whole point of re-running it is that nobody skips it.
+    # Chunks are contiguous slices so the output order is the input order by construction.
+    nproc = max(1, min(mp.cpu_count() - 2, 10))
+    step = max(1, (len(smis) + nproc * 8 - 1) // (nproc * 8))
+    chunks = [smis[i:i + step] for i in range(0, len(smis), step)]
+    print(f"  mordred reference: {len(smis):,} molecules over {nproc} processes, "
+          f"{len(chunks)} chunks")
+    with mp.Pool(nproc, initializer=_init) as pool:
+        ref = np.vstack(pool.map(_rows, chunks))
+    assert ref.shape == got.shape, f"{ref.shape} vs {got.shape}"
 
     bad_val = np.zeros(len(names), int)
     bad_nan = np.zeros(len(names), int)
@@ -82,6 +173,26 @@ def main() -> None:
         bv, bn = int(bad_val[sel].sum()), int(bad_nan[sel].sum())
         ok_all &= (bv == 0 and bn == 0)
         print(f"  {v:8s} {len(sel)*len(smis):7d} {bv:10d} {bn:9d} {worst[sel].max():13.3e}")
+
+    # PER WEIGHT, AND THE NEW ONE ON ITS OWN LINE. The variant table above answers "is the block
+    # right"; this one answers the question that made regenerating the artifact worth doing --
+    # "did adding `Z` move any of the nine that were already verified". A merged pass line cannot
+    # distinguish "the 486 are still exact" from "the 486 were re-graded and happened to pass
+    # because the whole file was rewritten consistently".
+    print(f"\n  {'weight':8s} {'cells':>7s} {'value err':>10s} {'NaN err':>9s} {'max rel dev':>13s}")
+    for w in WEIGHTS:
+        sel = [j for j, nm in enumerate(names) if nm[2] == w]
+        bv, bn = int(bad_val[sel].sum()), int(bad_nan[sel].sum())
+        mark = "   <- NEW" if w == NEW else ""
+        print(f"  {w:8s} {len(sel)*len(smis):7d} {bv:10d} {bn:9d} "
+              f"{worst[sel].max():13.3e}{mark}")
+
+    old_cols = [j for j, nm in enumerate(names) if nm[2] != NEW]
+    new_cols = [j for j, nm in enumerate(names) if nm[2] == NEW]
+    old_ok = int(sum(bad_val[j] + bad_nan[j] == 0 for j in old_cols))
+    new_ok = int(sum(bad_val[j] + bad_nan[j] == 0 for j in new_cols))
+    print(f"\n  {old_ok} / {len(old_cols)} pre-existing columns exact"
+          f"   |   {new_ok} / {len(new_cols)} new `{NEW}` columns exact")
 
     if not ok_all:
         j = int(np.argmax(bad_val + bad_nan))

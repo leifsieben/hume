@@ -7,7 +7,7 @@ held against each other is the reader, and only the reader.
 
   1. THE BOUNDARY, field by field. `extract()` builds eight arrays by asking each molecule ~300
      questions through RDKit's Python API; `_core.pickle_extract()` builds the same eight from
-     `m.ToBinary()` with no Python call per atom at all. Every one of the 17 columns is compared
+     `m.ToBinary()` with no Python call per atom at all. Every one of the 18 columns is compared
      RAW -- int32 equality, and float64 compared through a uint64 view, which is stricter than
      `==` because it also pins the bit pattern of a NaN. No tolerance: both sides are supposed
      to be the same numbers, not close ones, and a tolerance here could only hide a wrong field.
@@ -55,6 +55,12 @@ FIELDS = [
     (4, 0, "atom mass"), (4, 1, "atom Gasteiger"),
     (5, 0, "bond u"), (5, 1, "bond v"), (5, 2, "bond conjugated"), (5, 3, "bond in-ring"),
     (5, 4, "bond SMARTS code"),
+    # RDKit's Bond::BondType INTEGER. On the reference side it is `int(Bond.GetBondType())`; on
+    # the pickle side it is the type byte the reader already had in hand for the SMARTS code and
+    # was discarding. The Morgan fingerprint hashes this enum, and the SMARTS code cannot stand in
+    # for it -- it maps DATIVE and SINGLE to the same zero, and cpp/hard.smi has 114 dative bonds.
+    # Same shape of finding as `atom total valence`, and this row is the evidence for it.
+    (5, 5, "bond type"),
     (6, -1, "bond E/Z"), (7, -1, "bond order"),
     # THE RING CSR. Under the dense design both boundaries fill these from the same
     # src/hume/_rings.py, so they are equal by construction and this is a standing assertion

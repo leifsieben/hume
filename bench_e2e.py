@@ -184,12 +184,19 @@ def _ecfp_step(mols):
 def _survivors_covered(cols) -> int:
     """How many of the 865 deduplicated columns these names actually are.
 
-    THE COLUMN COUNT AND THE RATIO MUST NOT BE READ APART. `hume.ALL_COLUMNS` has 529 entries but
-    they are not 529 of the 865: about 160 of them are HUME-specific (`SATS*`, `RW*`, `conj_*`)
-    or are EState types the r>0.99 dedupe threw away, and one family the baseline computes --
-    Autocorrelation, 419 columns -- is not in there at all. Counting the emitted columns instead
-    of the covered ones would overstate the position by roughly a factor of two, which is exactly
-    the error PORT_STATUS.md's "warning about the number 182" is about.
+    THE COLUMN COUNT AND THE RATIO MUST NOT BE READ APART. `hume.ALL_COLUMNS` has 1,244 entries
+    but they are not 1,244 of the 865: 842 of them are, and the rest are HUME-specific (`SATS*`,
+    `RW*`, `conj_*`), EState types the r>0.99 dedupe threw away, or Autocorrelation cells the
+    dedupe dropped (the block emits 540 and the census keeps 419 -- every `MATS0*`/`GATS0*`
+    among them). Counting the emitted columns instead of the covered ones would overstate the
+    position by roughly a factor of 1.5, which is the error PORT_STATUS.md's "warning about the
+    number 182" is about.
+
+    NAMED IS NOT VALUE-PRODUCING, and the caller decides which it wants. Pass `ALL_COLUMNS` for
+    the named count (842) and `set(ALL_COLUMNS) - set(PENDING_COLUMNS)` for the columns that
+    actually produce a number (840; `qed` and `SPS` are NaN on every molecule today). This
+    function cannot tell them apart -- it only intersects names -- so the distinction has to be
+    made in what is handed to it.
 
     THE MATCH IS CASE-INSENSITIVE, and that is a fix for exactly one family rather than a general
     loosening. `_columns.py` names RDKit's connectivity indices `chi0n`..`chi4v` (lower case, as

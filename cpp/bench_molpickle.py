@@ -85,7 +85,7 @@ def a_rings_only(mols):
 def a_hgraph_only(mols):
     """The Autocorrelation molecule alone: AddHs, its OWN Gasteiger charges, its own blob.
 
-    486 of the 1,015 columns describe `Chem.AddHs(m)`, and its charges are not derivable from the
+    540 of the emitted columns describe `Chem.AddHs(m)`, and its charges are not derivable from the
     heavy-atom molecule's -- PEOE is not invariant to making hydrogens explicit (5,221 of 42,359
     heavy atoms move, and 7,395 of 38,326 hydrogen charges differ from `_GasteigerHCharge / nH`).
     So a second molecule is charged and serialised. This is what that costs.

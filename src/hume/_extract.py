@@ -41,7 +41,7 @@ TopologicalCharge would see them. That asymmetry is mordred's, and it is reprodu
     atom_i    int32   (n_atoms, 10)  Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP,
                                      ring count, total valence
     atom_d    float64 (n_atoms, 2)   mass, Gasteiger charge
-    bond_i    int32   (n_bonds, 5)   u, v, conjugated, in-ring, SMARTS bond code
+    bond_i    int32   (n_bonds, 6)   u, v, conjugated, in-ring, SMARTS bond code, BondType int
     bond_s    int32   (n_bonds,)     E/Z as +/-1, 0 for none
     bond_d    float64 (n_bonds,)     bond order
     rings                            the ring SET as a two-level CSR; see `Rings` below
@@ -59,6 +59,16 @@ folds aromatic-bond contributions and hydrogens together under its own rounding 
 `[nH]` has two aromatic bonds summing to 3.0 and one H, and RDKit's total valence is 3, not 4.
 So it is one more RDKit call per atom here, and on the pickle path it is not a new field at all
 -- the blob already carries the explicit and implicit valences (see src/hume_core/molpickle.h).
+
+THE BOND TYPE IS CARRIED FOR THE SAME REASON, AND IT IS NOT THE SMARTS CODE. The fifth `bond_i`
+column answers SMARTS' two independent questions -- is the ORDER one SMARTS can name, and is the
+AROMATIC FLAG set -- and deliberately collapses everything else to zero, which is exact for every
+query in cpp/frag_program.h. RDKit's Morgan fingerprint hashes the `Bond::BondType` ENUM VALUE
+instead, so that collapse is not exact for it: cpp/hard.smi contains 114 DATIVE bonds, which are
+type 17 to RDKit and indistinguishable from an unnamed order here. The sixth column is that
+integer, verbatim. It costs one `int()` on a Boost enum already in hand on this path and NOTHING
+at all on the pickle path -- src/hume_core/molpickle.h was already reading the byte and throwing
+it away, the same finding `tval` produced.
 
 CRIPPEN IS NOT IN THE ARRAYS ANY MORE. It used to be two more `atom_d` columns filled by
 `rdMolDescriptors._CalcCrippenContribs`, which cost 78 us/mol -- 42% of this module -- to run
@@ -101,7 +111,7 @@ from rdkit.Chem import rdPartialCharges
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 
-N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 10, 2, 5
+N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 10, 2, 6
 
 # The bond half of the Crippen typer's input, byte-for-byte cpp/export_crippen.py's bond_code():
 # a bit for the bond ORDER when it is one of the three SMARTS knows how to name, and a separate
@@ -229,6 +239,7 @@ def extract(mols) -> Batch:
     bconj: list[int] = []
     bring: list[int] = []
     bcode: list[int] = []
+    btype: list[int] = []
     bs: list[int] = []
     bd: list[float] = []
     na = nb = 0
@@ -296,6 +307,9 @@ def extract(mols) -> Batch:
             bconj.append(b.GetIsConjugated())
             bring.append(b.IsInRing())
             bcode.append(code)
+            # RDKit's Bond::BondType INTEGER, the sixth column. `bt` is already in hand for the
+            # SMARTS code above, so this is an int() on a Boost enum and not a second RDKit call.
+            btype.append(int(bt))
             bs.append(_EZ.get(b.GetStereo(), 0))
             order = _ORDER.get(bt)
             if order is None:
@@ -333,7 +347,7 @@ def extract(mols) -> Batch:
     atom_d[:, 0] = mass
     atom_d[:, 1] = charge_a
     bond_i = np.empty((nb, N_BOND_INT), dtype=np.int32)
-    for col, src in enumerate((bu, bv, bconj, bring, bcode)):
+    for col, src in enumerate((bu, bv, bconj, bring, bcode, btype)):
         bond_i[:, col] = src
 
     return Batch(
@@ -386,7 +400,7 @@ class Pickles:
     two are trivially equal by construction -- which cpp/verify_molpickle.py asserts anyway.
 
     `h_blobs` IS A SECOND MOLECULE, NOT A SECOND VIEW. mordred sets `explicit_hydrogens = True`
-    for Autocorrelation, so its 486 columns describe `Chem.AddHs(m)` -- 55 atoms where the rest
+    for Autocorrelation, so its 540 columns describe `Chem.AddHs(m)` -- 55 atoms where the rest
     of the pipeline sees 29. The TOPOLOGY of that graph is derivable in C++ from `nH` (which is
     exactly what infocontent.h's `HGraph` does, and it is not shared with this: infocontent needs
     the H graph and no charges, so deriving is free for it and would buy nothing here). What is
@@ -423,7 +437,7 @@ def extract_pickles(mols) -> Pickles:
         # The Autocorrelation molecule, first, because AddHs copies and must not inherit the
         # heavy-atom charges we are about to compute -- it needs its own. `nIter` is left at
         # RDKit's default here and not 12, because cpp/export_ac.py calls it that way and that
-        # is the call the 486 columns were verified against.
+        # is the call the 540 columns were verified against.
         mh = Chem.AddHs(m)
         try:
             rdPartialCharges.ComputeGasteigerCharges(mh)

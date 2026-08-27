@@ -136,6 +136,14 @@ inline constexpr int HYB_SP3 = 4;
 // in one place and forgotten in another.
 inline constexpr std::size_t N_ATOM_INT = 10;
 
+// Columns per row of `bond_i`, for the same reason. The sixth is RDKit's Bond::BondType INTEGER,
+// which is NOT recoverable from the five that were already there: the SMARTS code collapses every
+// type SMARTS cannot name to the same zero, and cpp/hard.smi carries 114 DATIVE bonds (type 17)
+// that a SINGLE-with-no-order-bit is indistinguishable from. It costs no bytes on this path --
+// the pickler already writes the type byte and the loop below already reads it into `bt`; it is
+// only being kept rather than thrown away, exactly as `tval` was.
+inline constexpr std::size_t N_BOND_INT = 6;
+
 class Error : public std::runtime_error {
  public:
   explicit Error(const std::string &m) : std::runtime_error("hume molpickle: " + m) {}
@@ -279,7 +287,7 @@ struct Work {
 struct Sink {
   int *atom_i;      // (n, 10) Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
   double *atom_d;   // (n, 2)  mass, gasteiger
-  int *bond_i;      // (nb, 5) u, v, conjugated, in-ring, SMARTS bond code
+  int *bond_i;      // (nb, 6) u, v, conjugated, in-ring, SMARTS bond code, BondType int
   int *bond_s;      // (nb,)   E/Z as +/-1
   double *bond_d;   // (nb,)   bond order
   // Appended to, not written by index. The molecule's ring count is the growth of `ring_len`
@@ -431,13 +439,16 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
       r.str(l);
     }
 
-    int *row = BI + (std::size_t)b * 5;
+    int *row = BI + (std::size_t)b * N_BOND_INT;
     row[0] = u;
     row[1] = v;
     row[2] = (flags & 0x20) ? 1 : 0;          // conjugated
     row[3] = 0;                               // in-ring, from the ring section
     row[4] = (bt == BT_SINGLE ? BIT_SINGLE : bt == BT_DOUBLE ? BIT_DOUBLE
               : bt == BT_TRIPLE ? BIT_TRIPLE : 0) | ((flags & 0x40) ? BIT_AROM : 0);
+    // Bond::BondType, verbatim. The pickler omits the byte only when the type is SINGLE, which is
+    // the default `bt` above, so this is RDKit's own integer on every bond.
+    row[5] = bt;
     out.bond_s[b] = stereo;
     out.bond_d[b] = order_of(bt);
     AI[(std::size_t)u * N_ATOM_INT + 1]++;
@@ -448,15 +459,15 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
   // RDKit's own _addRingInfoFromPickle does. CSR, counting-sorted, from the caller's scratch.
   w.adj_start.assign(n_atoms + 1, 0);
   for (int b = 0; b < n_bonds; b++) {
-    w.adj_start[BI[(std::size_t)b * 5] + 1]++;
-    w.adj_start[BI[(std::size_t)b * 5 + 1] + 1]++;
+    w.adj_start[BI[(std::size_t)b * N_BOND_INT] + 1]++;
+    w.adj_start[BI[(std::size_t)b * N_BOND_INT + 1] + 1]++;
   }
   for (int i = 0; i < n_atoms; i++) w.adj_start[i + 1] += w.adj_start[i];
   w.adj_nbr.resize(2 * (std::size_t)n_bonds);
   w.adj_bond.resize(2 * (std::size_t)n_bonds);
   w.cur.assign(w.adj_start.begin(), w.adj_start.end() - 1);
   for (int b = 0; b < n_bonds; b++) {
-    const int u = BI[(std::size_t)b * 5], v = BI[(std::size_t)b * 5 + 1];
+    const int u = BI[(std::size_t)b * N_BOND_INT], v = BI[(std::size_t)b * N_BOND_INT + 1];
     w.adj_nbr[w.cur[u]] = v;
     w.adj_bond[w.cur[u]++] = b;
     w.adj_nbr[w.cur[v]] = u;
@@ -493,7 +504,7 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
             bool found = false;
             for (int e = w.adj_start[a]; e < w.adj_start[a + 1]; e++) {
               if (w.adj_nbr[e] == b2) {
-                BI[(std::size_t)w.adj_bond[e] * 5 + 3] = 1;
+                BI[(std::size_t)w.adj_bond[e] * N_BOND_INT + 3] = 1;
                 found = true;
                 break;
               }

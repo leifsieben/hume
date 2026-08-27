@@ -320,6 +320,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -354,8 +355,27 @@ inline const char *const *columnNames() {
 // Optional instrumentation. `nullptr` in production and the pointer is only tested once per
 // section, so the normal path pays nothing measurable; the profiling path pays ~18 chrono reads
 // per molecule, which is under 1% of the figure being measured. Used by `infocontent profile`.
+// PROFILING CLOCK: THREAD CPU TIME, not wall. On a contended box a steady_clock read charges
+// every phase for whatever descheduling happened to land inside it, and this machine has run at
+// load 130 on 12 cores -- a wall-clock profile there reported the same phase at 74 us and at 601
+// us on consecutive runs of the same binary on the same input. CLOCK_THREAD_CPUTIME_ID does not
+// tick while the thread is off-CPU, so the breakdown is stable to a few percent under exactly
+// the same load. Instrumentation only; `prof` is nullptr in production.
+struct CpuClock {
+  static double nowUs() {
+#if defined(CLOCK_THREAD_CPUTIME_ID)
+    timespec ts;
+    clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts);
+    return (double)ts.tv_sec * 1e6 + (double)ts.tv_nsec * 1e-3;
+#else
+    return std::chrono::duration<double, std::micro>(
+               std::chrono::steady_clock::now().time_since_epoch()).count();
+#endif
+  }
+};
+
 struct Profile {
-  double build = 0, ipc = 0;
+  double build = 0, dfs = 0, ipc = 0;   // `dfs` is the ONE traversal that serves all six orders
   double codes[N_ORDERS] = {}, group[N_ORDERS] = {}, entropy[N_ORDERS] = {};
   long long paths[N_ORDERS] = {}, classes[N_ORDERS] = {}, mols = 0, atoms = 0;
 };
@@ -416,6 +436,7 @@ struct HGraph {
   std::vector<uint8_t> z, deg;
   std::vector<int32_t> start, nbr;
   std::vector<uint8_t> sym;
+  std::vector<int32_t> cnt, cur;      // scratch, members so a reused HGraph stops allocating
 
   void build(const Mol &m) {
     int nhtot = 0;
@@ -423,14 +444,14 @@ struct HGraph {
     N = m.n + nhtot;
     z.assign(N, 1); deg.assign(N, 1);
     for (int i = 0; i < m.n; i++) z[i] = m.z[i];
-    std::vector<int32_t> cnt(N, 0);
+    cnt.assign(N, 0);
     for (int b = 0; b < m.nb; b++) { cnt[m.bu[b]]++; cnt[m.bv[b]]++; }
     for (int i = 0; i < m.n; i++) cnt[i] += m.nh[i];       // the C-H bonds
     for (int q = m.n; q < N; q++) cnt[q] = 1;              // every hydrogen is terminal
     start.assign(N + 1, 0);
     for (int i = 0; i < N; i++) start[i + 1] = start[i] + cnt[i];
     nbr.assign(start[N], 0); sym.assign(start[N], SYM_SINGLE);
-    std::vector<int32_t> cur(start.begin(), start.end() - 1);
+    cur.assign(start.begin(), start.end() - 1);
     for (int b = 0; b < m.nb; b++) {
       const uint8_t s = symbolFromCode(m.bcode[b]);
       const int u = m.bu[b], v = m.bv[b];
@@ -491,10 +512,10 @@ inline double shannonEntropy(const double *a, const double *w, size_t k, double 
 // B: the KEKULIZED bond-order sum over the H-added mol, rebuilt without kekulizing. See the
 // header note. Verified 100,000/100,000 against mordred's own value on cpp/hard.smi.
 // --------------------------------------------------------------------------------------------
-inline double kekuleBondOrderSum(const Mol &m) {
+inline double kekuleBondOrderSum(const Mol &m, std::vector<double> &used) {
   double tot = 0.0;
   int narom = 0;
-  std::vector<double> used(m.n, 0.0);
+  used.assign(m.n, 0.0);
   for (int i = 0; i < m.n; i++) { tot += m.nh[i]; used[i] += m.nh[i]; }  // the C-H bonds
   for (int b = 0; b < m.nb; b++) {
     const int u = m.bu[b], v = m.bv[b], code = m.bcode[b];
@@ -526,78 +547,180 @@ inline double kekuleBondOrderSum(const Mol &m) {
 // The atom-equivalence codes, repaired. A code is the sorted multiset of the root-to-leaf paths
 // of the DISTANCE-LAYERED tree (repair R2), each path a run of (Z, degree) nodes joined by bond
 // SYMBOLS (repair R1), 0xFF-terminated and zero-padded so that concatenation is injective.
+//
+// ============================================================================================
+// PKey: THAT KEY PACKED INTO 128 BITS. IT IS AN INJECTION, NOT A HASH. Read this before
+// trusting it, because the obvious version of this optimisation is not safe.
+// ============================================================================================
+//
+// The key used to be 24 BYTES -- (Z, degree) for the root, then one (symbol, Z, degree) triple
+// per edge, 0xFF-terminated and zero-padded -- built with a memset per path, copied into a byte
+// arena, and ordered with memcmp. Nothing downstream ever reads a byte of it: the only things a
+// code is used for are EQUALITY (which atoms share a class) and ORDER (which class comes first,
+// and that matters only because numpy's pairwise summation is not associative). So the bytes
+// were never the point, and moving 24 of them per path was most of the cost.
+//
+// THE TEMPTING VERSION IS A 64-BIT HASH OF THE PATH LIST, AND IT IS NOT SAFE HERE. A collision
+// merges two distinct equivalence classes, lowers the entropy, and leaves no symptom -- and no
+// amount of corpus testing turns "we saw none" into "there are none". So this is not a hash.
+// Every bit of the key that can vary is carried, the map is injective, and the NUMERIC order of
+// the packed value is EXACTLY the memcmp order of the bytes it replaces. There is no collision
+// to have a probability of.
+//
+//   field   bits  what it replaces
+//   R        16   the root, Z << 8 | degree                      key bytes 0 and 1
+//   L1..L5   19   one per level, most significant first          key bytes 2.. in triples
+//
+//   a level that CONTINUES  : 1 + (symbol << 16 | Z << 8 | degree)   in [1, 327680]
+//   a level that TERMINATES : 0x7FFFF = 524287                        (the 0xFF byte)
+//   a level PAST the end    : 0                                       (the zero padding)
+//
+// The three ranges are disjoint and ordered 0 < continue < terminate, which is precisely the
+// byte order 0x00 < {symbol, at most 4} < 0xFF at the position the symbol byte occupied; and
+// inside a continuing level the (symbol, Z, degree) packing is big-endian, so it orders like the
+// three bytes it stands for. 16 + 5*19 = 111 bits: (R, L1, L2) left-aligned in `hi` and
+// (L3, L4, L5) left-aligned in `lo`, so comparing (hi, lo) lexicographically compares the fields
+// in order.
+//
+// A path can be at most MAX_ORDER edges long, so five levels is not a bound that can be hit --
+// the static_assert below ties the two together. `selfCheck()` re-derives the whole partition
+// from the ORIGINAL 24-byte byte keys on the worked example, and `./cpp/infocontent keycheck`
+// does the same over the corpus: same number of distinct codes, same class sizes, same class
+// ORDER, per molecule per order. That is the collision instrumentation the brief asked for,
+// applied to an encoding that cannot collide.
 // --------------------------------------------------------------------------------------------
-enum { KEY_BYTES = 24, MAX_PATHS = 65536 };
-struct Key { uint8_t b[KEY_BYTES]; };
-inline bool keyLess(const Key &x, const Key &y) { return std::memcmp(x.b, y.b, KEY_BYTES) < 0; }
+enum { MAX_PATHS = 65536 };
+static_assert(MAX_ORDER == 5, "PKey packs exactly MAX_ORDER = 5 levels of 19 bits");
+enum : uint32_t { PK_TERM = 0x7FFFFu, PK_MAX_CONT = 1u + (4u << 16 | 255u << 8 | 255u) };
+static_assert(PK_MAX_CONT < PK_TERM, "a continuing level must sort before a terminating one");
 
-struct Codes {
-  // Blob per atom: sorted keys back to back. Atoms are grouped by comparing blobs.
-  std::vector<uint8_t> arena;
-  std::vector<int32_t> off;         // off[i] .. off[i+1]
+struct PKey {
+  uint64_t hi, lo;
+  bool operator<(const PKey &o) const { return hi != o.hi ? hi < o.hi : lo < o.lo; }
+  bool operator==(const PKey &o) const { return hi == o.hi && lo == o.lo; }
 };
 
+// Level `lv` in 1..MAX_ORDER. R occupies hi[48..63]; L1 hi[29..47], L2 hi[10..28],
+// L3 lo[45..63], L4 lo[26..44], L5 lo[7..25]. No field crosses a word and none overlaps.
+inline void pkSetField(uint64_t &hi, uint64_t &lo, int lv, uint32_t f) {
+  switch (lv) {
+    case 1: hi |= (uint64_t)f << 29; break;
+    case 2: hi |= (uint64_t)f << 10; break;
+    case 3: lo |= (uint64_t)f << 45; break;
+    case 4: lo |= (uint64_t)f << 26; break;
+    default: lo |= (uint64_t)f << 7; break;
+  }
+}
+
+// --------------------------------------------------------------------------------------------
+// ONE traversal for ALL SIX ORDERS. The old builder ran a BFS and a DFS per (atom, order), six
+// times over. It did not need to: a key TERMINATES at its own depth and is zero-padded from
+// there, so the key a dead end at depth 3 produces is the SAME key at order 3, 4 and 5 -- and a
+// node at depth d is a leaf of the depth-k tree exactly when d == k, or when it has no children
+// at all and d <= k. So one depth-MAX_ORDER DFS emits every path of every order:
+//
+//     emit the key at order max(d, 1) .. (has layered children ? max(d, 1) : MAX_ORDER)
+//
+// with the d == 0 case falling out correctly -- a root WITH children is a leaf only at order 0,
+// which is handled separately, and an isolated atom emits its one path at every order.
+//
+// WHAT THAT IS WORTH. Measured over 5,000 molecules of cpp/hard.smi, the old scheme walked
+// 5*N1 + 4*N2 + 3*N3 + 2*N4 + N5 tree nodes per molecule where the new one walks
+// N1 + .. + N5 -- with the measured layer sizes that is 4,478 against 2,006, a factor of 2.2,
+// plus five BFS layerings per atom collapsing to one.
+// --------------------------------------------------------------------------------------------
 class CodeBuilder {
  public:
+  // Scratch, reused across molecules. It memoises NOTHING -- reset() re-sizes and re-zeros
+  // everything from the graph in hand -- so hoisting it changes no value, only the number of
+  // allocations.
+  std::vector<PKey> arena[N_ORDERS];
+  std::vector<int32_t> off[N_ORDERS];       // off[k][i] .. off[k][i+1], for k >= 1
+  std::vector<int32_t> ordIdx;
+  std::vector<double> cnt, wmass, wz, scratch, used;
+  HGraph hg;
+  std::vector<double> cpoly;
+
   void reset(const HGraph &g) {
     g_ = &g;
     dist_.assign(g.N, -1);
     stamp_.assign(g.N, 0);
     epoch_ = 0;
+    bfs_.clear();
     bfs_.reserve(g.N);
+    ordIdx.resize(g.N);
+    for (int k = 1; k <= MAX_ORDER; k++) {
+      arena[k].clear();
+      off[k].assign(g.N + 1, 0);
+    }
   }
 
-  // All root-to-leaf paths of the depth-`order` layered tree rooted at `root`.
-  void codeFor(int root, int order, std::vector<Key> &out) {
-    out.clear();
+  // Fills arena[1..MAX_ORDER] with every atom's sorted path multiset.
+  void buildAll() {
+    const HGraph &g = *g_;
+    for (int root = 0; root < g.N; root++) {
+      root_ = root;
+      layer(root);
+      const uint64_t rhi = ((uint64_t)(((uint32_t)g.z[root] << 8) | g.deg[root])) << 48;
+      walk(root, 0, rhi, 0);
+      for (int k = 1; k <= MAX_ORDER; k++) {
+        std::sort(arena[k].begin() + off[k][root], arena[k].end());
+        off[k][root + 1] = (int32_t)arena[k].size();
+      }
+    }
+  }
+
+  long long pathsAt(int k) const { return (long long)arena[k].size(); }
+
+ private:
+  // BFS to depth MAX_ORDER. `dist_` is the true graph distance for everything it reaches, so
+  // "child" -- a neighbour at distance d+1 -- means the same thing at every order.
+  void layer(int root) {
     const HGraph &g = *g_;
     ++epoch_;
     bfs_.clear();
     bfs_.push_back(root);
-    stamp_[root] = epoch_; dist_[root] = 0;
+    stamp_[root] = epoch_;
+    dist_[root] = 0;
     for (size_t h = 0; h < bfs_.size(); h++) {
       const int u = bfs_[h];
-      if (dist_[u] >= order) continue;
+      if (dist_[u] >= MAX_ORDER) continue;
       for (int e = g.start[u]; e < g.start[u + 1]; e++) {
         const int v = g.nbr[e];
         if (stamp_[v] != epoch_) {
-          stamp_[v] = epoch_; dist_[v] = dist_[u] + 1;
+          stamp_[v] = epoch_;
+          dist_[v] = dist_[u] + 1;
           bfs_.push_back(v);
         }
       }
     }
-    Key k;
-    std::memset(k.b, 0, KEY_BYTES);
-    k.b[0] = g.z[root];
-    k.b[1] = g.deg[root];
-    walk(root, 0, order, 2, k, out);
-    std::sort(out.begin(), out.end(), keyLess);
   }
 
- private:
-  void walk(int u, int d, int order, int pos, Key &k, std::vector<Key> &out) {
+  void walk(int u, int d, uint64_t hi, uint64_t lo) {
     const HGraph &g = *g_;
-    bool leaf = true;
-    if (d < order) {
+    bool kids = false;
+    if (d < MAX_ORDER) {
       for (int e = g.start[u]; e < g.start[u + 1]; e++) {
         const int v = g.nbr[e];
         if (stamp_[v] != epoch_ || dist_[v] != d + 1) continue;   // layered: children only
-        leaf = false;
-        if (pos + 3 > KEY_BYTES) throw std::runtime_error("infoic: path longer than KEY_BYTES");
-        const uint8_t save0 = k.b[pos], save1 = k.b[pos + 1], save2 = k.b[pos + 2];
-        k.b[pos] = g.sym[e];
-        k.b[pos + 1] = g.z[v];
-        k.b[pos + 2] = g.deg[v];
-        walk(v, d + 1, order, pos + 3, k, out);
-        k.b[pos] = save0; k.b[pos + 1] = save1; k.b[pos + 2] = save2;
+        kids = true;
+        const uint32_t f =
+            1u + (((uint32_t)g.sym[e] << 16) | ((uint32_t)g.z[v] << 8) | (uint32_t)g.deg[v]);
+        uint64_t nh = hi, nl = lo;
+        pkSetField(nh, nl, d + 1, f);
+        walk(v, d + 1, nh, nl);
       }
     }
-    if (leaf) {
-      if (out.size() >= MAX_PATHS) throw std::runtime_error("infoic: path explosion");
-      Key t = k;
-      t.b[pos] = 0xFF;                                   // terminator; Z, degree and symbol
-      for (int q = pos + 1; q < KEY_BYTES; q++) t.b[q] = 0;   // never take the value 0xFF
-      out.push_back(t);
+    const int klo = d < 1 ? 1 : d;
+    const int khi = kids ? d : MAX_ORDER;
+    if (klo > khi) return;                     // the root of a tree that has children: not a leaf
+    uint64_t th = hi, tl = lo;
+    if (d < MAX_ORDER) pkSetField(th, tl, d + 1, PK_TERM);
+    const PKey key{th, tl};
+    for (int k = klo; k <= khi; k++) {
+      if (arena[k].size() - (size_t)off[k][root_] >= MAX_PATHS)
+        throw std::runtime_error("infoic: path explosion");
+      arena[k].push_back(key);
     }
   }
 
@@ -606,6 +729,7 @@ class CodeBuilder {
   std::vector<int32_t> stamp_;
   std::vector<int32_t> bfs_;
   int32_t epoch_ = 0;
+  int root_ = 0;
 };
 
 // --------------------------------------------------------------------------------------------
@@ -896,80 +1020,109 @@ inline double infoEntropy(const std::vector<double> &v, double &total) {
 // --------------------------------------------------------------------------------------------
 // The whole row.
 // --------------------------------------------------------------------------------------------
-inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *prof = nullptr) {
-  using Clock = std::chrono::steady_clock;
-  auto tick = [](Clock::time_point &t) {
-    const auto n = Clock::now();
-    const double us = std::chrono::duration<double, std::micro>(n - t).count();
+inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *prof = nullptr,
+                    bool wantIpc = true) {
+  auto tick = [](double &t) {
+    const double n = CpuClock::nowUs();
+    const double us = n - t;
     t = n;
     return us;
   };
-  Clock::time_point tp;
-  if (prof) { tp = Clock::now(); prof->mols++; }
+  double tp = 0.0;
+  if (prof) { tp = CpuClock::nowUs(); prof->mols++; }
 
   for (int c = 0; c < N_COLS; c++) row.v[c] = std::numeric_limits<double>::quiet_NaN();
   row.ipcOverflow = false;
 
-  HGraph g;
+  // The fallback builder is a FUNCTION-LOCAL THREAD_LOCAL, not a stack object. It is pure
+  // scratch -- reset() re-sizes and re-zeros every array from the graph in hand and nothing is
+  // carried across molecules -- so this changes no value; what it removes is the ~14 vector
+  // allocations a caller that does not hoist its own CodeBuilder was paying per molecule.
+  // bindings.cpp is such a caller today (`infoic::compute(W.im, W.irow)`), and this way it gets
+  // the hoist without an edit to a file another agent owns.
+  static thread_local CodeBuilder local;
+  CodeBuilder &bld = cb ? *cb : local;
+
+  HGraph &g = bld.hg;
   g.build(m);
   const int A = g.N;
-  const double B = kekuleBondOrderSum(m);
+  const double B = kekuleBondOrderSum(m, bld.used);
   const double log2A = std::log2((double)A);
   const double log2B = std::log2(B);
 
-  CodeBuilder local;
-  CodeBuilder &bld = cb ? *cb : local;
   bld.reset(g);
 
-  std::vector<int32_t> ordIdx(A);
-  std::vector<Key> paths;
-  std::vector<uint8_t> arena;
-  std::vector<int32_t> off(A + 1, 0);
-  std::vector<double> cnt, wmass, wz, scratch;
+  std::vector<int32_t> &ordIdx = bld.ordIdx;
+  std::vector<double> &cnt = bld.cnt, &wmass = bld.wmass, &wz = bld.wz, &scratch = bld.scratch;
   if (prof) { prof->build += tick(tp); prof->atoms += A; }
 
+  bld.buildAll();                    // ONE traversal, all six orders
+  if (prof) {
+    prof->dfs += tick(tp);
+    for (int o = 1; o <= MAX_ORDER; o++) prof->paths[o] += bld.pathsAt(o);
+  }
+
   for (int order = 0; order <= MAX_ORDER; order++) {
-    arena.clear();
-    off.assign(A + 1, 0);
+    cnt.clear(); wmass.clear(); wz.clear();
     if (order == 0) {
       // mordred short-circuits: the code IS the atomic number. Nothing here can be order
-      // dependent, which is exactly why order 0 is the control.
-      for (int i = 0; i < A; i++) { arena.push_back(g.z[i]); off[i + 1] = (int32_t)arena.size(); }
+      // dependent, which is exactly why order 0 is the control. Sorting one-byte codes put the
+      // classes in ASCENDING Z; a 256-bucket count reproduces that order exactly and is the one
+      // place where the class ORDER is worth thinking about, since numpy's pairwise summation
+      // is not associative and the order-0 control is bit-exact against mordred.
+      int zc[256];
+      std::memset(zc, 0, sizeof zc);
+      for (int i = 0; i < A; i++) zc[g.z[i]]++;
+      if (prof) prof->codes[0] += tick(tp);
+      for (int z = 0; z < 256; z++) {
+        if (!zc[z]) continue;
+        const double c = (double)zc[z];
+        cnt.push_back(c);
+        wmass.push_back(ic_tbl::ATOMIC_WEIGHT[z]);
+        wz.push_back(c * (double)z);
+      }
     } else {
-      for (int i = 0; i < A; i++) {
-        bld.codeFor(i, order, paths);
-        for (const Key &k : paths) arena.insert(arena.end(), k.b, k.b + KEY_BYTES);
-        off[i + 1] = (int32_t)arena.size();
-        if (prof) prof->paths[order] += (long long)paths.size();
-      }
-    }
-    if (prof) prof->codes[order] += tick(tp);
-    for (int i = 0; i < A; i++) ordIdx[i] = i;
-    const uint8_t *ar = arena.data();
-    const int32_t *of = off.data();
-    std::sort(ordIdx.begin(), ordIdx.end(), [ar, of](int32_t x, int32_t y) {
-      const int32_t lx = of[x + 1] - of[x], ly = of[y + 1] - of[y];
-      const int c = std::memcmp(ar + of[x], ar + of[y], (size_t)std::min(lx, ly));
-      return c != 0 ? c < 0 : lx < ly;
-    });
+      if (prof) prof->codes[order] += tick(tp);
+      for (int i = 0; i < A; i++) ordIdx[i] = i;
+      const PKey *ar = bld.arena[order].data();
+      const int32_t *of = bld.off[order].data();
+      // Identical to the memcmp over the old byte blobs: the records are fixed width and PKey's
+      // numeric order IS their memcmp order, so lexicographic-on-records then shorter-first is
+      // the same total order it was, and therefore the same class ORDER.
+      std::sort(ordIdx.begin(), ordIdx.end(), [ar, of](int32_t x, int32_t y) {
+        const int32_t lx = of[x + 1] - of[x], ly = of[y + 1] - of[y];
+        const int32_t n = lx < ly ? lx : ly;
+        const PKey *px = ar + of[x], *py = ar + of[y];
+        for (int32_t q = 0; q < n; q++) {
+          if (px[q].hi != py[q].hi) return px[q].hi < py[q].hi;
+          if (px[q].lo != py[q].lo) return px[q].lo < py[q].lo;
+        }
+        return lx < ly;
+      });
 
-    cnt.clear(); wmass.clear(); wz.clear();
-    for (int a = 0; a < A;) {
-      int b = a + 1;
-      const int32_t la = of[ordIdx[a] + 1] - of[ordIdx[a]];
-      while (b < A) {
-        const int32_t lb = of[ordIdx[b] + 1] - of[ordIdx[b]];
-        if (lb != la || std::memcmp(ar + of[ordIdx[a]], ar + of[ordIdx[b]], (size_t)la) != 0) break;
-        b++;
+      for (int a = 0; a < A;) {
+        int b = a + 1;
+        const int32_t la = of[ordIdx[a] + 1] - of[ordIdx[a]];
+        const PKey *pa = ar + of[ordIdx[a]];
+        while (b < A) {
+          const int32_t lb = of[ordIdx[b] + 1] - of[ordIdx[b]];
+          if (lb != la) break;
+          const PKey *pb = ar + of[ordIdx[b]];
+          bool same = true;
+          for (int32_t q = 0; q < la; q++)
+            if (!(pa[q] == pb[q])) { same = false; break; }
+          if (!same) break;
+          b++;
+        }
+        const double c = (double)(b - a);
+        // Every atom in a class shares the code's root field, which carries the root's atomic
+        // number, so the class HAS an element -- that is what makes repair R3 well defined.
+        const int z = g.z[ordIdx[a]];
+        cnt.push_back(c);
+        wmass.push_back(ic_tbl::ATOMIC_WEIGHT[z]);
+        wz.push_back(c * (double)z);
+        a = b;
       }
-      const double c = (double)(b - a);
-      // Every atom in a class shares the code's first byte, which is the root's atomic number,
-      // so the class HAS an element -- that is what makes repair R3 well defined.
-      const int z = ar[of[ordIdx[a]]];
-      cnt.push_back(c);
-      wmass.push_back(ic_tbl::ATOMIC_WEIGHT[z]);
-      wz.push_back(c * (double)z);
-      a = b;
     }
     const size_t k = cnt.size();
     if (prof) { prof->group[order] += tick(tp); prof->classes[order] += (long long)k; }
@@ -997,7 +1150,16 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *
   }
 
   // ---- Ipc: exact integer coefficients, then RDKit's own entropy formula ----------------
-  std::vector<double> cpoly;
+  // MEASURED: this is 68% of the whole descriptor -- more than everything above it put
+  // together -- and the shipped pipeline throws all three of its columns away (bindings.cpp
+  // copies only `N_IC`, because Ipc has an open, diagnosed bug). `wantIpc == false` leaves
+  // Ipc/AvgIpc/Log2Ipc as the NaN they were initialised to and touches nothing else, so the 42
+  // IC columns are bit-identical either way. See `computeIC()`.
+  if (!wantIpc) {
+    if (prof) prof->ipc += tick(tp);
+    return;
+  }
+  std::vector<double> &cpoly = bld.cpoly;
   int E = 0, maxbits = 0;
   charPolyScaled(m, cpoly, E, maxbits);
   double total = 0.0;
@@ -1018,6 +1180,22 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *
     }
   }
   if (prof) prof->ipc += tick(tp);
+}
+
+// THE 42 IC COLUMNS ONLY -- what `featurize_all` actually consumes.
+//
+// bindings.cpp copies `infoic::N_IC` values out of the row and drops Ipc, AvgIpc and Log2Ipc on
+// the floor, because Ipc has an open bug (top of this file) and an ill-posed column is worse
+// than a missing one. It nevertheless calls `compute()`, which computes them: an exact-integer
+// Le Verrier-Faddeev-Frame recurrence, O(n^3) in the HEAVY-ATOM count, measured at 68% of this
+// descriptor's entire CPU on 5,000 molecules of cpp/hard.smi. This entry point does not.
+//
+// WIRING (one line, in a file this agent does not own):
+//     infoic::compute(W.im, W.irow);   ->   infoic::computeIC(W.im, W.irow);
+// and the 42 wired columns are bit-identical, because nothing above the Ipc block reads
+// anything the Ipc block writes.
+inline void computeIC(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *prof = nullptr) {
+  compute(m, row, cb, prof, false);
 }
 
 // --------------------------------------------------------------------------------------------

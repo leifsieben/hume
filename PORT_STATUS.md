@@ -13,15 +13,16 @@ Regenerate this census with the snippet at the bottom. Do not hand-edit the coun
 
 | | columns |
 |---|---|
-| **callable from the package** (`hume.featurize_all`) | **248** |
-| verified C++ exists, but NOT wired into the extension | **419** (Autocorrelation) |
-| total verified C++ | 667 |
-| still Python | ~197 |
+| **producing a value from the package** (`hume.featurize_all`) | **840** |
+| named by the package but NaN (`PENDING_COLUMNS`) | 2 (`qed`, `SPS`) |
+| verified C++ exists, but NOT wired into the extension | 0 |
+| still Python | ~24 |
 
-"Verified C++ exists" is a claim about `cpp/*.cpp`; "callable" is a claim about the wheel. Only
-the second one is what a user gets, and only the second belongs in a speed comparison — the
-Autocorrelation 419 live in `cpp/ac.cpp` as a `main()` over a text file, so today the package
-cannot produce them at all.
+"Verified C++ exists" is a claim about `cpp/*.cpp`; "callable" is a claim about the wheel; and
+"produces a value" is a third claim, narrower than "has a name". Only the last one is what a user
+gets, and only the last belongs in a speed comparison. Both live numbers come from
+`bench_e2e._survivors_covered` — on `ALL_COLUMNS` for the named count, on
+`ALL_COLUMNS - PENDING_COLUMNS` for this one.
 
 Note also the dedupe set has **864 unique names**, not 865: one name is defined by both RDKit and
 Mordred and survives under both sources.
@@ -30,14 +31,14 @@ Mordred and survives under both sources.
 `ALL EXACT`, but they are **mostly HUME-specific descriptors** — `SATS*`, `RATSC*`, `RW*`,
 `sysbin*`, `conj_*`, `pa*_max`, `C3`–`C8` — and only about 22 of them are members of the 865.
 Reading "182 verified" as "182 of the 865 done" overstates the position by roughly eightfold.
-The bulk of the real coverage is elsewhere: `cpp/ac.cpp` computes **419** Autocorrelation columns
-and `src/hume_core/estate_typer.h` computes **50** E-state columns.
+The bulk of the real coverage is elsewhere: `src/hume_core/autocorr.h` computes **419**
+Autocorrelation columns and `src/hume_core/estate_typer.h` computes **50** E-state columns.
 
 ## Ported and verified
 
 | family | n | where | evidence |
 |---|---|---|---|
-| Autocorrelation | 419 | `cpp/ac.cpp`, `cpp/ac_weights.h`, `cpp/ac_tables.h` | ATS/AATS/ATSC/AATSC/MATS/GATS × 9 weights. The nine weight vectors are computed in C++, not handed in — that removed 473.9 µs/mol, the single largest item in the pipeline. |
+| Autocorrelation | 419 | `src/hume_core/autocorr.h`, `cpp/ac_weights.h`, `cpp/ac_tables.h`, `cpp/ac.cpp` | ATS/AATS/ATSC/AATSC/MATS/GATS × **10 weights** = 540 emitted, covering all 419. The ten weight vectors are computed in C++, not handed in — that removed 473.9 µs/mol, the single largest item in the pipeline. `values_ac.txt` md5 `1fdb9ca4d92ce808cba2a3a466677fea`, 98,905 × 540. The 486 nine-weight columns are proven unchanged by the `Z` addition (byte-identical projection, see the handoff); the 540-column mordred grade is pending and this row must not claim it until it lands. |
 | EState | 50 | `src/hume_core/estate_typer.h`, `cpp/estate_tables.h` | 2,868,290 / 2,868,290 atoms exact on `cpp/hard.smi`; 100,000/100,000 column values vs mordred 1.2.0. 0.834 µs/mol vs 636. |
 | VSA binning | 59 | `src/hume_core/vsa_bins.h`, `cpp/vsa_tables.h` | **66/66 columns bit-exact vs RDKit** over 100,000 molecules, **5/5 vs mordred**, and all four per-atom vectors exact on 2,868,290 atoms. Labute ASA was the real work. |
 | RingCount + TopologicalCharge + PathCount | 81 | `src/hume_core/{ringcount,topocharge,pathcount}.h` | RingCount 49/49 and PathCount 11/11 bit-exact on 100,000. TopologicalCharge 12/21 bit-exact, the other 9 within 6.661e-16 relative — mordred disagrees with *itself* there on 21–70% of the corpus. **20.2 µs/mol against mordred's 11,602 (~575×).** |
@@ -49,10 +50,11 @@ Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), R
 
 ## The two things standing between here and the goal
 
-**1. Autocorrelation is not in the extension — 419 columns, the single largest coverage win.**
-`cpp/ac.cpp` is verified but is a `main()` over a text file, and it descriptors the
-**hydrogen-added** graph with charges summed as `_GasteigerCharge + _GasteigerHCharge`. So it is
-a header refactor plus an H-graph build at the boundary, not a call.
+**1. DONE — Autocorrelation is in the extension, all 419.** The computation moved into
+`src/hume_core/autocorr.h`, `cpp/ac.cpp` includes it, and `_extract.py` serialises the
+**hydrogen-added** molecule alongside the heavy-atom one so the charges are
+`_GasteigerCharge + _GasteigerHCharge` computed on that graph. The tenth weight `Z` closed the
+last 52 columns; see the 2026-08-28 handoff at the bottom.
 
 **2. `infocontent` is now the pipeline.** 399.9 ± 2.52 µs/mol for 42 emitted columns, 33 of which
 are in the 865 — 63% of all compute, 2× the entire original 182-column block, and ~6× everything
@@ -219,32 +221,42 @@ directory.
 
 ## What is true right now
 
-    callable from the package (hume.featurize_all)   691 of 864
-    verified C++ NOT yet wired into the extension      0
-    total verified C++                               691
-    still Python                                    ~173
+    named by the package    (hume.ALL_COLUMNS)                842 of 864
+    PRODUCING A VALUE       (ALL_COLUMNS - PENDING_COLUMNS)   840 of 864
+    verified C++ NOT yet wired into the extension               0
+    still Python                                             ~24
 
-Autocorrelation IS now wired (+367). Note it is 367, not the 419 the census claimed: the other
-52 are mordred's TENTH weight `Z` (bare atomic number), and `cpp/ac_weights.h` implements nine.
-Adding it is a table plus a line, but it re-shapes `cpp/values_ac.txt` from 486 to 540 columns --
-i.e. it invalidates the verified artifact -- so it was deliberately left. Same class of census
-error as the 642.
+Both numbers come from `bench_e2e._survivors_covered`, run on the two different inputs; they
+differ by exactly `PENDING_COLUMNS` = (`qed`, `SPS`), which are named and NaN. Do not quote one
+as the other.
+
+Autocorrelation IS now wired, and **all 419** of it: the tenth weight `Z` has been added, so the
+52 columns that were held back are in. See "Autocorrelation is complete" below for the evidence
+and the new artifact checksum.
 
 The 76 `rdkit_core` fragment columns ARE now wired (+76). See "2. DONE" below.
 
 `hume.featurize_all(smiles) -> (fp, X, ALL_COLUMNS)` works today: SMILES -> ECFP (2048, r=3,
-chirality) + 1,091 emitted columns, through ONE pickle parse, seven headers, one boundary fill.
-The 691 is not the 1,091: `bench_e2e._survivors_covered` counts the members of the 865 and prints
+chirality) + 1,244 emitted columns, through ONE pickle parse, one boundary fill.
+The 840 is not the 1,244: `bench_e2e._survivors_covered` counts the members of the 865 and prints
 it next to the timing, so the two can never be read apart.
 
 ## The three things to do next, in priority order
 
-**1. DONE — Autocorrelation is wired.** `src/hume_core/autocorr.h` holds the computation and
-`cpp/ac.cpp` now includes it rather than carrying a copy, so there is one copy of the arithmetic.
-Proof the lift changed nothing: `./ac verify mols_h.txt` over 98,905 molecules × 486 columns
-produces `values_ac.txt` with md5 `7f08884f8700c23fd41e2a5315870a2e`, **identical before and
-after** — the existing evidence transfers exactly. Wiring checked against a *second, independent*
-H-graph construction in the harness.
+**1. DONE — Autocorrelation is wired, all ten weights.** `src/hume_core/autocorr.h` holds the
+computation and `cpp/ac.cpp` now includes it rather than carrying a copy, so there is one copy of
+the arithmetic. Proof the header lift changed nothing: `./ac verify mols_h.txt` over 98,905
+molecules × 486 columns produced `values_ac.txt` with md5 `7f08884f8700c23fd41e2a5315870a2e`,
+**identical before and after**.
+
+  **THAT CHECKSUM IS NOW HISTORICAL.** The `Z` weight took the artifact to 540 columns; the
+  current one is **md5 `1fdb9ca4d92ce808cba2a3a466677fea`**, 98,905 × 540. The old md5 is not
+  dead evidence, though — it is how the change was proved harmless. Projecting the 540-column
+  file back onto its 486 non-`Z` columns (`awk`, drop every tenth field, same `%.12g` text)
+  reproduces `7f08884f8700c23fd41e2a5315870a2e` **byte for byte over the whole corpus**. Adding
+  the tenth weight moved no cell of the other nine, on 48 million cells, exactly.
+
+  Wiring checked against a *second, independent* H-graph construction in the harness.
 
   Two findings worth keeping: the H-graph charges are **not** derivable from the heavy-atom
   pickle (5,221 of 42,359 heavy atoms get a different `_GasteigerCharge` from `AddHs(m)` than
@@ -253,7 +265,8 @@ H-graph construction in the harness.
   `AtomProps|ComputedProps` without `PrivateProps` yields 277 bytes with no `_GasteigerCharge`
   at all — it is private *and* computed.
 
-  Remaining AC work: the tenth weight `Z`, 52 columns. See the note above on why it was left.
+  **Remaining AC work: none.** `Z` is in — `cpp/ac_weights.h` now emits ten weights, `NW = 10`,
+  and `autocorr::N_COLS` is 540. All 419 Autocorrelation members of the 865 are covered.
 
 **2. DONE — the 76 fragment columns are wired.** `atom_i` is now **(n_atoms, 10)**; the tenth
 column is `tval`, SMARTS `v`.
@@ -339,6 +352,12 @@ open bug, see the header.
   numbers out of unlinked-but-still-mapped dylibs.
 
 ## Measured at the pause (CONTENDED — ordering only, not publishable)
+
+**STALE AS OF THE `Z` WEIGHT, and deliberately not re-measured here.** The `autocorr` line below
+is 486 columns; the block is now 540, and `cpp_all_columns` predates three families besides. No
+replacement number was taken because the box was at load ~129 on 12 cores when the `Z` work
+landed, and a µs/mol figure from that would look like a measurement without being one. Re-run the
+whole table on a quiet machine rather than patching one row of it.
 
 `bench_e2e.py hume 2000 7`, CPU time, cold molecules, load1 10.92:
 
