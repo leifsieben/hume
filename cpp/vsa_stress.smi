@@ -1,0 +1,15 @@
+CC(C)C isobutane -- the CH is Crippen row C2, logP contrib EXACTLY 0.0, which is a LOGP_BINS edge
+CC(C)(C)C neopentane -- quaternary C, same row, same exact 0.0
+Fc1ccccc1 fluorobenzene -- the ipso c is row C14 `[c][#9]`, logP contrib EXACTLY 0.0
+Ic1ccccc1 iodobenzene -- the ipso c is row C17 `[c][#53]`, logP contrib EXACTLY 0.0
+[2H]C([2H])([2H])O trideuteriomethanol -- explicit H atoms in the graph; SMARTS H and X part company
+O=[Sn]=O NaN Gasteiger charges (no PEOE parameters for Sn) -- must land in PEOE_VSA14, not PEOE_VSA8
+C1CC1N aziridine -- TPSA's in3Ring branch, nitrogen, 21.94 not 12.03
+C1CO1 oxirane -- TPSA's in3Ring branch, oxygen, 12.53 not 9.23
+CN1CC1 N-methylaziridine -- TPSA nNbrs 3 in3Ring, 3.01 not 3.24
+O=P(O)(O)O phosphoric acid -- mordred TopoPSA phosphorus branch
+c1ccsc1 thiophene -- mordred TopoPSA aromatic-sulfur branch, 28.24
+O=S1(=O)CCCC1 sulfolane -- mordred TopoPSA {SINGLE:2, DOUBLE:2} branch, 8.38
+CC#N acetonitrile -- TPSA nTrip branch on nitrogen, 23.79
+[NH4+] ammonium -- TPSA nNbrs 4 charged branch, 0.00
+C1=CC2=CC=C3C=CC4=CC=C1C1=C2C3=C41 a fused polycycle; SSSR-vs-triangle check for in_ring3

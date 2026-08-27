@@ -103,3 +103,9 @@ cpp/topo3_*.txt
 cpp/ringcount
 cpp/topocharge
 cpp/pathcount
+
+# VSA-binning port (cpp/verify_vsa.py); regenerate, do not commit
+cpp/vsa_mols.txt
+cpp/vsa_cpp.txt
+cpp/vsa
+cpp/vsa_stress.txt
