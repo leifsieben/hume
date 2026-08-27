@@ -26,7 +26,8 @@ one (n_atoms, 2) block, because the extension reads them by row and one allocati
     atom_off  int32   (n_mol + 1,)   atoms of molecule k are [atom_off[k] : atom_off[k+1]]
     bond_off  int32   (n_mol + 1,)
     chg_ok    int32   (n_mol,)       0 = Gasteiger unavailable, charges are 0.0
-    atom_i    int32   (n_atoms, 8)   Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP
+    atom_i    int32   (n_atoms, 9)   Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP,
+                                     ring count
     atom_d    float64 (n_atoms, 2)   mass, Gasteiger charge
     bond_i    int32   (n_bonds, 5)   u, v, conjugated, in-ring, SMARTS bond code
     bond_s    int32   (n_bonds,)     E/Z as +/-1, 0 for none
@@ -78,7 +79,7 @@ from rdkit.Chem import rdPartialCharges
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 
-N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 8, 2, 5
+N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 9, 2, 5
 
 # The bond half of the Crippen typer's input, byte-for-byte cpp/export_crippen.py's bond_code():
 # a bit for the bond ORDER when it is one of the three SMARTS knows how to name, and a separate
@@ -147,6 +148,7 @@ def extract(mols) -> Batch:
     arom: list[int] = []
     ring: list[int] = []
     cip: list[int] = []
+    nring: list[int] = []
     mass: list[float] = []
     charge: list[float] = []
     bu: list[int] = []
@@ -190,6 +192,13 @@ def extract(mols) -> Batch:
         arom.extend(map(_is_aromatic, ats))
         ring.extend(map(_atom_in_ring, ats))
         mass.extend(map(_mass, ats))
+        # RING COUNT, not just ring membership. `[R1]` and `[R2]` are ordinary SMARTS primitives
+        # in RDKit's fragment patterns, and the boolean above cannot answer them. Reconstructing
+        # ring counts C++-side would mean perceiving rings a second time, on a graph whose ring
+        # perception is already known to be numbering-dependent for 24 molecules in the 100k
+        # corpus -- so it is carried across the boundary from the single perception RDKit has
+        # already done, rather than recomputed and risked diverging.
+        nring.extend(map(m.GetRingInfo().NumAtomRings, range(len(ats))))
 
         # HasProp returns 0/1, so in the overwhelmingly common case of a molecule with no
         # assigned stereocentre the flag list IS the CIP column and no second pass happens.
@@ -242,7 +251,7 @@ def extract(mols) -> Batch:
         chg_ok_a[owners] = 0
 
     atom_i = np.empty((na, N_ATOM_INT), dtype=np.int32)
-    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip)):
+    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip, nring)):
         atom_i[:, col] = src
     atom_d = np.empty((na, N_ATOM_DBL), dtype=np.float64)
     atom_d[:, 0] = mass

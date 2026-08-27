@@ -38,13 +38,20 @@ static void need(bool cond, const char *what) {
 // Column counts in the flat per-atom / per-bond blocks. Mirrored in src/hume/_extract.py; the
 // checks below turn a mismatch into an exception at the boundary instead of into silently
 // transposed descriptors.
-static constexpr int N_ATOM_INT = 8;   // Z, deg, nH, fchg, hyb, arom, ring, cip
+static constexpr int N_ATOM_INT = 9;   // Z, deg, nH, fchg, hyb, arom, ring, cip, nring
 static constexpr int N_ATOM_DBL = 2;   // mass, gasteiger      (Crippen is computed here)
 static constexpr int N_BOND_INT = 5;   // u, v, conjugated, in-ring, SMARTS bond code
 
 // Column offsets inside a row of atom_i / bond_i, so the two loops below and the Crippen fill
 // cannot drift apart on what column 4 means.
-enum { A_Z = 0, A_DEG = 1, A_NH = 2, A_FCHG = 3, A_HYB = 4, A_AROM = 5, A_RING = 6, A_CIP = 7 };
+// A_NRING is the RING COUNT, A_RING the boolean. Both are carried because SMARTS asks both
+// questions independently: `[R]` is membership, `[R1]`/`[R2]` are counts, and the count cannot
+// be recovered from the boolean. It comes across the boundary from the single ring perception
+// RDKit has already done rather than being recomputed C++-side -- ring perception is
+// numbering-dependent for 24 molecules in the 100k corpus, so a second perception is a second
+// chance to disagree.
+enum { A_Z = 0, A_DEG = 1, A_NH = 2, A_FCHG = 3, A_HYB = 4, A_AROM = 5, A_RING = 6, A_CIP = 7,
+       A_NRING = 8 };
 enum { B_U = 0, B_V = 1, B_CONJ = 2, B_RING = 3, B_CODE = 4 };
 
 // --------------------------------------------------------------------------------------------
