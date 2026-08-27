@@ -78,3 +78,14 @@ src/hume/_core*.so
 # Eigensolver benchmark build products (cpp/eigen_small.h and the .cpp sources are tracked).
 cpp/bench_eigen
 cpp/v_*.o
+
+# E-state typer exchange files, same reasoning as cpp/crip_*: estate_mols.txt alone is 57 MB at
+# the 100k scale the exactness run uses. Regenerate with `cpp/verify_estate.py all`.
+# cpp/estate_tables.h is NOT ignored -- it is generated, but it is the pinned specification the
+# C++ asserts against, so its diff is how an upstream RDKit change becomes visible.
+cpp/estate_mols.txt
+cpp/estate_mols.smi
+cpp/estate_stress.txt
+cpp/estate_cpp*.txt
+cpp/estate_cpp*.smi
+cpp/estate_typer

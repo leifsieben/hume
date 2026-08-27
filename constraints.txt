@@ -20,3 +20,40 @@
 # `spec="v1"` (see API.md).
 rdkit==2025.9.2
 numpy==2.4.6
+
+# ------------------------------------------------------------------------------------------
+# MORDRED NEEDS A DIFFERENT ENVIRONMENT, AND ASKING FOR THIS ONE FAILS SILENTLY.
+#
+# mordred 1.2.0 requires `numpy==1.*`. So this is UNSATISFIABLE:
+#
+#     uv run --with mordred --with "rdkit==2025.9.2" --with "numpy==2.4.6"   # WRONG
+#
+# and uv does not error. It backtracks and resolves MORDRED down to 0.6.0 -- a different
+# library with a different descriptor set -- and runs. A verification that passes against
+# mordred 0.6.0 while claiming to check mordred 1.2.0 is worse than no verification.
+#
+# Mordred comparisons therefore run in their OWN isolated env, and the harness must print the
+# resolved mordred and numpy versions:
+#
+#     uv run --isolated --with "mordred==1.2.0" --with "rdkit==2025.9.2" \
+#            --with "numpy==1.26.4" python ...
+#
+# ------------------------------------------------------------------------------------------
+# WHAT THE RDKIT PIN ACTUALLY BUYS, measured rather than assumed.
+#
+# The E-state atom-type SPECIFICATION (RDKit's AtomTypes._rawD, 79 SMARTS) is byte-identical
+# between 2025.09.2 and 2026.03.5. Data/Crippen.txt is byte-identical too. So the tables do
+# not move.
+#
+# PERCEPTION does. 19 of the 100,000 molecules in cpp/hard.smi are assigned different E-state
+# atom types by the two versions, across 412 atom assignments, because furans fused into large
+# macrocycles stop being perceived aromatic in 2026.03.5:
+#
+#     O=C1CCNCCNNNCCNCCC(=O)c2ccc(o2)COCOCc2ccc1o2
+#         2025.09.2 -> 10 aromatic atoms, furan O types as aaO
+#         2026.03.5 ->  0 aromatic atoms, furan O types as ssO
+#
+# HUME's C++ scores 100% against RDKit under BOTH versions -- it carries no aromaticity
+# assumption of its own and is a faithful function of (graph, perception). The descriptor
+# VALUES are still version-dependent for those molecules. That is why `spec` names an RDKit
+# version: not because our arithmetic drifts, but because the input does.
