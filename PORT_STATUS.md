@@ -388,3 +388,33 @@ lag longer than the molecule's diameter: 0/0. Confirmed against mordred, which r
 object for exactly those and a real value for `AATS1c`. `cpp/ac_weights.h` states the contract:
 NaN where mordred returns NaN. Do not "fix" this, and do not let a downstream model see it
 without an explicit decision.
+
+## An audit finding about the 865 themselves
+
+**`ABCGG` is one of the 865, and the pinned oracle cannot compute it.** `mordred/ABCIndex.py`
+ends `return np.float(...)`; numpy removed `np.float` in 1.24, and mordred 1.2.0 requires numpy
+1.x. Under the pinned env (mordred 1.2.0 / numpy 1.26.4) **both `ABCIndex` and `ABCGG` raise
+`AttributeError` on every molecule** — verified directly, not inferred.
+
+Two consequences, and the second is the one that matters:
+
+1. Our port compares against the **restored** function (`np.float` re-aliased to builtin `float`,
+   which is all it ever was), so the 55-column bit-exact result stands. The shim is recorded in
+   `cpp/verify_chiwalk.py`, the same pattern as `verify_topo3.py`'s `np.product`.
+2. **`data/dedupe.json` cannot have been produced in the pinned environment.** A column that
+   raises on every molecule cannot have a correlation computed for it, yet `ABCGG` survived the
+   r > 0.99 dedupe. So the set of 865 was defined under some numpy < 1.24, and its provenance is
+   not the environment every exactness claim is pinned to.
+
+Nothing downstream is known to be wrong — but "the 865" is a load-bearing number for this project
+and the environment that produced it should be recorded and, ideally, the dedupe re-run under the
+pin. Until then, cite the 865 as inherited rather than as reproducible.
+
+## Two families whose names collide and are unrelated
+
+* `src/hume_core/topomisc.h` contains mordred's **`Constitutional`** family (`Sp`, `MZ`, `Mv`,
+  `Mp`, …), computed on the **hydrogen-added** molecule.
+* `src/hume_core/constit.h` is the **"small constitutional" census block** — `CarbonTypes`,
+  `AtomCount`, `BondCount`, `KappaShapeIndex` and friends.
+
+Zero column overlap, confirmed. The names read as a collision to anyone skimming.
