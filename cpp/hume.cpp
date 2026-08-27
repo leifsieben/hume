@@ -1434,65 +1434,82 @@ int BCUT_SOLVER = 1;
 // different last digits either side of a threshold. That is precisely the reproducibility wart
 // the Lanczos removal above rejected, and it is not worth 13% of a block.
 //
-// WHAT THIS OPENED UP, AND WHAT HAPPENED WHEN IT WAS TRIED. Only the two EXTREMAL eigenvalues
-// are wanted and dsterf computes all n of them, so an extremal-only Krylov method has its best
-// case exactly where the time is. The earlier Lanczos defeat recorded above (201 us against 94)
-// was measured on the 3,000-molecule drug-like benchmark, which HAS NO SUCH TAIL -- it tested
-// the regime worth a few percent and never tested this one. So it was rebuilt and re-measured
-// properly. It works, it is certified, it is ~10% of the pipeline, and it is NOT WIRED IN.
-// Everything below is why, so that the next person to have this idea finds the measurement
-// instead of repeating the month.
+// WHAT THIS OPENED UP: THE KRYLOV PATH, WHICH SHIPS. Only the two EXTREMAL eigenvalues are
+// wanted and dsterf computes all n, so an extremal-only method has its best case exactly where
+// the time is. The Lanczos defeat recorded above (201 us against 94) was measured on the
+// 3,000-molecule drug-like benchmark, which HAS NO SUCH TAIL: it tested the regime worth a few
+// percent and never tested this one. Rebuilt and re-measured, it is ~1.16x on BCUT2D
+// (128.65 -> 110.56 us/mol) for ~10% of the pipeline. See bcut2d for the entry point.
 //
 //   THE OPERATOR. bcut_one's matrix is 0.001*(J - I) + diag(prop) + sparse, so a matvec is
-//   O(n + m) rather than O(n^2), and the rank-1 term and every off-diagonal are IDENTICAL for
-//   all four properties -- only the diagonal changes -- so one build serves four solves. That
-//   is the cross-property sharing dense LAPACK cannot express, and the economics are real:
-//   matvec is 1.69x faster than dense at n = 10 and 18.0x at n = 117.
+//   O(n + m) not O(n^2) -- 1.69x faster than dense at n = 10, 18.0x at n = 117 -- and the
+//   rank-1 term and every off-diagonal are IDENTICAL across the four properties. One build,
+//   four solves: the cross-property sharing dense LAPACK cannot express.
 //
-//   THE CERTIFICATE. After k steps the Ritz residual is exactly |beta_k * s_{k,i}|, s being the
-//   LAST COMPONENT of T_k's i-th eigenvector; for a symmetric matrix the eigenvalue error is
-//   bounded by it. Fail the bound -> compute densely. All four properties fall back together,
-//   so a BCUT2D row is never a mixture of two numerical paths.
+//   THREE INDEPENDENT ACCEPTANCE TESTS, and it took all three plus two of my own bugs to get
+//   here. A molecule failing ANY of them is computed densely, all four properties together, so
+//   a BCUT2D row is never a mixture of two numerical paths.
 //
-//   FULL REORTHOGONALISATION IS MANDATORY, measured not assumed. With none, or with an
-//   8-vector window, 3-4 of 1200 tail cases stall at 2.2e-09 relative -- which would fail the
-//   rtol 1e-9 gate this descriptor is held to, silently, on a handful of molecules. Full
-//   reorth converged 1200 of 1200.
+//     1. TRIGGER: the tridiagonal residual |beta_k * s_k|, O(k) via a downward three-term
+//        recurrence. THIS IS NOT THE CERTIFICATE. Measured, it understates the true residual by
+//        up to 1e20 -- it is only cheap enough to decide when to compute the real thing.
+//     2. CERTIFICATE: the TRUE residual ||A v - theta v|| of the reconstructed Ritz vector,
+//        against the actual operator, O(k n) + one matvec. For a symmetric matrix the
+//        eigenvalue error is bounded by it, so the acceptance threshold IS the accuracy
+//        guarantee. Accepted at tol * scale = 1e-10 * scale; measured worst on accepted
+//        molecules 0.999 * tol, i.e. a guaranteed 1e-10 relative error, ten times inside the
+//        rtol 1e-9 gate. An earlier 1e3 * tol permitted a guarantee of 1e-7 -- LOOSER than the
+//        gate -- and passed only because actual residuals ran ~200x better than the bound.
+//     3. MISSED-EXTREME GUARD. A small residual proves an eigenvalue lies within ||r|| of
+//        theta. It does NOT prove theta is lambda_max. If the start vector is nearly orthogonal
+//        to the lambda_max eigenvector, the whole Krylov space stays orthogonal to it (A is
+//        symmetric, so that is exact, and full reorthogonalisation actively SUPPRESSES the
+//        rounding that would otherwise resurrect the direction). theta_max then converges
+//        tightly onto lambda_2 and both residual tests pass on a wrong answer. Defence: power
+//        iteration from an unrelated start gives Rayleigh quotients that bound the true
+//        extremes; if a probe finds an extreme outside the accepted interval, refuse.
 //
-//   THE RESULT. On the n >= 71 tail: dense 1962 us/mol, Lanczos with oracle iteration counts
-//   579 (3.39x), Lanczos with the certificate 1337 (1.47x). Corpus-wide BCUT2D falls from
-//   128.65 to 110.56 us/mol at min_n = 71 -- 1.16x on the block, ~10% of the pipeline, with
-//   zero fallbacks.
+//   FULL REORTHOGONALISATION IS MANDATORY. With none, or an 8-vector window, 3-4 of 1200 tail
+//   cases stall at 2.2e-09 relative -- failing the rtol 1e-9 gate silently, on a handful of
+//   molecules. Full reorth converged 1200 of 1200.
 //
-//   WHY IT IS NOT WIRED IN. It would put a SECOND NUMERICAL PATH into the block this project
-//   verifies most carefully, and this repo has already deleted one Lanczos on that trade. The
-//   strongest counter-argument was tested rather than waved away: the shipped descriptor matrix
-//   is float32 (~1.2e-7 relative), and the two paths differ by at most 2.5e-12 in float64, five
-//   orders below the representation they land in. Cast both paths to float32 and compare bit
-//   for bit over the whole corpus: ZERO differences in 22,696 values at min_n = 71 and ZERO in
-//   102,344 at min_n = 25. So the difference is invisible in what actually ships -- but it is
-//   invisible by a margin, not by construction: the flip rate is ~1e-5 per value, so a large
-//   enough corpus will eventually produce single-ULP differences. Two paths remain two paths.
-//   The decision is therefore a judgement about reproducibility, not about accuracy, and it was
-//   left to the owner rather than taken here. Wiring it back in is a dozen lines in bcut2d;
-//   re-measuring it is `./hume lanczosprobe` and `./hume f32cmp`.
+//   HOW THE GUARD WAS VALIDATED, because a guard that never fires proves nothing. Construct the
+//   pathology: power-iterate to the true lambda_max eigenvector, project it out of the start,
+//   and run (`./hume ghosttest`). On 688 such starts over 250 real tail molecules the guard as
+//   FIRST WRITTEN let through 162 ACCEPTED-WRONG values, worst 7e-2 -- a 7% error that would
+//   have shipped. Two bugs: the Gershgorin radius was a global bond sum (~190) instead of a row
+//   maximum (~4), which shifted the spectrum so far that lambda_max/lambda_2 became 1.0005 and
+//   power iteration could not converge in any number of steps; and `f32cmp` was comparing the
+//   Krylov path against itself. Fixed: 627 refused, 61 correctly accepted, ZERO wrong. Raising
+//   the iteration count 10 -> 300 had moved it only 162 -> 153, which is what showed the fault
+//   was structural rather than under-tuning.
 //
-//   THE METHOD LESSON, which cost four wrong answers to learn. Every one of them was a probe
-//   that measured an IDEALISED method rather than the one that would ship:
-//     * probe 1 timed operator construction alongside the matvec, and since dense construction
-//       is an n^2 fill, it flattered dense and understated the gap;
-//     * probe 3 timed Lanczos with oracle iteration counts, paying nothing for the convergence
+//   MEASURED ON THE SHIPPING CONFIGURATION (n >= 71, tol 1e-10, checks from k = 40 stride 8):
+//     corpus         2837 attempted, 4 fell back (0.141%), all on the true residual
+//     accuracy       worst |Krylov - dense| 2.524e-12 relative, float64
+//     ARTEFACT       float32 bit differences 0 of 22,664 -- the shipped matrix is float32
+//                    (~1.2e-7), so a 1e-12 disagreement is five orders below what it can hold
+//     adversarial    cages, C60, acenes, polyenes, peptides to 1764 heavy atoms, exotic
+//                    elements: worst 4.85e-14, 0 float32 differences, everything else refused
+//
+//   THE METHOD LESSON, which cost six wrong answers. Every one was a probe that measured an
+//   IDEALISED method rather than the one that would ship:
+//     * probe 1 timed operator CONSTRUCTION alongside the matvec; dense construction is an n^2
+//       fill, so it flattered dense and understated the gap;
+//     * probe 3 timed Lanczos with ORACLE iteration counts, paying nothing for the convergence
 //       testing a shipping version cannot avoid -- 3.62x became 1.08x once it did;
-//     * the certificate itself was wrong by up to 52 orders of magnitude, because the forward
+//     * the trigger recurrence was wrong by up to 52 orders of magnitude, because the FORWARD
 //       three-term recurrence is unstable in exactly the converged case (the eigenvector decays
-//       towards y_k, so integrating upward amplifies rounding). It reported s ~ 0.998 where the
-//       truth was 1e-16, never fired, and made a working method look 4.8x slower than dense;
-//     * and the first fix checked the certificate every 4 iterations from k = 28 when lambda_min
-//       cannot certify before ~59, so half the certified cost was dsterf calls that could not
-//       possibly have succeeded.
-//   The tell for the third was that the iteration count was FLAT in tolerance -- 1e-10 and
-//   1e-12 agreeing to 0.1 iterations is not how a real residual behaves, and that flatness was
-//   visible three measurements before anyone looked at it.
+//       towards y_k, so integrating upward amplifies rounding). It made a working method look
+//       4.8x slower than dense;
+//     * the first fix then checked every 4 iterations from k = 28 when lambda_min cannot
+//       certify before ~59, so half the certified cost was dsterf calls that could not succeed;
+//     * the guard had the Gershgorin bug above;
+//     * and f32cmp compared the new path against itself and reported a clean zero.
+//   Two tells worth remembering. The recurrence bug announced itself as an iteration count FLAT
+//   IN TOLERANCE -- 1e-10 and 1e-12 agreeing to 0.1 iterations is not how a real residual
+//   behaves, and that was visible three measurements before anyone read it. The guard bug
+//   announced itself as a defence that never fired.
 
 bool BCUT_SKIP_SOLVE = false;
 
