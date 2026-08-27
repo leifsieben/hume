@@ -247,9 +247,21 @@ H-graph construction in the harness.
 
   Remaining AC work: the tenth weight `Z`, 52 columns. See the note above on why it was left.
 
-**2. WIRE THE 76 FRAGMENT COLUMNS.** `src/hume_core/frag_matcher.h` + `cpp/frag_program.h` are
-ALL EXACT on 100,000 and have a standalone harness, but nothing calls them from `bindings.cpp`.
-This should be mechanical — same shape as the other six families in `all_row()`.
+**2. WIRE THE 76 FRAGMENT COLUMNS — and it is NOT mechanical, contrary to what this file said.**
+`src/hume_core/frag_matcher.h` + `cpp/frag_program.h` are ALL EXACT on 100,000 with a standalone
+harness, but `fragmatch::Mol` needs **`tval`, RDKit's `GetTotalValence()`, and the boundary does
+not carry it.** `atom_i` has Z, deg, nH, fchg, hyb, arom, ring, cip, nring — no valence. So this
+is a 10th `atom_i` column (both boundary paths, `extract()` AND `extract_pickles()`), a rebuild,
+and a re-verify of everything downstream, not a call added to `all_row()`.
+
+Do NOT try to derive `tval` from bond orders plus `nH`. RDKit's valence perception has its own
+rules for aromatic and dative bonds, and re-deriving perception C++-side is precisely the thing
+`_extract.py`'s docstring refuses to do for hybridisation — "the first place an 'exact' claim
+would quietly stop being true".
+
+The `border` field is fine: `fragmatch` wants RDKit's `BondType` integer (AROMATIC = 12, not a
+bitmask), and `esttyper::btypeFromBcode()` already converts `bond_i`'s `B_CODE` to exactly that,
+verified equal on all 3,090,892 bonds of `hard.smi`.
 
 **3. `infocontent` IS THE PIPELINE: 399.9 ± 2.52 µs/mol for 42 columns.** 63% of all compute,
 2× the entire 182-column block, ~6× everything else wired combined, for 33 columns of the 865.
