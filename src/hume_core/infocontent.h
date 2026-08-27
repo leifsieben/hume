@@ -216,15 +216,15 @@
 //     ordering, so the coefficients are the same whatever order the atoms or the bonds arrive in.
 //   * BIT-IDENTICAL TO RDKIT wherever RDKit is right. When the largest |c_k| fits in 60 bits the
 //     scale factor below is 1, the exact integers convert to double exactly, and the entropy is
-//     then computed with RDKit's own formula in RDKit's own order. Measured on the first 2,000
-//     of cpp/hard.smi: of the 1,950 molecules whose coefficients fit in 53 bits, 1,940 agree
-//     with RDKit TO THE LAST BIT.
-//   * AND THE TEN THAT DO NOT ARE RDKIT'S ERROR, not ours -- checked against exact integer
-//     arithmetic one by one rather than waved at. Ours is within 1.6e-15 of the exact answer on
-//     every one of them; RDKit is out by up to 1.02e-2. The reason is that COEFFICIENT width is
-//     not the right predictor: RDKit's Faddeev ITERATE MATRIX crosses 2^53 well before the final
-//     coefficients do, so RDKit stops being exact earlier than "max |c_k| <= 2^53" suggests.
-//     This is why the claim above is stated as a measurement and not as a theorem.
+//     then computed with RDKit's own formula in RDKit's own order. Measured over all 100,000:
+//     of the 96,244 molecules whose largest coefficient needs 40 bits or fewer, 96,221 agree
+//     with RDKit TO THE LAST BIT (max relative deviation on the rest, 1.08e-15).
+//   * WHERE THEY DIVERGE IT IS RDKIT'S ERROR, not ours -- checked against exact integer
+//     arithmetic rather than waved at. In the 41-53 bit band only 638 of 1,271 still match, and
+//     in every case examined ours is within ~1e-15 of the exact answer while RDKit is out by up
+//     to 1e-2. COEFFICIENT width is not the right predictor: RDKit's Faddeev ITERATE MATRIX
+//     crosses 2^53 well before the final coefficients do, so RDKit stops being exact earlier
+//     than "max |c_k| <= 2^53" suggests. Hence a measurement here rather than a theorem.
 //   * CORRECT past that, where RDKit is not.
 //
 // THE SCALE FACTOR. Entropy is invariant under a common scaling of its arguments, so the
