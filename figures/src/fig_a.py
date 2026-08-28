@@ -117,7 +117,13 @@ MODES = [
     ("null_kekulize",  "B",   "Kekulé\nform"),
 ]
 NROW, NCOL = 2, 7
-TINT = {"A": None, "REF": TINT_REF, "B": TINT_CONTROL}
+# THE REFERENCE PANEL SHARES THE CONTROLS' WARM TINT (Leif 2026-08-28). All three are
+# CALIBRATION rather than chemistry -- (m) sets the unit, (g) and (n) show what notation alone
+# buys -- so tinting them alike groups "not a chemical edit" and leaves the untinted panels as
+# exactly the ten edits. The caption still has to state the reading inversion for (g) and (n),
+# because the tint no longer distinguishes them from (m): a high bar is a FAILURE there and the
+# unit by construction here.
+TINT = {"A": None, "REF": TINT_CONTROL, "B": TINT_CONTROL}
 
 # What counts as "0" on the plate. NOT `== 0.0`, which was the first rule and it drew an
 # inconsistent figure: the fingerprints and CheMeleon are bitwise invariant to a re-written
@@ -257,15 +263,6 @@ def _panel(ax, armlist, cells, mode, klass, title, ymax):
     # compound where a CLM moves ~82% of its coordinates. The denominator is that same
     # matched-MW reference, so `12/29` reads "twelve of the twenty-nine positions that a
     # different compound would move", which is comparable across arms and still shows the count.
-    for xi, a in zip(x, armlist):
-        c = cells[a].get(mode)
-        if not c or len(c) < 7 or not np.isfinite(c[4]) or not np.isfinite(c[5]) or c[5] <= 0:
-            continue
-        top = med[xi] + (q3[xi] - med[xi] if np.isfinite(q3[xi]) else 0.0)
-        y = min(max(top, 0) + ymax * 0.035, ymax * 0.93)
-        ax.text(xi, y, f"{round(c[4]):d}/{round(c[5]):d}", ha="center", va="bottom",
-                fontsize=FS["annot"] - 3.0, color=STYLE["mute"], zorder=6, rotation=90)
-
     ax.set_ylim(0, ymax)
     ticks = np.arange(0, ymax + 1e-9, 0.5)
     ax.set_yticks(ticks)
