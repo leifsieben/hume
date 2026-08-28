@@ -714,7 +714,13 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     W.im.bcode[b] = (uint8_t)r[B_CODE];
     W.im.bord[b] = bd[b];
   }
-  infoic::compute(W.im, W.irow);
+  // computeIC(), not compute(): the Ipc block is 68% of this family's cost and its three columns
+  // (Ipc, AvgIpc, Log2Ipc) are NOT wired -- the copy below takes only N_IC. So compute() was
+  // paying an O(n^3) exact-integer Faddeev recurrence per molecule and dropping the result on the
+  // floor. The 42 columns are bit-identical either way; nothing above the Ipc block reads
+  // anything the Ipc block writes. compute() stays for the day AvgIpc gets wired -- it IS one of
+  // the 865.
+  infoic::computeIC(W.im, W.irow);
   for (int c = 0; c < infoic::N_IC; c++) out[OFF_IC + c] = W.irow.v[c];
   }
 
