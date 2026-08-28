@@ -158,6 +158,66 @@ def _run_mordred(job):
     return tot
 
 
+# FIGURE C NEEDS THE TWO DESCRIPTOR BLOCKS SEPARATELY, not only their union. `mordred` above is
+# ECFP + RDKit-180 + mordred-685, i.e. the `ecfp_all_desc` arm; Figure C also plots
+# `ecfp_rdkit_desc` and `ecfp_mordred_desc`, and their cost is NOT recoverable from the union --
+# the two blocks are wildly unequal (RDKit's 180 are cheap, mordred's 685 are not), so splitting
+# the union in proportion to column count would be wrong by an order of magnitude.
+#
+# Both reuse `_init_mordred`'s globals so the column sets are IDENTICAL to the union arm's by
+# construction; a second selection path is where the two figures start disagreeing about what
+# "RDKit descriptors" means.
+def _run_desc_block(job, want_rdkit, want_mordred):
+    shard, bs = job
+    from rdkit import Chem
+    from rdkit.Chem import rdFingerprintGenerator as rfg
+    gen = rfg.GetMorganGenerator(radius=3, fpSize=2048, includeChirality=True)
+    tot = 0.0
+    for lo in range(0, len(shard), bs):
+        mols = [Chem.MolFromSmiles(s) for s in shard[lo:lo + bs]]
+        mols = [m for m in mols if m is not None]
+        for m in mols:
+            if want_rdkit:
+                for _n, f in _RDK:
+                    try:
+                        tot += float(f(m) or 0.0)
+                    except Exception:
+                        pass
+            tot += float(gen.GetFingerprintAsNumPy(m)[::256].sum())
+        if want_mordred:
+            for _row in _CALC.map(mols, nproc=1, quiet=True):
+                pass
+        del mols
+    return tot
+
+
+def _run_rdkit_desc(job):
+    return _run_desc_block(job, True, False)
+
+
+def _run_mordred_desc(job):
+    return _run_desc_block(job, False, True)
+
+
+def _init_minimol():
+    _quiet()
+    global _MINIMOL
+    import torch
+    torch.set_grad_enabled(False)
+    torch.set_num_threads(1)
+    from minimol import Minimol
+    _MINIMOL = Minimol()
+
+
+def _run_minimol(job):
+    shard, bs = job
+    tot = 0.0
+    for lo in range(0, len(shard), bs):
+        out = _MINIMOL(shard[lo:lo + bs])
+        tot += float(sum(float(v[::37].sum()) for v in out))
+    return tot
+
+
 def _init_chemberta():
     _quiet()
     global _TOK, _MDL
@@ -276,6 +336,9 @@ ARMS = {
     "chemberta": (_init_chemberta, _run_chemberta, [1, 32, 128, 512]),
     "chemeleon": (_init_chemeleon, _run_chemeleon, [64, 256, 1024]),
     "chemprop":  (_init_chemprop,  _run_chemprop,  [256, 1024, 4096]),
+    "rdkit_desc":   (_init_mordred, _run_rdkit_desc,   [4096]),
+    "mordred_desc": (_init_mordred, _run_mordred_desc, [4096]),
+    "minimol":      (_init_minimol, _run_minimol,      [128, 512, 2048]),
 }
 GPU_BATCHES = {"chemberta": [128, 512, 1024, 2048], "chemeleon": [256, 1024, 4096],
                "chemprop": [1024, 4096, 16384]}

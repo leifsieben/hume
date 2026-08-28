@@ -212,11 +212,17 @@ arithmetic per molecule.
       `ecfp_all_desc` can take the Mordred arm's figure (same work)
 - [ ] Assemble `results/figures/figC/results.json`
 
-**Figure D**
-- [ ] Mordred 1e6 point (running) → `collect_scale.py` → render
+**Figure D — DONE.** All six arms measured at 1e4/1e5/1e6; `figures/fig_d.pdf` regenerated
+2026-08-28 from `results/scale/*.json` with prices pulled the same day.
 
 **Cross-cutting**
 - [ ] `fig_b.pdf` and `fig_c.pdf` on disk are NOT reproducible — their `results.json` was never
       committed. Both are regenerated from the new grid rather than trusted
-- [ ] r=4 downstream: is it a better HUME default than r=3? Resolution says r=4 > r=3 > r=2 on
-      every substitution edit; downstream is what decides, and dsA measures it
+- [ ] r=4 downstream: is it a better HUME default? **The old answer was an artefact of the old
+      metric.** The magnitude-ratio axis said r=4 > r=3 > r=2 on every substitution edit, and we
+      wrote up the resulting "resolution improves, downstream worsens" dissociation as a result in
+      its own right. On the AUC axis the ordering REVERSES — r=2 leads on ch2_homolog
+      (0.799/0.786/0.782), regioisomer (0.776/0.768/0.748) and stereo (0.752/0.751/0.744), and the
+      three are within noise on ring_contract. The first downstream cell agrees (ames auroc 0.853
+      / 0.848 / 0.838). So resolution and downstream now point the SAME way, the dissociation
+      claim is withdrawn, and the default stays r=2 unless the full grid overturns it

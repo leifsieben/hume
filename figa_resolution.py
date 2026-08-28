@@ -138,7 +138,15 @@ def main(arms):
     idx = json.load(open(FIGA / "smiles_index.json"))
     pos = {s: i for i, s in enumerate(idx["order"])}
     edits = sorted({p["edit"] for p in pairs})
-    out = {}
+    # MERGE INTO THE EXISTING RECORD, do not replace it. `out` started as `{}` and the file is
+    # rewritten after every arm, so scoring one late-arriving arm -- `desc` takes 45 minutes to
+    # embed and always lands last -- would have written a resolution.json containing ONLY that
+    # arm and silently deleted the other eleven. The figure would then render one bar per panel
+    # and look like a roster that had not finished yet, rather than like data loss.
+    RES = FIGA / "resolution.json"
+    out = json.load(open(RES)) if RES.exists() else {}
+    if out:
+        print(f"  merging into {len(out)} arm(s) already in resolution.json: {sorted(out)}")
     for arm in arms:
         f = EMB / f"{arm}.npz"
         if not f.exists():
@@ -167,8 +175,8 @@ def main(arms):
                   f"   [{d['min']:.3f},{d['max']:.3f}]"
                   f"{'   degenerate ' + str(degen) if degen else ''}", flush=True)
         FIGA.mkdir(parents=True, exist_ok=True)
-        json.dump(out, open(FIGA / "resolution.json", "w"), indent=1)
-    print(f"\n  -> {FIGA / 'resolution.json'}")
+        json.dump(out, open(RES, "w"), indent=1)
+    print(f"\n  -> {RES}  ({len(out)} arms)")
 
 
 if __name__ == "__main__":

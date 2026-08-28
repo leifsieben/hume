@@ -131,7 +131,15 @@ def arm_notation(smiles):
 
     Counted on the SMILES AS WRITTEN, deliberately not canonicalised: the point is what the
     string hands over, and re-canonicalising would measure a different string than the one the
-    CLM arms are fed.
+    CLM arms are fed. It is also why `null_enumerate` reads 0.962 here rather than 1.000 -- the
+    two members genuinely are different strings.
+
+    *** CASE IS PRESERVED, AND THAT IS NOT AN ACCIDENT. *** SMILES case is chemistry: aromatic
+    `c` against aliphatic `C`. Lowercasing would hand this baseline strictly less than a real
+    tokenizer sees and understate the floor, which is the one direction of error that matters --
+    an understated floor lets a panel look harder than it is. Verified rather than assumed:
+    `c1ccccc1` and `C1CCCCC1` produce different vectors under this function, on case alone. Do
+    not add `.lower()`.
     """
     from collections import Counter
     grams, rows = {}, []
