@@ -3,6 +3,7 @@
 //   cpp/verify_ic.py                    builds the tables and every corpus and drives all of this
 //   ./cpp/infocontent values IN OUT     45 columns per molecule, for Python to compare
 //   ./cpp/infocontent bench  IN         contended timing; see the note in bench()
+//   ./cpp/infocontent ipcbench IN [R]   the Ipc block's cost alone, paired within repetitions
 //   ./cpp/infocontent flip              the worked example from the header comment, in full
 //
 // WHY THE COMPARISON IS DONE IN PYTHON AND NOT HERE. Unlike the E-state port there is no
@@ -177,6 +178,75 @@ static void bench(const char *path) {
               "CONTENDED\n",
               med, reps.front(), reps.back(), 100.0 * (reps.front() - med) / med,
               100.0 * (reps.back() - med) / med);
+  if (sink == 12345.6789) std::printf("");
+}
+
+// ============================================================================================
+// ipcbench -- THE COST OF THE Ipc BLOCK ON ITS OWN, DIFFERENCED WITHIN EACH REPETITION.
+//
+// This is the number that decides whether `AvgIpc` can ship, so it is measured rather than
+// subtracted from two runs taken minutes apart. `compute()` (45 columns) and `computeIC()` (the
+// same function with `wantIpc = false`, so 42 columns and the Faddeev recurrence skipped) run
+// BACK TO BACK inside one repetition over the same molecules, and it is the DIFFERENCE that is
+// collected per repetition and then reduced. On a shared box the two arms of an unpaired
+// comparison see different machine states, and the difference of two ~200 us numbers taken at
+// different times is noise with a decimal point in it.
+//
+// The two entry points differ by EXACTLY the Ipc block and nothing else -- `computeIC` is
+// `compute` with one bool flipped -- so the difference is the block, not a model of it.
+//
+// ARM ORDER IS ALTERNATED between repetitions (IC-first on odd ones). A fixed order charges
+// whichever arm runs second for the cache state the first one left, and on a working set this
+// size that is not a small effect.
+//
+// THE MULTIWORD COUNT COSTS A WHOLE EXTRA PASS, and it is taken OUTSIDE the timed region on
+// purpose. There is no cheap predicate for "this molecule needs more than 64 bits" -- you find
+// out by running the recurrence -- so the count is a second full sweep rather than a branch
+// inside the arm being measured. It is worth the wall-clock because the whole story here is that
+// 2% of the corpus carries 90% of the cost, and a timing without that percentage next to it
+// invites the reader to treat the mean as typical. It is not: the median molecule pays nothing.
+// ============================================================================================
+static void ipcbench(const char *path, int reps) {
+  load(path);
+  long long nat = 0, nmulti = 0;
+  for (const Mol &m : g_mols) nat += m.n;
+  infoic::CodeBuilder cb;
+  Row r;
+  double sink = 0;
+  std::vector<double> all, ic, dif;
+  for (int rep = 0; rep < reps; rep++) {
+    double tAll = 0, tIC = 0;
+    for (int arm = 0; arm < 2; arm++) {
+      const bool wantAll = (rep % 2 == 0) ? (arm == 0) : (arm == 1);
+      auto t0 = std::chrono::steady_clock::now();
+      for (const Mol &m : g_mols) {
+        if (wantAll) infoic::compute(m, r, &cb); else infoic::computeIC(m, r, &cb);
+        for (int c = 0; c < infoic::N_COLS; c++) sink += r.v[c] == r.v[c] ? r.v[c] : 0.0;
+      }
+      auto t1 = std::chrono::steady_clock::now();
+      const double us = std::chrono::duration<double, std::micro>(t1 - t0).count() /
+                        (double)g_mols.size();
+      if (wantAll) tAll = us; else tIC = us;
+    }
+    all.push_back(tAll); ic.push_back(tIC); dif.push_back(tAll - tIC);
+  }
+  for (const Mol &m : g_mols) { infoic::compute(m, r, &cb); nmulti += r.ipcMaxCoeffBits >= 63; }
+  auto med = [](std::vector<double> v) {
+    std::sort(v.begin(), v.end());
+    return v[v.size() / 2];
+  };
+  auto spread = [&](std::vector<double> v) {
+    std::sort(v.begin(), v.end());
+    return v.back() - v.front();
+  };
+  std::printf("\n%zu molecules, mean %.1f heavy atoms, %lld (%.2f%%) on the MULTIWORD path, "
+              "%d reps, arms alternated\n", g_mols.size(), (double)nat / (double)g_mols.size(),
+              nmulti, 100.0 * (double)nmulti / (double)g_mols.size(), reps);
+  std::printf("  %-34s %10s %10s\n", "arm", "us/mol", "spread");
+  std::printf("  %-34s %10.2f %10.2f\n", "compute()   -- 45 cols", med(all), spread(all));
+  std::printf("  %-34s %10.2f %10.2f\n", "computeIC() -- 42 cols", med(ic), spread(ic));
+  std::printf("  %-34s %10.2f %10.2f   <- the Ipc block\n", "DIFFERENCE, paired per repetition",
+              med(dif), spread(dif));
   if (sink == 12345.6789) std::printf("");
 }
 
@@ -426,9 +496,13 @@ int main(int argc, char **argv) {
   if (!std::strcmp(cmd, "values"))
     return values(argc > 2 ? argv[2] : "cpp/ic_in0.txt", argc > 3 ? argv[3] : "cpp/ic_out0.txt");
   if (!std::strcmp(cmd, "bench")) { bench(argc > 2 ? argv[2] : "cpp/ic_in0.txt"); return 0; }
+  if (!std::strcmp(cmd, "ipcbench")) {
+    ipcbench(argc > 2 ? argv[2] : "cpp/ic_in0.txt", argc > 3 ? std::atoi(argv[3]) : 5);
+    return 0;
+  }
   if (!std::strcmp(cmd, "profile")) { profile(argc > 2 ? argv[2] : "cpp/ic_in0.txt"); return 0; }
   if (!std::strcmp(cmd, "keycheck")) return keycheck(argc > 2 ? argv[2] : "cpp/ic_in0.txt");
-  std::fprintf(stderr,
-               "usage: infocontent [values IN OUT | bench IN | profile IN | keycheck IN | flip]\n");
+  std::fprintf(stderr, "usage: infocontent [values IN OUT | bench IN | ipcbench IN [REPS] | "
+                       "profile IN | keycheck IN | flip]\n");
   return 1;
 }

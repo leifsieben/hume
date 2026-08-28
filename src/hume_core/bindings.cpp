@@ -34,6 +34,11 @@
 #include "crippen_typer.h"
 #include "estate_typer.h"
 #include "frag_matcher.h"
+// The two compiled query programs frag_matcher.h evaluates. They are separate headers, and the
+// matcher binds one of them per Matcher rather than reading either at namespace scope -- see
+// the top of frag_matcher.h for why one evaluator and not two.
+#include "../../cpp/frag_program.h"
+#include "../../cpp/qed_alert_program.h"
 #include "hume_blocks.h"
 #include "infocontent.h"
 #include "molpickle.h"
@@ -56,7 +61,8 @@ static void need(bool cond, const char *what) {
 // Column counts in the flat per-atom / per-bond blocks. Mirrored in src/hume/_extract.py; the
 // checks below turn a mismatch into an exception at the boundary instead of into silently
 // transposed descriptors.
-static constexpr int N_ATOM_INT = 10;  // Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
+// Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval, _ChiralityPossible, chiral tag, isotope
+static constexpr int N_ATOM_INT = 13;
 static constexpr int N_ATOM_DBL = 2;   // mass, gasteiger      (Crippen is computed here)
 static constexpr int N_BOND_INT = 6;   // u, v, conjugated, in-ring, SMARTS code, BondType int
 static_assert(N_ATOM_INT == (int)molpickle::N_ATOM_INT,
@@ -76,8 +82,16 @@ static_assert(N_BOND_INT == (int)molpickle::N_BOND_INT,
 // reason the rest of this list is: round(sum of incident bond orders) + nH disagrees with RDKit
 // on 11,238 of 575,571 corpus atoms, because aromatic bonds and hydrogens go through RDKit's own
 // rounding rule. See src/hume_core/frag_matcher.h.
+// A_CHIRPOSS is `hasProp("_ChiralityPossible")` and A_CTAG is `(int)getChiralTag()`. They are the
+// LEGACY stereo perception -- the one `NumAtomStereoCenters` and
+// `NumUnspecifiedAtomStereoCenters` read -- and NOT the one `SPS` reads; the two atom sets differ
+// on 262 of 4,000 corpus molecules. `SPS`'s inputs arrive as separate arrays because they are not
+// in the pickle; see all_from_pickles.
+// A_ISO is RDKit's GetIsotope(), SMARTS isotope. It exists for QED's structural alerts 112-115
+// -- `[15N]`, `[13C]`, `[18O]`, `[34S]` -- and for nothing else in the 865. It is carried and
+// not derived from `mass`: getMass() says an atom IS labelled, not which isotope it carries.
 enum { A_Z = 0, A_DEG = 1, A_NH = 2, A_FCHG = 3, A_HYB = 4, A_AROM = 5, A_RING = 6, A_CIP = 7,
-       A_NRING = 8, A_TVAL = 9 };
+       A_NRING = 8, A_TVAL = 9, A_CHIRPOSS = 10, A_CTAG = 11, A_ISO = 12 };
 // B_BTYPE is RDKit's Bond::BondType INTEGER (SINGLE 1, DOUBLE 2, TRIPLE 3, AROMATIC 12,
 // DATIVE 17, ...), which B_CODE deliberately does not carry: the SMARTS code answers "is the
 // order one SMARTS can name" and "is the aromatic flag set" and collapses everything else to
@@ -209,9 +223,11 @@ static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, Arr
   const ssize_t nm = chg_ok.shape(0);
   need(atom_off.shape(0) == nm + 1 && bond_off.shape(0) == nm + 1,
        "offset arrays must have n_mol + 1 entries");
-  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 10)");
+  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT,
+       ("atom_i must be (n_atoms, " + std::to_string(N_ATOM_INT) + ")").c_str());
   need(atom_d.ndim() == 2 && atom_d.shape(1) == N_ATOM_DBL, "atom_d must be (n_atoms, 2)");
-  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 6)");
+  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT,
+       ("bond_i must be (n_bonds, " + std::to_string(N_BOND_INT) + ")").c_str());
   need(atom_i.shape(0) == atom_d.shape(0), "atom_i and atom_d disagree on n_atoms");
   need(bond_i.shape(0) == bond_d.shape(0) && bond_i.shape(0) == bond_s.shape(0),
        "bond arrays disagree on n_bonds");
@@ -410,12 +426,17 @@ enum {
   OFF_PATH   = OFF_RING + ringcount::N_COLS,
   OFF_TOPO   = OFF_PATH + pathcount::N_COLS,
   OFF_IC     = OFF_TOPO + topocharge::N_COLS,
-  // infoic emits 45; the last three (Ipc, AvgIpc, Log2Ipc) are NOT wired. They are
-  // numbering-dependent on 2.8% of the corpus -- an open, diagnosed bug recorded at the top of
-  // src/hume_core/infocontent.h -- and an ill-posed column is worse than a missing one because
-  // it looks like a value. The 42 IC/TIC/SIC/BIC/CIC/MIC/ZMIC columns below it are bit-identical
-  // under renumbering and are wired.
-  OFF_AC     = OFF_IC + infoic::N_IC,
+  // infoic emits 45 and this wires 43: the 42 IC/TIC/SIC/BIC/CIC/MIC/ZMIC columns plus `AvgIpc`,
+  // which is one of the 865. `Ipc` and `Log2Ipc` are computed beside it and not emitted; they are
+  // not census members and they are the only unbounded columns in the family. See the note at
+  // the `infoic::compute` call below and item 5 of the WIRING section in infocontent.h.
+  //
+  // THE 2.8% NUMBERING-DEPENDENCE THIS COMMENT USED TO CITE WAS RDKIT'S, NOT OURS. Our
+  // coefficients are exact integers, so there is no cancellation for an ordering to change: seven
+  // distinct renumberings of all 100,000 molecules of cpp/hard.smi give byte-identical Ipc,
+  // AvgIpc and Log2Ipc (cpp/ic_in0..7.txt -> cpp/ic_out0..7.txt).
+  N_IC_WIRED = infoic::N_IC + 1,
+  OFF_AC     = OFF_IC + N_IC_WIRED,
   // 74 SMARTS pattern counts plus the two rdkit_core columns that are not substructure counts
   // but ride along on the same graph -- NHOHCount (a SUM OF HYDROGENS over N and O, not the
   // atom-counting SMARTS Lipinski.py displays) and HeavyAtomCount.
@@ -561,7 +582,13 @@ struct AllWork {
   autocorr::Mol am;
   autocorr::Work aw;
   fragmatch::Mol fm;
-  fragmatch::Matcher fmt;            // holds the recursive-query cache across molecules
+  // TWO MATCHERS, ONE Mol, ONE EVALUATOR. Each holds the recursive-query cache and the search
+  // plans for the program it is bound to; the molecule they read is the same `fm`, filled once.
+  // A single Matcher rebound between the two programs per molecule would rebuild nothing (the
+  // plan sets are process-lifetime) but WOULD throw away the recursive-query cache twice per
+  // molecule, which is the allocation `bind()` exists to avoid.
+  fragmatch::Matcher fmt;            // cpp/frag_program.h        -- the 74 fragment patterns
+  fragmatch::Matcher qmt;            // cpp/qed_alert_program.h   -- QED's 116 alerts
   std::vector<int> fcount;
   chisub::Mol xm;
   // chisub::Scratch owns a 512 KB pow() memo (65,536 doubles). It is hoisted here for that
@@ -575,7 +602,10 @@ struct AllWork {
   rdkcore::Mol dm;
   rdkcore::Scratch ds;
   std::vector<int32_t> rp_loc;       // the molecule's ring CSR, rebased to start at 0
-  AllWork() : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES), fcount(frag_prog::N_NAMED) {}
+  // In DECLARATION order, which is what the compiler runs regardless of what is written here.
+  AllWork()
+      : ecount(N_ESTATE_TYPES), esum(N_ESTATE_TYPES), fmt(frag_prog::PROGRAM),
+        qmt(qed_prog::PROGRAM), fcount(frag_prog::N_NAMED) {}
 };
 
 // A family selector, so a caller can time one family or compute a subset. Not an optimisation
@@ -611,7 +641,8 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
                     const double *BD, int a0, int b0, int n, int nb, int chg_ok,
                     const int *ring_ptr, const int *ring_at, int n_rings,
                     const int *HAI, const int *HBI, const double *HAC, int ha0, int hb0,
-                    int hn, int hnb, int h_chg_ok, unsigned fams, double *out) {
+                    int hn, int hnb, int h_chg_ok, const int *SA, const int *SB, unsigned fams,
+                    double *out) {
   const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
   const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
@@ -714,14 +745,21 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     W.im.bcode[b] = (uint8_t)r[B_CODE];
     W.im.bord[b] = bd[b];
   }
-  // computeIC(), not compute(): the Ipc block is 68% of this family's cost and its three columns
-  // (Ipc, AvgIpc, Log2Ipc) are NOT wired -- the copy below takes only N_IC. So compute() was
-  // paying an O(n^3) exact-integer Faddeev recurrence per molecule and dropping the result on the
-  // floor. The 42 columns are bit-identical either way; nothing above the Ipc block reads
-  // anything the Ipc block writes. compute() stays for the day AvgIpc gets wired -- it IS one of
-  // the 865.
-  infoic::computeIC(W.im, W.irow);
+  // compute(), not computeIC(): `AvgIpc` IS one of the 865 and is emitted below, so the Ipc
+  // block has to run. It is not cheap -- an exact-integer Le Verrier-Faddeev-Frame recurrence,
+  // O(n^3) in the HEAVY-atom count -- and this line was `computeIC()` for exactly as long as the
+  // three Ipc columns were unwired and the recurrence's result went on the floor.
+  //
+  // IF AvgIpc IS EVER DROPPED, PUT `computeIC()` BACK IN THE SAME EDIT. The 42 IC columns are
+  // bit-identical either way, so nothing would fail; the recurrence would simply run for nobody,
+  // which is the bug that cost this family 68% of its CPU once already.
+  infoic::compute(W.im, W.irow);
   for (int c = 0; c < infoic::N_IC; c++) out[OFF_IC + c] = W.irow.v[c];
+  // `Ipc` and `Log2Ipc` are computed and deliberately NOT emitted -- they are not members of the
+  // 865, and unlike everything else here they are unbounded (`Ipc` reaches 1.65e88 and saturates
+  // at DBL_MAX by design; `Log2Ipc` is -inf where `Ipc` is 0). Adding them is one line each and
+  // costs no compute, but putting an unbounded column in front of a model is the owner's call.
+  out[OFF_IC + infoic::N_IC] = W.irow.v[infoic::C_AVGIPC];
   }
 
   // ---- Autocorrelation: 540 columns, on the HYDROGEN-ADDED graph ----
@@ -768,6 +806,11 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.fm.arom[i] = r[A_AROM];
       W.fm.nring[i] = r[A_NRING];
       W.fm.tval[i] = r[A_TVAL];
+      // Read by the QED alert program only. No `rdkit_core` fragment pattern has an isotope
+      // query, so the 76 columns below are the same numbers with or without this line -- and
+      // that is measured, not asserted: cpp/frag on the 100,000-molecule dump is byte-
+      // identical before and after the eleventh boundary column existed.
+      W.fm.iso[i] = r[A_ISO];
     }
     for (int b = 0; b < nb; b++) {
       const int *r = bi + (ssize_t)b * N_BOND_INT;
@@ -848,24 +891,35 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     in.hchg = hc_ok ? hc : nullptr;
     in.nhchg = hc_ok ? hn : 0;
 
-    // THE TWO COLUMNS THAT CANNOT BE FINISHED YET. Left at their defaults, which make
-    // constit.h emit NaN rather than a plausible number:
-    //   `qed`  waits on `qedAlerts`, the count of RDKit QED's 116 structural-alert SMARTS that
-    //          match. They need matcher opcodes frag_matcher.h's compiled program does not carry
-    //          (isotope, `~`, `@`, component-level `.`), and writing a second matcher would put
-    //          two subgraph-isomorphism implementations in the repo. The other seven QED
-    //          properties are computed and verified in constit.h today.
-    //   `SPS`  waits on RDKit's POTENTIAL stereo perception (`FindMolChiralCenters`
-    //          includeUnassigned + `FindPotentialStereoBonds`), which the boundary's
-    //          ASSIGNED-only `cip` and `bond_s` columns cannot answer. It does NOT unblock
-    //          `NumAtomStereoCenters` / `NumUnspecifiedAtomStereoCenters` -- those read the
-    //          LEGACY `_ChiralityPossible` flag, a different perception that disagrees with this
-    //          one on 262 of 4,000 corpus molecules. See the note in src/hume_core/constit.h.
-    // They are emitted as NaN and NAMED, not dropped: a missing column reads as an oversight,
-    // and a faked one reads as an answer.
-    in.qedAlerts = -1;
-    in.stereoAtom = nullptr;
-    in.stereoBond = nullptr;
+    // `qed`'S EIGHTH PROPERTY, AND THE ONE IT WAS WAITING ON. QED.py's ALERTS term is
+    //     sum(1 for alert in StructuralAlerts if mol.HasSubstructMatch(alert))
+    // -- a count of PATTERNS, not of embeddings -- so this is `hasMatch` over the 116 compiled
+    // alerts and not `matchCount`. The other seven properties were already computed and verified
+    // in constit.h; this line is the whole of what was missing.
+    //
+    // IT RUNS ON THE SAME `W.fm` THE 76 FRAGMENT COLUMNS DID, which is the point of giving
+    // `Matcher` a bound program: one subgraph-isomorphism implementation, two compiled programs,
+    // both generated and validated by cpp/gen_frag_program.py against RDKit's own parse tree.
+    // The alert set needed four things the fragment set never exercised -- isotope (`[15N]`),
+    // `~`, `@` and component-level `.` -- and they are leaves of the same evaluator.
+    //
+    // F_CONSTIT IMPLIES F_FRAG (see `parse_families`), so `W.fm` is filled and finished above on
+    // every path that reaches here. It is the same graph, read twice, never rebuilt.
+    in.qedAlerts = fragmatch::countMatching(W.fm, W.qmt);
+
+    // `SPS` IS NO LONGER ONE OF THEM. Its two inputs are RDKit's POTENTIAL stereo perception,
+    // which the ASSIGNED-only `cip` and `bond_s` columns cannot answer and which the pickle does
+    // not carry, so they arrive as their own arrays from src/hume/_extract.py's
+    // `_potential_stereo`. A null pair is NOT defaulted to zero: constit.h returns NaN, because
+    // "nobody ran the perception" and "the perception found nothing" are different facts and a
+    // zeroed stereo term is a finite, plausible, wrong SPS.
+    //
+    // THIS IS NOT THE PERCEPTION THE TWO STEREO COUNTS BELOW READ. `NumAtomStereoCenters` and
+    // `NumUnspecifiedAtomStereoCenters` count the LEGACY `_ChiralityPossible` flag out of
+    // `atom_i`; the two atom sets disagree on 262 of 4,000 corpus molecules. Two perceptions,
+    // two boundary fields, and neither substitutes for the other.
+    in.stereoAtom = SA ? SA + a0 : nullptr;
+    in.stereoBond = SB ? SB + b0 : nullptr;
 
     constit::compute(W.km, in, out + OFF_CONSTIT, out[OFF_VSA + vsabin::C_TPSA]);
   }
@@ -889,6 +943,12 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.dm.nH[i] = r[A_NH];
       W.dm.fchg[i] = r[A_FCHG];
       W.dm.nring[i] = r[A_NRING];
+      // The LEGACY potential-stereo flag and the chiral tag, straight out of the two `atom_i`
+      // columns the pickle was already carrying. `NumAtomStereoCenters` is the count of the
+      // first; `NumUnspecifiedAtomStereoCenters` is the count of the first with the second at
+      // CHI_UNSPECIFIED. No perception happens on this side of the boundary.
+      W.dm.chirposs[i] = r[A_CHIRPOSS];
+      W.dm.ctag[i] = r[A_CTAG];
       W.dm.mass[i] = AD[(ssize_t)(a0 + i) * N_ATOM_DBL];
       W.dm.aw[i] = (r[A_Z] >= 0 && r[A_Z] < pickletab::N_Z) ? pickletab::ATOMIC_WEIGHT[r[A_Z]]
                                                             : 0.0;
@@ -932,8 +992,8 @@ static unsigned family_mask(const py::object &families) {
 }
 
 static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff, ArrI ring_ptr,
-                                            ArrI ring_at, py::sequence h_pickles,
-                                            py::object families) {
+                                            ArrI ring_at, py::sequence h_pickles, ArrI stereo_a,
+                                            ArrI stereo_b, py::object families) {
   Blobs b = borrow(pickles);
   Blobs hb = borrow(h_pickles);
   need((ssize_t)hb.ptr.size() == (ssize_t)b.ptr.size(),
@@ -946,6 +1006,14 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   const int *RM = ring_moff.data(), *RP = ring_ptr.data(), *RA = ring_at.data();
   need(nm == 0 || (RM[nm] + 1 == ring_ptr.shape(0) && RP[RM[nm]] == ring_at.shape(0)),
        "the ring CSR does not close: ring_moff / ring_ptr / ring_at disagree on their lengths");
+
+  // THE POTENTIAL-STEREO PAIR, and the empty case is a CONTRACT rather than a convenience.
+  // `src/hume/_extract.py` sends length-0 arrays when the caller passed `stereo=False`, which
+  // means "the perception was never run" -- distinct from "it ran and found nothing", which is a
+  // full-length array of zeros. The first yields NaN for `SPS`; the second yields a number. Any
+  // other length is a caller bug and is refused here rather than read past the end.
+  need(stereo_a.ndim() == 1 && stereo_b.ndim() == 1, "stereo_a / stereo_b must be 1-D");
+  const bool have_stereo = stereo_a.shape(0) != 0 || stereo_b.shape(0) != 0;
 
   auto out = py::array_t<double>({(ssize_t)nm, (ssize_t)N_ALL_COLS});
   double *O = out.mutable_data();
@@ -961,6 +1029,17 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // `constit` used to be the case that quietly got a null charge array here.
     const bool need_h = (fams & F_NEEDS_H) != 0;
     if (need_h) fill_from_pickles(hb, h, /*want_ac_charge=*/true);
+    // Checked AFTER the parse, because only then is the atom/bond count of the batch known --
+    // and a stereo array that is the wrong length would otherwise be read past its end for every
+    // molecule after the first short one.
+    if (have_stereo && (stereo_a.shape(0) != f.atom_off[nm] || stereo_b.shape(0) != f.bond_off[nm]))
+      throw std::invalid_argument(
+          "hume._core: stereo_a / stereo_b must be empty or have one entry per atom / per bond of "
+          "the batch (got " + std::to_string(stereo_a.shape(0)) + " / " +
+          std::to_string(stereo_b.shape(0)) + " for " + std::to_string(f.atom_off[nm]) +
+          " atoms / " + std::to_string(f.bond_off[nm]) + " bonds)");
+    const int *SA = have_stereo ? stereo_a.data() : nullptr;
+    const int *SB = have_stereo ? stereo_b.data() : nullptr;
     AllWork W;
     for (ssize_t k = 0; k < nm; k++) {
       const int r0 = RM[k], nr = RM[k + 1] - r0;
@@ -971,7 +1050,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
               f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
               h.atom_i.data(), h.bond_i.data(), h.ac_charge.data(), ha0, hb0,
               need_h ? h.atom_off[k + 1] - ha0 : 0,
-              need_h ? h.bond_off[k + 1] - hb0 : 0, need_h ? h.chg_ok[k] : 0, fams,
+              need_h ? h.bond_off[k + 1] - hb0 : 0, need_h ? h.chg_ok[k] : 0, SA, SB, fams,
               O + (ssize_t)k * N_ALL_COLS);
     }
   }
@@ -992,7 +1071,11 @@ static py::list all_column_names_tail() {
   for (int c = 0; c < ringcount::N_COLS; c++) out.append(py::str(ringcount::COLS[c].name));
   for (int c = 0; c < pathcount::N_COLS; c++) out.append(py::str(pathcount::COLS[c].name));
   for (int c = 0; c < topocharge::N_COLS; c++) out.append(py::str(topocharge::col_name(c)));
+  // The 42 IC columns, then `AvgIpc` -- which is columnNames()[C_AVGIPC], not [N_IC]: the row's
+  // Ipc block is (Ipc, AvgIpc, Log2Ipc) in that order, so the census member is the MIDDLE one.
+  // This must stay in lockstep with the emit loop in all_row().
   for (int c = 0; c < infoic::N_IC; c++) out.append(py::str(infoic::columnNames()[c]));
+  out.append(py::str(infoic::columnNames()[infoic::C_AVGIPC]));
   for (int c = 0; c < autocorr::N_COLS; c++) out.append(py::str(autocorr::col_name(c)));
   for (int c = 0; c < frag_prog::N_NAMED; c++) out.append(py::str(frag_prog::NAMED[c].name));
   out.append(py::str("NHOHCount"));
@@ -1011,8 +1094,10 @@ static py::list all_column_names_tail() {
 // internally, so without this there is no way to compare it against RDKit's per-atom answer --
 // and a per-atom comparison is strictly stronger than watching four BCUT2D columns agree.
 static py::array_t<double> crippen_pairs(ArrI atom_off, ArrI bond_off, ArrI atom_i, ArrI bond_i) {
-  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT, "atom_i must be (n_atoms, 10)");
-  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT, "bond_i must be (n_bonds, 6)");
+  need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT,
+       ("atom_i must be (n_atoms, " + std::to_string(N_ATOM_INT) + ")").c_str());
+  need(bond_i.ndim() == 2 && bond_i.shape(1) == N_BOND_INT,
+       ("bond_i must be (n_bonds, " + std::to_string(N_BOND_INT) + ")").c_str());
   need(atom_off.ndim() == 1 && bond_off.ndim() == 1 && atom_off.shape(0) >= 1 &&
        atom_off.shape(0) == bond_off.shape(0), "offsets must be 1-D and the same length");
   const ssize_t nm = atom_off.shape(0) - 1;
@@ -1100,14 +1185,21 @@ PYBIND11_MODULE(_core, mod) {
   // Exported so src/hume/__init__.py can assert them BY NAME against _columns.py, which is where
   // the 182 block names live. See the note on B_KAPPA1.
   mod.attr("BLOCK_KAPPA_COLS") = py::make_tuple((int)B_KAPPA1, (int)B_KAPPA2);
+  // `stereo_a` / `stereo_b` are REQUIRED and have no default, deliberately. A default would let a
+  // caller get a full matrix in which exactly one column is silently NaN, which is the failure
+  // this file is written against; the two existing positional callers (src/hume/__init__.py,
+  // bench_e2e.py) were updated instead.
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
-          py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"),
-          py::arg("families") = py::none(),
+          py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"), py::arg("stereo_a"),
+          py::arg("stereo_b"), py::arg("families") = py::none(),
           "Every natively computed column for a batch of ToBinary() blobs, as "
           "(n_mol, N_ALL_COLS). Pickle-only: RingCount needs the SSSR ring lists, which are in "
-          "the pickle and not in the extract() boundary arrays. `families` restricts which "
-          "families are computed -- for cpp/bench_e2e.py's per-family breakdown, NOT for "
-          "production use; the columns of a family left out are zero, not missing.");
+          "the pickle and not in the extract() boundary arrays. `stereo_a` / `stereo_b` are "
+          "RDKit's POTENTIAL stereo perception, per atom and per bond, which the pickle cannot "
+          "carry -- see src/hume/_extract.py's _potential_stereo(); pass length-0 arrays to say "
+          "it was not run, and `SPS` is then NaN. `families` restricts which families are "
+          "computed -- for cpp/bench_e2e.py's per-family breakdown, NOT for production use; the "
+          "columns of a family left out are zero, not missing.");
   mod.def("all_column_names_tail", &all_column_names_tail,
           "Column names for everything after the first 182; src/hume/_columns.py names those.");
 }

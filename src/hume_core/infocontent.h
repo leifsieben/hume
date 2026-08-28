@@ -189,9 +189,13 @@
 //      n = 199    6 values, 0.6905 .. 1.5129        <- a factor of 2.2 apart
 //      n = 245    6 values, 1.6720 .. 1.6831
 //
-// So `AvgIpc` fails PORT_STATUS.md house rule 1's test -- is it a function of the molecule? --
-// for every molecule above about 70 heavy atoms, which is 2.9% of cpp/hard.smi. Reproducing
-// RDKit bit-for-bit there would again be reproducing a coin flip.
+// So RDKIT'S `AvgIpc` fails PORT_STATUS.md house rule 1's test -- is it a function of the
+// molecule? -- for every molecule above about 70 heavy atoms, which is 2.9% of cpp/hard.smi.
+// Reproducing RDKit bit-for-bit there would again be reproducing a coin flip.
+//
+// READ THAT AS A STATEMENT ABOUT RDKIT AND NOT ABOUT THE COLUMN THIS FILE SHIPS. `AvgIpc` IS
+// wired, and it is well posed: see the determinism evidence under "WHAT THAT BUYS" below. The
+// name is the same and the two values differ on 2.9% of the corpus, which is the whole point.
 //
 // AND OVERFLOW IS NOT THE PROBLEM, contrary to what this file said before it was measured.
 // Over all 100,000 molecules RDKit's Ipc is FINITE EVERY TIME: 100000 finite, 0 inf, 0 nan,
@@ -214,6 +218,20 @@
 // WHAT THAT BUYS, and each of these is checked on the corpus by cpp/verify_ic.py:
 //   * DETERMINISTIC everywhere. Integer arithmetic has no cancellation error to depend on an
 //     ordering, so the coefficients are the same whatever order the atoms or the bonds arrive in.
+//
+//     THIS IS NOW MEASURED, AND IT IS WHAT CLOSED THE `Ipc` BUG. An earlier version of this file
+//     said `Ipc` was numbering-dependent on 2.8% of the corpus and left all three of its columns
+//     unwired. That was RDKIT'S instability, described above, and the determinism evidence for
+//     OUR value had a hole in it: six byte-identical outputs existed with no surviving record of
+//     what had been fed in, and six identical outputs prove nothing without distinct inputs.
+//     The hole is closed. cpp/ic_in0..7.txt and cpp/ic_out0..7.txt are on disk together:
+//     SEVEN DISTINCT INPUTS (in0 and in4 coincide, because the canonical-SMILES round trip is a
+//     control and is vacuous on an already-canonical corpus) producing EIGHT BYTE-IDENTICAL
+//     OUTPUTS, md5 6b5ddecc3a5dd574fe06ea626f032a93, 100,000 molecules x 45 columns. The inputs
+//     were re-checked to be the same 100,000 GRAPHS under a renumbering-invariant fingerprint and
+//     to differ in the atom order on ~98,700 of them and in the bond list on ~99,300 -- so they
+//     are perturbations, not copies. Per column, Ipc / AvgIpc / Log2Ipc each moved on 0 molecules
+//     across all seven, with 63,132 distinct values apiece: deterministic, and not trivially so.
 //   * BIT-IDENTICAL TO RDKIT wherever RDKit is right. When the largest |c_k| fits in 60 bits the
 //     scale factor below is 1, the exact integers convert to double exactly, and the entropy is
 //     then computed with RDKit's own formula in RDKit's own order. Measured over all 100,000:
@@ -276,8 +294,9 @@
 // per molecule by cpp/verify_ic.py against the real `Chem.AddHs` graph.
 //
 // --------------------------------------------------------------------------------------------
-// WIRING. Not done here -- bindings.cpp and hume_blocks.h are owned by other agents right now --
-// so this is the instruction rather than the edit. It is four small pieces and no new inputs.
+// WIRING. DONE -- bindings.cpp emits 43 columns from this file: the 42 IC columns and `AvgIpc`.
+// What follows is the record of what the wiring must keep true, not a to-do list; every item is
+// something that would break a value silently rather than loudly if it were changed.
 //
 //   1. bindings.cpp, next to `crippen_fill`: fill an `infoic::Mol` from the SAME `AI` / `BI`
 //      pointers that loop already walks. Per atom take columns A_Z, A_NH, A_FCHG, A_AROM; per
@@ -302,27 +321,58 @@
 //      `compute()` is a function-local `thread_local` rather than a stack object, so a caller
 //      that passes nothing gets the same reuse. Passing one explicitly is still tidier.
 //
-//   5. THE ONE WIRING CHANGE STILL OUTSTANDING, AND IT IS WORTH 68% OF THIS DESCRIPTOR.
-//      bindings.cpp copies `infoic::N_IC` values and throws Ipc / AvgIpc / Log2Ipc away -- but
-//      it calls `compute()`, which computes them. That is an exact-integer Le
-//      Verrier-Faddeev-Frame recurrence, O(n^3) in the heavy-atom count, MEASURED at 68% of this
-//      file's entire CPU on 5,000 molecules of cpp/hard.smi. One line:
+//   5. `compute()` VS `computeIC()` -- WHICH ONE THE EXTENSION CALLS IS A COST DECISION, and it
+//      has been taken twice in opposite directions, so read the reason and not just the line.
 //
-//          infoic::compute(W.im, W.irow);   ->   infoic::computeIC(W.im, W.irow);
+//      `computeIC()` is `compute()` with the Ipc block skipped. The 42 IC columns are
+//      BIT-IDENTICAL either way -- nothing above the Ipc block reads anything the Ipc block
+//      writes -- so the only difference is that `compute()` also runs the exact-integer Le
+//      Verrier-Faddeev-Frame recurrence, which is O(n^3) in the HEAVY-atom count.
 //
-//      The 42 wired columns are bit-identical either way -- nothing above the Ipc block reads
-//      anything the Ipc block writes -- and `compute()` is still there for the day Ipc's own bug
-//      is closed and `AvgIpc` (which IS one of the 865) gets wired.
+//      It was switched to `computeIC()` when Ipc's three columns were unwired, because the
+//      recurrence was 68% of this file's CPU on the 5,000-molecule sample it was measured on --
+//      81.9% on the whole corpus, which is the honest number -- and the result went on the
+//      floor. It is back to
+//      `compute()` now that `AvgIpc` -- which IS one of the 865 -- is wired and the determinism
+//      question above is closed. What made that affordable is recorded on `faddeevMultiword`
+//      below: the multiword path was 90% of the Ipc block's cost and is 3.07x faster than it
+//      was, so the block costs 67.0 us/mol over all 100,000 of cpp/hard.smi instead of 179.3.
+//
+//      MEASURE IT WITH `./cpp/infocontent ipcbench`, which runs `compute` and `computeIC` back
+//      to back inside one repetition and reports the DIFFERENCE, so the number is the block and
+//      not two unpaired runs subtracted. Whole corpus, quiet box at load1 1.9, 5 reps:
+//
+//                                  us/mol      spread     the Ipc block
+//          HEAD                    218.93        1.46         179.30
+//          + CSR restructure       159.98        0.41         120.12
+//          + templated W           107.71        1.28          67.02
+//
+//      The `computeIC` arm is 39.66 / 39.84 / 40.72 across those three, i.e. flat: none of this
+//      touched the 42 IC columns, which is the control that says so.
+//
+//      IF THE THREE Ipc COLUMNS ARE EVER UNWIRED AGAIN, switch back to `computeIC()` in the same
+//      edit. Leaving `compute()` in place would silently reinstate the whole recurrence for
+//      nothing, which is exactly the bug that was found here before.
+//
+//   6. `AvgIpc` IS `row.v[C_AVGIPC]`, NOT `row.v[N_IC]`. The Ipc block is three columns in the
+//      order (Ipc, AvgIpc, Log2Ipc), so the census member is the MIDDLE one and `v[N_IC]` is
+//      `Ipc` -- a number 80-odd orders of magnitude larger that would look like a value and pass
+//      every shape check. The emit loop and `all_column_names_tail()` must move together, or the
+//      column ships under the wrong name, which no test in this repo would catch.
 //
 //   Column names come from `infoic::columnNames()`. 33 of the 42 InformationContent columns and
-//   `AvgIpc` are the ones that survive data/dedupe.json; `Ipc` and `Log2Ipc` are emitted beside
-//   `AvgIpc` because dropping a column that is already computed would violate house rule 7 the
-//   moment the dedupe is rerun at another threshold.
+//   `AvgIpc` are the ones that survive data/dedupe.json. `Ipc` and `Log2Ipc` are COMPUTED but not
+//   emitted: they are not members of the 865, and the two of them are the only columns in this
+//   family that are not O(1)-bounded -- `Ipc` reaches 1.65e88 and saturates by design, `Log2Ipc`
+//   is -inf where `Ipc` is 0 -- so putting them in front of a downstream model is a decision for
+//   the project owner rather than a free consequence of having computed them. Emitting them is
+//   two lines in bindings.cpp and costs nothing if the dedupe is ever rerun at another threshold
+//   and asks for them.
 //
 //   #include "infocontent.h"
 //   infoic::selfCheck();                       // once, at module load
-//   infoic::Row r; infoic::computeIC(mol, r);  // the 42 wired columns
-//   infoic::Row r; infoic::compute(mol, r);    // ... or all 45, names in columnNames()
+//   infoic::Row r; infoic::compute(mol, r);    // all 45; the wiring emits 42 + AvgIpc
+//   infoic::Row r; infoic::computeIC(mol, r);  // ... or the 42 alone, if Ipc is not wanted
 //
 #ifndef HUME_INFOCONTENT_H
 #define HUME_INFOCONTENT_H
@@ -760,7 +810,22 @@ class CodeBuilder {
 // than __int128 so this stays portable C++17.
 namespace big {
 
-inline bool add(uint64_t *d, const uint64_t *s, int W) {
+// ADD, WITH W A COMPILE-TIME CONSTANT. This used to take W as a runtime argument, and that is
+// what made it expensive: it is called once per matrix ELEMENT inside the Faddeev recurrence --
+// 2 * n_bonds * n times per step -- and a two- or four-limb carry chain behind an unknown trip
+// count cannot be unrolled, so every limb pays a loop-back branch and a dependent compare that a
+// fixed-length sequence does not.
+//
+// ONLY THE LOOP BOUND CHANGED. The body is the runtime version's body character for character:
+// same limb order, same carry rule, same signed-overflow test. It is nevertheless checked by
+// measurement rather than left as an argument -- see the bit-identity run over all eight
+// ic_in*.txt dumps recorded in PORT_STATUS.md.
+//
+// There is deliberately no runtime-W twin. The O(n) and O(W) callers (the trace, the diagonal
+// update) are inside the same templated recurrence and get W for free, and a second copy of a
+// carry chain is exactly the kind of thing that gets fixed in one place only.
+template <int W>
+inline bool addT(uint64_t *d, const uint64_t *s) {
   const uint64_t ds = d[W - 1] >> 63, ss = s[W - 1] >> 63;
   uint64_t carry = 0;
   for (int i = 0; i < W; i++) {
@@ -844,6 +909,93 @@ inline double toScaledDouble(const uint64_t *x, int W, int scaleExp, int *bitlen
 }
 
 }  // namespace big
+
+// --------------------------------------------------------------------------------------------
+// The Faddeev recurrence in multiword integers, at a FIXED word count W. Fills `C` with the n+1
+// coefficients (W limbs each, little endian) and returns true; returns false if any addition
+// overflowed W words, in which case the caller widens and starts the molecule again.
+//
+// THIS IS THE 90% CASE. Only 2.08% of cpp/hard.smi reaches it -- 2,076 molecules of 100,000,
+// the ones whose characteristic-polynomial coefficients pass 62 bits, which is essentially the
+// ones with the most atoms -- but it is an O(n^3) recurrence and those are the largest n, so it
+// carried ~90% of the entire Ipc block's CPU. On that subset alone, 5 reps, paired:
+//
+//         HEAD 7790.67 us/mol  ->  CSR 5017.69 (1.55x)  ->  + templated W 2534.22 (3.07x)
+//
+// The 42 IC columns on the same 2,076 molecules cost 192.87 us/mol, so before this rewrite the
+// Ipc block was FORTY TIMES the rest of the descriptor there. It is still thirteen times.
+//
+// TWO THINGS MAKE IT QUICK, and each is bit-identity preserving for a reason that is worth
+// stating rather than trusting:
+//
+//   * `T = A M` IS DRIVEN BY THE SAME CSR THE FAST PATH USES, and each row is SEEDED by copying
+//     its first neighbour's row instead of zeroing all of T and adding every neighbour into it.
+//     The zero pass was n^2 * W words per step -- as much memory traffic as the additions it was
+//     preparing for, and pure waste, since every row that is not isolated is overwritten anyway.
+//
+//     THE PER-ROW ACCUMULATION ORDER IS UNCHANGED, which is what makes overflow detection
+//     identical rather than merely similar. The old bond loop gave row u its neighbours in
+//     increasing bond index; the CSR is built by walking the bond list in that same order, so it
+//     hands back the same sequence. The only partial sum that disappears is `0 + M[v0]`, and
+//     adding to zero can never change a sign, so it could never have been the addition that
+//     overflowed. The set of W for which the recurrence overflows is therefore the same set, and
+//     the widening decision is the same decision.
+//
+//   * W IS A TEMPLATE PARAMETER, so `big::addT<W>` unrolls into a fixed carry chain. The old code
+//     called the carry loop once per matrix ELEMENT with W unknown at compile time.
+//
+// The early `!overflow` bail is per ROW here and was per BOND before. That changes only how much
+// work is thrown away after an overflow is seen, never whether one is seen: both forms are a lazy
+// evaluation of "does any addition in the full sequence overflow", and both truncate only after
+// the answer is already true.
+// --------------------------------------------------------------------------------------------
+template <int W>
+inline bool faddeevMultiword(const Mol &m, const int32_t *astart, const int32_t *anbr,
+                             std::vector<uint64_t> &C) {
+  const int n = m.n;
+  const size_t rowlen = (size_t)n * (size_t)W;
+  std::vector<uint64_t> M(rowlen * (size_t)n, 0), T(rowlen * (size_t)n, 0);
+  C.assign((size_t)(n + 1) * (size_t)W, 0);
+  bool overflow = false;
+  const uint64_t ONE = 1;
+  for (int b = 0; b < m.nb; b++) {                     // M_1 = A
+    M[(size_t)m.bu[b] * rowlen + (size_t)m.bv[b] * W] = ONE;
+    M[(size_t)m.bv[b] * rowlen + (size_t)m.bu[b] * W] = ONE;
+  }
+  C[0] = ONE;                                          // c_0 = 1
+  uint64_t cprev[W], acc[W];
+  for (int q = 0; q < W; q++) { cprev[q] = 0; acc[q] = 0; }
+  // c_1 = -tr(M_1) = -tr(A) = 0, but computed rather than assumed.
+  for (int i = 0; i < n && !overflow; i++)
+    overflow |= big::addT<W>(acc, &M[(size_t)i * rowlen + (size_t)i * W]);
+  overflow |= big::negate(acc, W);
+  for (int q = 0; q < W; q++) { C[(size_t)W + q] = acc[q]; cprev[q] = acc[q]; }
+
+  for (int k = 2; k <= n && !overflow; k++) {
+    for (int i = 0; i < n && !overflow; i++)           // M += c_{k-1} I
+      overflow |= big::addT<W>(&M[(size_t)i * rowlen + (size_t)i * W], cprev);
+    for (int u = 0; u < n && !overflow; u++) {         // T = A M, one row per atom
+      uint64_t *tu = &T[(size_t)u * rowlen];
+      const int e0 = astart[u], e1 = astart[u + 1];
+      if (e0 == e1) { std::memset(tu, 0, rowlen * sizeof(uint64_t)); continue; }
+      std::memcpy(tu, &M[(size_t)anbr[e0] * rowlen], rowlen * sizeof(uint64_t));
+      for (int e = e0 + 1; e < e1; e++) {
+        const uint64_t *mv = &M[(size_t)anbr[e] * rowlen];
+        for (int j = 0; j < n; j++)
+          overflow |= big::addT<W>(tu + (size_t)j * W, mv + (size_t)j * W);
+      }
+    }
+    M.swap(T);
+    for (int q = 0; q < W; q++) acc[q] = 0;
+    for (int i = 0; i < n && !overflow; i++)
+      overflow |= big::addT<W>(acc, &M[(size_t)i * rowlen + (size_t)i * W]);
+    overflow |= big::negate(acc, W);
+    if (overflow) break;
+    big::divSmall(acc, (uint64_t)k, W);                // exact: tr(A M_k) is divisible by k
+    for (int q = 0; q < W; q++) { C[(size_t)k * W + q] = acc[q]; cprev[q] = acc[q]; }
+  }
+  return !overflow;
+}
 
 // Exact characteristic-polynomial coefficients |c_0| .. |c_n| of the hydrogen-suppressed
 // adjacency matrix, returned as doubles scaled by 2^-E with E chosen so that E == 0 whenever the
@@ -958,61 +1110,31 @@ inline void charPolyScaled(const Mol &m, std::vector<double> &out, int &E, int &
     }
   }
 
-  for (int W = 2; W <= 32; W *= 2) {
-    const size_t stride = (size_t)W;
-    const size_t rowlen = (size_t)n * stride;
-    std::vector<uint64_t> M(rowlen * n, 0), T(rowlen * n, 0), C((size_t)(n + 1) * stride, 0);
-    bool overflow = false;
-    const uint64_t ONE = 1;
-    // M_1 = A
-    for (int b = 0; b < m.nb && !overflow; b++) {
-      M[(size_t)m.bu[b] * rowlen + (size_t)m.bv[b] * stride] = ONE;
-      M[(size_t)m.bv[b] * rowlen + (size_t)m.bu[b] * stride] = ONE;
-    }
-    C[0] = ONE;                                          // c_0 = 1
-    std::vector<uint64_t> cprev(stride, 0), acc(stride, 0);
-    // c_1 = -tr(M_1) = -tr(A) = 0, but computed rather than assumed.
-    for (int i = 0; i < n && !overflow; i++)
-      overflow |= big::add(acc.data(), &M[(size_t)i * rowlen + (size_t)i * stride], W);
-    overflow |= big::negate(acc.data(), W);
-    for (int q = 0; q < W; q++) { C[stride + q] = acc[q]; cprev[q] = acc[q]; }
-
-    for (int k = 2; k <= n && !overflow; k++) {
-      for (int i = 0; i < n && !overflow; i++)           // M += c_{k-1} I
-        overflow |= big::add(&M[(size_t)i * rowlen + (size_t)i * stride], cprev.data(), W);
-      std::fill(T.begin(), T.end(), (uint64_t)0);        // T = A M, one row add per bond end
-      for (int b = 0; b < m.nb && !overflow; b++) {
-        const size_t u = (size_t)m.bu[b], v = (size_t)m.bv[b];
-        uint64_t *tu = &T[u * rowlen], *tv = &T[v * rowlen];
-        const uint64_t *mu = &M[u * rowlen], *mv = &M[v * rowlen];
-        for (int j = 0; j < n; j++) {
-          overflow |= big::add(tu + (size_t)j * stride, mv + (size_t)j * stride, W);
-          overflow |= big::add(tv + (size_t)j * stride, mu + (size_t)j * stride, W);
-        }
-      }
-      M.swap(T);
-      std::fill(acc.begin(), acc.end(), (uint64_t)0);
-      for (int i = 0; i < n && !overflow; i++)
-        overflow |= big::add(acc.data(), &M[(size_t)i * rowlen + (size_t)i * stride], W);
-      overflow |= big::negate(acc.data(), W);
-      if (overflow) break;
-      big::divSmall(acc.data(), (uint64_t)k, W);         // exact: tr(A M_k) is divisible by k
-      for (int q = 0; q < W; q++) { C[(size_t)k * stride + q] = acc[q]; cprev[q] = acc[q]; }
-    }
-    if (overflow) continue;                              // widen and start again
+  // The word count is still chosen ADAPTIVELY -- start narrow, widen on overflow -- but the
+  // widths are now an explicit ladder of template instantiations rather than a runtime `W *= 2`,
+  // so each one compiles to its own unrolled carry chain. The ladder is the same 2, 4, 8, 16, 32
+  // the loop walked, and the same 2048-bit ceiling terminates it.
+  {
+    const int32_t *as = astart.data(), *an = anbr.data();
+    std::vector<uint64_t> C;
+    int W = 0;
+    if      (faddeevMultiword<2>(m, as, an, C))  W = 2;
+    else if (faddeevMultiword<4>(m, as, an, C))  W = 4;
+    else if (faddeevMultiword<8>(m, as, an, C))  W = 8;
+    else if (faddeevMultiword<16>(m, as, an, C)) W = 16;
+    else if (faddeevMultiword<32>(m, as, an, C)) W = 32;
+    else throw std::runtime_error("infoic: characteristic polynomial needs more than 2048 bits");
 
     maxbits = 0;
     for (int k = 0; k <= n; k++) {
       int b = 0;
-      big::toScaledDouble(&C[(size_t)k * stride], W, 0, &b);
+      big::toScaledDouble(&C[(size_t)k * (size_t)W], W, 0, &b);
       maxbits = std::max(maxbits, b);
     }
     E = std::max(0, maxbits - 60);
     for (int k = 0; k <= n; k++)
-      out[k] = big::toScaledDouble(&C[(size_t)k * stride], W, E, nullptr);
-    return;
+      out[k] = big::toScaledDouble(&C[(size_t)k * (size_t)W], W, E, nullptr);
   }
-  throw std::runtime_error("infoic: characteristic polynomial needs more than 2048 bits");
 }
 
 // rdkit/ML/InfoTheory's InfoEntropy, in its own order: one sequential sum for the total, skip
@@ -1164,11 +1286,12 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *
   }
 
   // ---- Ipc: exact integer coefficients, then RDKit's own entropy formula ----------------
-  // MEASURED: this is 68% of the whole descriptor -- more than everything above it put
-  // together -- and the shipped pipeline throws all three of its columns away (bindings.cpp
-  // copies only `N_IC`, because Ipc has an open, diagnosed bug). `wantIpc == false` leaves
-  // Ipc/AvgIpc/Log2Ipc as the NaN they were initialised to and touches nothing else, so the 42
-  // IC columns are bit-identical either way. See `computeIC()`.
+  // STILL THE MAJORITY OF THIS DESCRIPTOR even after the multiword rewrite, and by a wide margin
+  // the most concentrated cost in it: 2.1% of cpp/hard.smi takes the multiword path and carries
+  // ~80% of the block. `wantIpc == false` leaves Ipc/AvgIpc/Log2Ipc as the NaN they were
+  // initialised to and touches nothing else, so the 42 IC columns are bit-identical either way.
+  // The shipped wiring emits `AvgIpc` and passes `wantIpc` through as true; see `computeIC()`
+  // for when the other entry point is the right one.
   if (!wantIpc) {
     if (prof) prof->ipc += tick(tp);
     return;
@@ -1196,18 +1319,17 @@ inline void compute(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *
   if (prof) prof->ipc += tick(tp);
 }
 
-// THE 42 IC COLUMNS ONLY -- what `featurize_all` actually consumes.
+// THE 42 IC COLUMNS ONLY -- the Ipc block skipped entirely.
 //
-// bindings.cpp copies `infoic::N_IC` values out of the row and drops Ipc, AvgIpc and Log2Ipc on
-// the floor, because Ipc has an open bug (top of this file) and an ill-posed column is worse
-// than a missing one. It nevertheless calls `compute()`, which computes them: an exact-integer
-// Le Verrier-Faddeev-Frame recurrence, O(n^3) in the HEAVY-ATOM count, measured at 68% of this
-// descriptor's entire CPU on 5,000 molecules of cpp/hard.smi. This entry point does not.
+// NOT WHAT THE EXTENSION CALLS TODAY. bindings.cpp calls `compute()` and emits the 42 plus
+// `AvgIpc`, which is one of the 865; see item 5 of the WIRING note at the top of this file for
+// why that flipped back and what it costs.
 //
-// WIRING (one line, in a file this agent does not own):
-//     infoic::compute(W.im, W.irow);   ->   infoic::computeIC(W.im, W.irow);
-// and the 42 wired columns are bit-identical, because nothing above the Ipc block reads
-// anything the Ipc block writes.
+// This entry point remains because the choice is a real one and may be taken again. It skips an
+// exact-integer Le Verrier-Faddeev-Frame recurrence that is O(n^3) in the HEAVY-ATOM count and
+// is still the majority of this descriptor's CPU. The 42 columns it returns are bit-identical to
+// the same 42 out of `compute()`, because nothing above the Ipc block reads anything the Ipc
+// block writes -- so switching between the two is a cost decision and never a value decision.
 inline void computeIC(const Mol &m, Row &row, CodeBuilder *cb = nullptr, Profile *prof = nullptr) {
   compute(m, row, cb, prof, false);
 }

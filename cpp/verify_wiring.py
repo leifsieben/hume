@@ -39,8 +39,11 @@ So this checks the WIRING, against an oracle outside it, family by family:
   TopoMisc (15)     name and evaluated IN THIS PROCESS on the same molecules. Needs the mordred
   Constit (41)      environment -- see MORDRED below -- and is SKIPPED with a loud line when
   SLogP (1)         mordred is not importable, so the RDKit-graded families still run in `.venv`.
-                    `qed` and `SPS` are excluded from the 43: they are NaN by construction today
-                    and `--nan-audit` checks that they are NaN and that nothing ELSE is.
+                    `qed` and `SPS` are excluded from the 43: they are RDKit's, not mordred's,
+                    and are graded against RDKit by `check_qed` / `check_sps` in EITHER
+                    environment. `check_qed` also recovers the alert count the C++ used from the
+                    emitted float and grades it as an integer, because a wrong count would show
+                    up in the composite as a small float difference.
   rdkcore (19)      RDKit's own `Descriptors`, in this process: the thirteen ring predicates,
                     HeavyAtomMolWt, FractionCSP3, Phi and the three Morgan fingerprint densities.
                     Graded bitwise, with the 32-in-100,000 repaired-ring-set population split out
@@ -109,7 +112,7 @@ NAMES = list(COLUMNS) + TAIL
 def all_cols(mols) -> np.ndarray:
     p = extract_pickles(mols)
     return _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr,
-                                  p.rings.ring_at, p.h_blobs)
+                                  p.rings.ring_at, p.h_blobs, p.stereo_a, p.stereo_b)
 
 
 def col(name: str) -> int:
@@ -417,10 +420,20 @@ def run_binary(name: str, inp: Path, tmp: Path, n_cols: int, n_mols: int) -> np.
 # the three mordred families, against mordred itself, in this process
 # --------------------------------------------------------------------------------------------
 
-# constit.h's 43 columns minus the two that cannot be finished yet. `qed` is rdkit's and `SPS` is
-# rdkit's; both are NaN through the wiring today (qedAlerts / potential-stereo are not at the
-# boundary) and are checked separately, as NaN, rather than being quietly dropped from the list.
-CONSTIT_NAN = ("qed", "SPS")
+# constit.h's 43 columns minus the two that are RDKit's rather than mordred's. Neither belongs in
+# the mordred comparison, and NEITHER IS A PLACEHOLDER ANY MORE:
+#   `qed` is graded against rdkit's own `Chem.QED.qed` by `check_qed` below, which also recovers
+#         the alert count the C++ used and grades THAT as an integer;
+#   `SPS` is graded against rdkit's own `Chem.SpacialScore.SPS` by `check_sps`.
+# Both oracles are RDKit's and both run in the pinned `.venv`, so neither needs the mordred
+# interpreter.
+#
+# CONSTIT_NAN IS EMPTY AND IS KEPT. `nan_audit` asserts that the always-NaN set is EXACTLY this
+# one, so the empty tuple is now an assertion that no constit column is NaN on every molecule --
+# which is a stronger statement than the list it replaced, and it fails loudly if a boundary
+# field ever stops arriving.
+CONSTIT_NAN = ()
+CONSTIT_RDKIT = ("SPS", "qed")
 
 
 def _numpy_shim() -> None:
@@ -462,7 +475,8 @@ def check_mordred(mols, X) -> int:
     lo_chi, lo_tm, lo_ct = OFF["chi"], OFF["topomisc"], OFF["constit"]
     chi_names = NAMES[lo_chi:lo_tm]
     tm_names = NAMES[lo_tm:lo_ct]
-    ct_names = [n for n in NAMES[lo_ct:OFF["alias"]] if n not in CONSTIT_NAN]
+    ct_names = [n for n in NAMES[lo_ct:OFF["alias"]]
+                if n not in CONSTIT_NAN and n not in CONSTIT_RDKIT]
     want_names = chi_names + tm_names + ct_names + ["SLogP"]
 
     full = Calculator(mdesc, ignore_3D=True)
@@ -571,8 +585,7 @@ def check_mordred(mols, X) -> int:
               f"   nonzero on {nz:5d}   mordred non-finite on {nn:5d}   excl {n_ex}")
     for nm in CONSTIT_NAN:
         n_nan = int(np.count_nonzero(np.isnan(X[:, col(nm)])))
-        print(f"    {nm:22s} {'':6s}   {'':6s}   NOT COMPUTED -- NaN on {n_nan} / {len(mols)}"
-              f"   (needs {'QED structural alerts' if nm == 'qed' else 'potential-stereo perception'})")
+        print(f"    {nm:22s} {'':6s}   {'':6s}   NOT COMPUTED -- NaN on {n_nan} / {len(mols)}")
     return bad
 
 
@@ -582,7 +595,121 @@ def check_mordred(mols, X) -> int:
 RDKCORE_RINGCOLS = 13
 
 
-def check_rdkcore(mols, X) -> int:
+def check_sps(mols, X, smis=None) -> int:
+    """`SPS` against rdkit's own `Chem.SpacialScore.SPS`, in this process.
+
+    THE ORACLE IS OUTSIDE THE CODE PATH: rdkit/Chem/SpacialScore.py, called here, not
+    src/hume_core/constit.h's `sps()` under another name. What the wiring claims is that the two
+    potential-stereo arrays `src/hume/_extract.py` computes reach `constit::Inputs` unshifted and
+    on the right molecule -- a transposed atom index there would be a wrong-but-plausible number,
+    which is the failure this whole file exists to catch.
+
+    GRADED BITWISE. SPS is an integer sum divided by the heavy-atom count; both sides accumulate
+    in atom-index order and neither has a reordering to hide behind.
+
+    TWO ORACLES, AND THE SECOND IS THE STRICTER ONE. `all_cols` has already run
+    `extract_pickles`, which calls `AssignStereochemistry(cleanIt=True, force=True,
+    flagPossibleStereoCenters=True)` on the caller's molecules -- so a `Chem.Mol(m)` copy is a
+    copy of a MUTATED molecule. When the SMILES are available the same columns are graded a second
+    time against a molecule parsed FRESH from text, which is the only oracle that owes nothing to
+    the code path. If those two ever disagree, the descriptor depends on the pipeline's own
+    mutation and the divergence is the finding, not a rounding difference.
+    """
+    from rdkit.Chem.SpacialScore import SPS
+
+    j = col("SPS")
+    got = X[:, j:j + 1]
+    want = np.array([[float(SPS(Chem.Mol(m)))] for m in mols])
+    bad = report("SPS vs RDKit", got, want, ["SPS"],
+                 note="  [the potential-stereo boundary pair; bitwise]")
+    if smis is not None:
+        fresh = np.array([[float(SPS(Chem.MolFromSmiles(s)))] for s in smis])
+        bad += report("  vs a FRESH parse", got, fresh, ["SPS"],
+                      note="  [oracle owes nothing to the code path]")
+    return bad
+
+
+def check_qed(mols, X, smis=None) -> int:
+    """`qed` against rdkit's own `Chem.QED.qed`, AND the alert count it was built from.
+
+    THE ORACLE IS OUTSIDE THE CODE PATH: rdkit/Chem/QED.py, called here. Seven of QED's eight
+    properties were already exact in src/hume_core/constit.h and are re-checked by
+    cpp/verify_constit.py; what is new is ALERTS, and what the wiring claims is that the 116
+    compiled alert patterns in cpp/qed_alert_program.h reach `constit::Inputs::qedAlerts` on the
+    right molecule, through the same `fragmatch::Mol` the 76 fragment columns read.
+
+    IT IS NOT BITWISE, AND THE REASON IS STATED RATHER THAN TOLERATED. `qed` is
+    `exp(sum(w_i * log(ads_i)) / sum(w_i))` over eight desirability functions, each of which is
+    two `exp`s, a division and a subtraction. libm's `exp` and `log` are not correctly rounded and
+    are not required to agree between CPython's and clang's calls into them, and constit.h already
+    splits every `a + b*c` in the expression to stop clang contracting it into an FMA that python
+    did not use. So the claim here is a MEASURED max relative deviation, printed, not a tolerance
+    chosen to make a line say EXACT. The bitwise count is printed beside it.
+
+    AND THAT IS WHY `qedAlerts` IS RECOVERED AND GRADED AS AN INTEGER. A wrong alert count would
+    show up in `qed` as a small float difference -- exactly the shape a rounding difference has --
+    so the composite alone cannot tell the two apart. The count the C++ used is recovered by
+    asking RDKit for `qed` under every candidate ALERTS value with the molecule's OWN other seven
+    properties, and taking the candidate closest to the emitted value. That is well posed only if
+    the runner-up is far away, so the MARGIN is measured too and printed: if the nearest and the
+    next-nearest candidate were ever within the observed float noise, this recovery would be
+    meaningless and the number below says so.
+    """
+    from rdkit.Chem import QED
+
+    j = col("qed")
+    got = X[:, j:j + 1]
+    props = [QED.properties(Chem.Mol(m)) for m in mols]
+    want = np.array([[float(QED.qed(Chem.Mol(m), qedProperties=p))]
+                     for m, p in zip(mols, props)])
+    bitwise = int(np.count_nonzero(got.view(np.uint64) == want.view(np.uint64)))
+    fin = np.isfinite(got[:, 0]) & np.isfinite(want[:, 0])
+    dev = float(np.max(np.abs(got[fin, 0] - want[fin, 0]) /
+                       np.maximum(np.abs(want[fin, 0]), 1e-300))) if fin.any() else 0.0
+    n_nan = int(np.count_nonzero(~np.isfinite(got[:, 0])))
+    print(f"  {'qed vs RDKit':26s} bitwise on {bitwise:6d} / {len(mols):6d}   "
+          f"max rel dev {dev:.3e}   non-finite {n_nan}"
+          f"   [float; see the docstring for why not bitwise]")
+
+    # -- the eighth property, recovered from the emitted value and graded as an integer --------
+    cand = sorted({int(p.ALERTS) for p in props} |
+                  {max(0, int(p.ALERTS) - 1) for p in props} |
+                  {int(p.ALERTS) + 1 for p in props})
+    bad_alert = 0
+    worst_margin = float("inf")
+    first = None
+    for i, (m, p) in enumerate(zip(mols, props)):
+        vals = [(abs(got[i, 0] - float(QED.qed(Chem.Mol(m), qedProperties=p._replace(ALERTS=k)))),
+                 k) for k in cand]
+        vals.sort()
+        used, runner = vals[0][1], vals[1][0]
+        worst_margin = min(worst_margin, runner)
+        if used != int(p.ALERTS):
+            bad_alert += 1
+            if first is None:
+                first = (Chem.MolToSmiles(m), int(p.ALERTS), used)
+    print(f"  {'qedAlerts (recovered)':26s} EXACT on {len(mols) - bad_alert:6d} / {len(mols):6d}"
+          f"   integer count vs sum(HasSubstructMatch)"
+          f"   smallest recovery margin {worst_margin:.3e}")
+    if first is not None:
+        print(f"    first mismatch: {first[0]}  rdkit {first[1]}, recovered {first[2]}")
+
+    bad = 0
+    if bad_alert:
+        bad += 1
+    # The float claim: report it as a tolerance so a REAL divergence (a wrong property, a shifted
+    # column) still fails. 1e-12 is ~4 orders above the observed deviation and ~4 below the
+    # smallest difference one alert makes.
+    bad += report("qed vs RDKit (tolerance)", got, want, ["qed"], tol=1e-12,
+                  note="  [8 ADS functions of exp/log; not bitwise, see check_qed]")
+    if smis is not None:
+        fresh = np.array([[float(QED.qed(Chem.MolFromSmiles(s)))] for s in smis])
+        bad += report("  vs a FRESH parse", got, fresh, ["qed"], tol=1e-12,
+                      note="  [oracle owes nothing to the code path]")
+    return bad
+
+
+def check_rdkcore(mols, X, smis=None) -> int:
     """The last 19 `rdkit_core` columns against RDKit's own `Descriptors`, in this process.
 
     THE ORACLE IS OUTSIDE THE CODE PATH, which is the whole discipline of this file: RDKit's
@@ -617,7 +744,10 @@ def check_rdkcore(mols, X) -> int:
               f"rdkcore family (no 'rdkcore' offset); reinstall it to grade the 19 columns")
         return 0
     lo = OFF["rdkcore"]
-    names = NAMES[lo:lo + 19]
+    # THE COUNT IS READ OFF THE LAYOUT, not written down. rdkcore is the LAST family, so its
+    # columns run to the end of the row; hard-coding 19 here is what would have to be edited every
+    # time the family grows, and forgetting to would silently stop grading the new columns.
+    names = NAMES[lo:OFF["end"]]
     fns = dict(Descriptors._descList)
     missing = [n for n in names if n not in fns]
     if missing:
@@ -628,6 +758,21 @@ def check_rdkcore(mols, X) -> int:
         for i, m in enumerate(mols):
             want[i, j] = float(f(Chem.Mol(m)))
     got = X[:, lo:lo + len(names)]
+    # THE TWO STEREO COUNTS, GRADED A SECOND TIME AGAINST A FRESH PARSE. `Chem.Mol(m)` above is a
+    # copy of a molecule `extract_pickles` has already run `AssignStereochemistry(cleanIt=True,
+    # force=True, flagPossibleStereoCenters=True)` over, and these two columns are a function of
+    # exactly what that call leaves behind -- so the copy is the weaker oracle. A molecule parsed
+    # fresh from SMILES owes nothing to the code path, and if the two disagree that IS the finding.
+    bad_fresh = 0
+    if smis is not None:
+        stereo_cols = [j for j, nm in enumerate(names)
+                       if nm in ("NumAtomStereoCenters", "NumUnspecifiedAtomStereoCenters")]
+        if stereo_cols:
+            fresh = np.array([[float(fns[names[j]](Chem.MolFromSmiles(s))) for j in stereo_cols]
+                              for s in smis])
+            bad_fresh = report("  stereo counts vs a FRESH parse", got[:, stereo_cols], fresh,
+                               [names[j] for j in stereo_cols],
+                               note="  [oracle owes nothing to the code path]")
 
     ringdiff = np.array([sorted(sorted(int(i) for i in r) for r in rings_for(m)) !=
                          sorted(sorted(int(i) for i in r) for r in Chem.GetSymmSSSR(m))
@@ -647,10 +792,11 @@ def check_rdkcore(mols, X) -> int:
     #     Kappa2 so the deviation can be seen to be theirs and not the multiplication's.
     j_phi = names.index("Phi")
     bit = [j for j in range(len(names)) if j != j_phi]
-    bad = report("rdkcore vs RDKit", got[np.ix_(keep, bit)], want[np.ix_(keep, bit)],
-                 [names[j] for j in bit],
-                 note=f"  [{int(ringdiff.sum())} molecules excluded: repaired ring set != "
-                      f"GetSymmSSSR; Phi graded separately below]")
+    bad = bad_fresh
+    bad += report("rdkcore vs RDKit", got[np.ix_(keep, bit)], want[np.ix_(keep, bit)],
+                  [names[j] for j in bit],
+                  note=f"  [{int(ringdiff.sum())} molecules excluded: repaired ring set != "
+                       f"GetSymmSSSR; Phi graded separately below]")
     k1, k2 = X[:, col("Kappa1")], X[:, col("Kappa2")]
     A = np.array([m.GetNumHeavyAtoms() for m in mols], dtype=np.float64)
     bad += report("Phi vs its own Kappa cols", got[:, j_phi:j_phi + 1],
@@ -707,8 +853,14 @@ def nan_audit(mols, X) -> int:
     PORT_STATUS.md records that non-finite values are CORRECT and expected in this matrix (144 of
     1015 columns for ethanol are `AATS<k>*` beyond the molecule's diameter). That makes a bare NaN
     count useless as a guard, so this prints the per-column non-finite rate for the new families
-    and asserts only the thing that IS decided: `qed` and `SPS` are NaN on EVERY molecule, and
-    nothing else in constit is NaN on every molecule.
+    and asserts only the thing that IS decided: the set of columns that are NaN on EVERY molecule
+    is EXACTLY `CONSTIT_NAN`.
+
+    THAT SET IS NOW EMPTY, AND THE ASSERTION IS STRONGER FOR IT. `SPS` left it when the
+    potential-stereo arrays landed and `qed` left it when the QED alert program did. Asserting
+    the set exactly rather than as a lower bound is what makes this useful in both directions:
+    if either boundary field ever stops arriving, that column goes back to always-NaN and this
+    audit fails instead of shrugging.
     """
     lo, hi = OFF["chi"], OFF["end"]
     print(f"\n  non-finite rate, {X.shape[0]} molecules, the four new families:")
@@ -724,27 +876,52 @@ def nan_audit(mols, X) -> int:
     if sorted(allnan) != sorted(expect):
         print(f"    UNEXPECTED: always-NaN columns are {sorted(allnan)}, expected {sorted(expect)}")
         return 1
-    print(f"    always-NaN: {sorted(allnan)} -- the two documented placeholders, and only those")
+    print(f"    always-NaN: {sorted(allnan) or 'none -- every column produces a value on '
+          f'some molecule'}")
     return 0
 
 
 # --------------------------------------------------------------------------------------------
 def main_rdkcore(n_want: int) -> int:
-    """`cpp/verify_wiring.py N rdkcore` -- the 19 new columns ONLY, over the whole corpus.
+    """`cpp/verify_wiring.py N rdkcore` -- the rdkcore family plus `SPS`, over the whole corpus.
 
     WHY A SEPARATE ENTRY POINT RATHER THAN A BIGGER `N`. House rule 5 wants exactness reported on
     all 100,000 molecules of cpp/hard.smi; the full run cannot be asked for that, because the VSA
     arm alone calls 65 RDKit descriptors per molecule and the mordred arm is minutes per thousand.
     This runs the same `check_rdkcore` -- same oracle, same code path, same in-process comparison
     -- in batches over the whole file, and accumulates.
+
+    `SPS` RIDES ALONG HERE BECAUSE IT IS THE SAME KIND OF CLAIM AND THE SAME KIND OF ORACLE:
+    rdkit's own descriptor, in this process, over the whole corpus. It is not an rdkcore column
+    -- it lives in constit.h -- but it has no mordred oracle and would otherwise be graded only on
+    the 3,000-molecule sample the main run uses.
+
+    THE ORACLE IS A FRESH PARSE FOR THE THREE STEREO COLUMNS. `all_cols` runs `extract_pickles`,
+    which mutates the caller's molecules with `AssignStereochemistry(cleanIt=True, force=True,
+    flagPossibleStereoCenters=True)`, and `NumAtomStereoCenters` /
+    `NumUnspecifiedAtomStereoCenters` are a function of exactly what that leaves behind. So those
+    three are graded BOTH ways -- against a `Chem.Mol(m)` copy like every other column here, and
+    against a molecule parsed fresh from the same SMILES text, which owes nothing to the code
+    path. Both numbers are printed.
     """
     smis = [s for s in (ROOT / "cpp" / "hard.smi").read_text().split("\n") if s][:n_want]
-    print(f"{len(smis)} molecules from cpp/hard.smi, rdkcore only\n")
+    print(f"{len(smis)} molecules from cpp/hard.smi, rdkcore + SPS only\n")
     if "rdkcore" not in OFF:
         raise SystemExit("this environment's hume._core has no rdkcore family; reinstall it")
     lo = OFF["rdkcore"]
-    names = NAMES[lo:lo + 19]
+    # rdkcore is the LAST family, so its columns run to the end of the row. `SPS` is appended to
+    # the graded list by name, out of constit's block; `col()` resolves it.
+    names = NAMES[lo:OFF["end"]] + ["SPS"]
+    j_sps = len(names) - 1
+    idx = list(range(lo, OFF["end"])) + [col("SPS")]
     fns = dict(Descriptors._descList)
+    missing = [n for n in names if n not in fns]
+    if missing:
+        raise SystemExit(f"SPEC DRIFT: RDKit's Descriptors no longer produces {missing}")
+    # The three columns whose oracle must not be a mutated molecule; see the docstring.
+    FRESH = ("NumAtomStereoCenters", "NumUnspecifiedAtomStereoCenters", "SPS")
+    j_fresh = [j for j, nm in enumerate(names) if nm in FRESH]
+    n_fresh_ok = [0] * len(names)
     j_phi = names.index("Phi")
     n_ok = [0] * len(names)
     n_graded = 0
@@ -755,16 +932,22 @@ def main_rdkcore(n_want: int) -> int:
     moved_excl: dict[str, int] = {}
     B = 2000
     for lo_i in range(0, len(smis), B):
-        chunk = [Chem.MolFromSmiles(t) for t in smis[lo_i:lo_i + B]]
+        texts = smis[lo_i:lo_i + B]
+        chunk = [Chem.MolFromSmiles(t) for t in texts]
         if any(m is None for m in chunk):
             raise ValueError("unparseable SMILES in the corpus")
         X = all_cols(chunk)
-        got = X[:, lo:lo + len(names)]
+        got = X[:, idx]
         want = np.empty((len(chunk), len(names)))
         for j, nm in enumerate(names):
             f = fns[nm]
             for i, m in enumerate(chunk):
                 want[i, j] = float(f(Chem.Mol(m)))
+        for j in j_fresh:
+            f = fns[names[j]]
+            fresh = np.array([float(f(Chem.MolFromSmiles(t))) for t in texts])
+            g = got[:, j]
+            n_fresh_ok[j] += int(np.count_nonzero(g.view(np.uint64) == fresh.view(np.uint64)))
         ringdiff = np.array([sorted(sorted(int(i) for i in r) for r in rings_for(m)) !=
                              sorted(sorted(int(i) for i in r) for r in Chem.GetSymmSSSR(m))
                              for m in chunk])
@@ -806,8 +989,14 @@ def main_rdkcore(n_want: int) -> int:
             bad += phi_dev > 1e-9
             continue
         ok = n_ok[j] == n_graded
+        extra = ""
+        if j in j_fresh:
+            fok = n_fresh_ok[j] == len(smis)
+            extra = (f"   vs a FRESH parse {n_fresh_ok[j]:7d} / {len(smis):7d} "
+                     f"{'EXACT' if fok else 'MISMATCH'}")
+            bad += not fok
         print(f"    {nm:26s} {n_ok[j]:7d} / {n_graded:7d}"
-              f"   {'EXACT' if ok else 'MISMATCH'}   nonzero on {nz[j]:7d}")
+              f"   {'EXACT' if ok else 'MISMATCH'}   nonzero on {nz[j]:7d}{extra}")
         bad += not ok
     print(f"    {'Kappa1/Kappa2 vs RDKit':26s} max rel dev {kap_dev:.3e}  (rtol 1e-9, "
           f"pre-existing -- this is what Phi inherits)")
@@ -971,9 +1160,17 @@ def main() -> int:
               f"   {'EXACT' if n_ok == len(mols) else 'MISMATCH'}"
               f"   nonzero on {nz}")
 
-    # ---- the last 19 rdkit_core columns, against RDKit's own Descriptors ---------------------
+    # ---- the last rdkit_core columns, against RDKit's own Descriptors ------------------------
     print()
-    bad += check_rdkcore(mols, X)
+    bad += check_rdkcore(mols, X, pick)
+
+    # ---- `SPS`, against rdkit's own Chem.SpacialScore -----------------------------------------
+    print()
+    bad += check_sps(mols, X, pick)
+
+    # ---- `qed`, against rdkit's own Chem.QED -- and the alert count it is built from ----------
+    print()
+    bad += check_qed(mols, X, pick)
 
     # ---- the three mordred families and the alias --------------------------------------------
     print()

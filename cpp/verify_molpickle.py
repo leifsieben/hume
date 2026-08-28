@@ -52,6 +52,21 @@ FIELDS = [
     # evidence that the second is the first -- the fragment columns depend on it and nothing
     # downstream of a wrong valence would look wrong.
     (3, 9, "atom total valence"),
+    # THE LEGACY POTENTIAL-STEREO PAIR, and the same shape of finding as `atom total valence`:
+    # both were already in the blob and both were being skipped. On the reference side they are
+    # `Atom.HasProp("_ChiralityPossible")` and `int(Atom.GetChiralTag())`; on the pickle side they
+    # are the explicit-property bitmask's bit 0x8 and atom property-flag bit 2, which the reader
+    # used to `r.skip(2)` and `r.skip(1)` past. `NumAtomStereoCenters` is the count of the first
+    # and `NumUnspecifiedAtomStereoCenters` the count of the first with the second at
+    # CHI_UNSPECIFIED, so a wrong bit here is two silently wrong integer columns.
+    (3, 10, "atom chirality possible"), (3, 11, "atom chiral tag"),
+    # SMARTS ISOTOPE, and the third field of the same shape: the reader had been decoding atom
+    # property-flag bit 8 into a local all along, because `Atom::getMass()` needs it, and then
+    # dropping it. On the reference side it is `Atom.GetIsotope()`. QED's structural alerts
+    # 112-115 are `[15N]`, `[13C]`, `[18O]` and `[34S]`, so a wrong value here is a wrong
+    # `qedAlerts` and therefore a wrong `qed` -- as a small float difference, which is exactly the
+    # kind of wrongness that does not look wrong.
+    (3, 12, "atom isotope"),
     (4, 0, "atom mass"), (4, 1, "atom Gasteiger"),
     (5, 0, "bond u"), (5, 1, "bond v"), (5, 2, "bond conjugated"), (5, 3, "bond in-ring"),
     (5, 4, "bond SMARTS code"),
@@ -67,6 +82,12 @@ FIELDS = [
     # that they still are -- cheap, and the thing that would break first if anyone ever swapped
     # the pickle path back to reading rings out of the blob.
     (8, -1, "ring_moff"), (9, -1, "ring_ptr"), (10, -1, "ring_at"),
+    # THE NEW POTENTIAL-STEREO PAIR, which the blob does NOT carry -- both boundaries get it from
+    # the same `_extract._potential_stereo`, so like the ring CSR this is a standing assertion
+    # that they still do. It is not vacuous: the two calls happen at different points, on
+    # molecules `extract_pickles` has already mutated with `AssignStereochemistry(cleanIt=True)`,
+    # so a perception that depended on that mutation would show up here as a mismatch.
+    (11, -1, "stereo_a (potential atom)"), (12, -1, "stereo_b (potential bond)"),
 ]
 
 
@@ -127,11 +148,11 @@ def verify(src: Path, n_want: int) -> int:
         # order gives the same arrays; this one makes the new path the one paying cold cost.
         p = extract_pickles(mols)
         got = tuple(_core.pickle_extract(p.blobs)) + (p.rings.ring_moff, p.rings.ring_ptr,
-                                                      p.rings.ring_at)
+                                                      p.rings.ring_at, p.stereo_a, p.stereo_b)
         want = extract(mols)
         want_t = (want.atom_off, want.bond_off, want.chg_ok, want.atom_i, want.atom_d,
                   want.bond_i, want.bond_s, want.bond_d, want.rings.ring_moff,
-                  want.rings.ring_ptr, want.rings.ring_at)
+                  want.rings.ring_ptr, want.rings.ring_at, want.stereo_a, want.stereo_b)
 
         for ai, col, label in FIELDS:
             g, w = got[ai], want_t[ai]

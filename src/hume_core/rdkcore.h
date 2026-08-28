@@ -1,9 +1,10 @@
-// The last of RDKit's `rdkit_core` family: 19 columns that are not substructure counts and so do
+// The last of RDKit's `rdkit_core` family: 21 columns that are not substructure counts and so do
 // not belong in frag_matcher.h -- thirteen ring predicates, two whole-molecule scalars, RDKit's
-// Kier flexibility index, and the three Morgan fingerprint densities.
+// Kier flexibility index, the three Morgan fingerprint densities, and the two atom-stereo counts.
 //
 // SPECIFICATION IS THE C++ SOURCE, read at rdkit 2025.09.2 (house rule 1):
-//   Code/GraphMol/Descriptors/Lipinski.cpp                  the 13 ring predicates, FractionCSP3
+//   Code/GraphMol/Descriptors/Lipinski.cpp                  the 13 ring predicates, FractionCSP3,
+//                                                           the two atom-stereo counts
 //   Code/GraphMol/MolProps.cpp                              getAvgMolWt(onlyHeavy)
 //   Code/GraphMol/Descriptors/ConnectivityDescriptors.cpp   calcPhi
 //   Code/GraphMol/Fingerprints/MorganGenerator.cpp          the environment generator
@@ -59,7 +60,7 @@
 
 namespace rdkcore {
 
-static constexpr int N_COLS = 19;
+static constexpr int N_COLS = 21;
 
 enum {
   C_RINGCOUNT = 0,
@@ -81,6 +82,12 @@ enum {
   C_FPD1,
   C_FPD2,
   C_FPD3,
+  // APPENDED, AND THAT IS DELIBERATE: these two are the LAST columns of the LAST family in
+  // bindings.cpp's layout, so every pre-existing column of hume.ALL_COLUMNS keeps the index it
+  // had and an A/B of the extension across this change compares like with like rather than a
+  // shifted row.
+  C_NATOMSTEREO,
+  C_NUNSPECATOMSTEREO,
 };
 
 inline const char *col_name(int c) {
@@ -91,7 +98,7 @@ inline const char *col_name(int c) {
       "NumSaturatedHeterocycles", "NumHeterocycles",  "NumBridgeheadAtoms",
       "NumSpiroAtoms",      "HeavyAtomMolWt",       "FractionCSP3",
       "Phi",                "FpDensityMorgan1",     "FpDensityMorgan2",
-      "FpDensityMorgan3"};
+      "FpDensityMorgan3",   "NumAtomStereoCenters", "NumUnspecifiedAtomStereoCenters"};
   if (c < 0 || c >= N_COLS) throw std::out_of_range("rdkcore::col_name");
   return N[c];
 }
@@ -110,6 +117,15 @@ struct Mol {
   std::vector<int> barom;   // Bond::getIsAromatic()
   std::vector<int> btype;   // (int)Bond::getBondType(): SINGLE 1, DOUBLE 2, TRIPLE 3, AROMATIC 12
   std::vector<int> ring_off, ring_at;   // the ring CSR, atom indices LOCAL to this molecule
+  // THE LEGACY STEREO PERCEPTION, and it is not the one `SPS` reads. `chirposs[i]` is
+  // hasProp("_ChiralityPossible") -- set by MolOps::assignStereochemistry(cleanIt, force,
+  // flagPossible) -- and `ctag[i]` is (int)Atom::getChiralTag(), CHI_UNSPECIFIED == 0. Both come
+  // across the boundary from RDKit rather than being perceived here: potential-stereo perception
+  // is a real subsystem (ranking, para-stereo, ring stereo) and a second implementation of it
+  // would be a second answer, which is the argument that already kept hybridisation and CIP on
+  // RDKit's side of the line.
+  std::vector<int> chirposs;
+  std::vector<int> ctag;
 
   int n_rings() const { return ring_off.empty() ? 0 : (int)ring_off.size() - 1; }
 
@@ -118,6 +134,7 @@ struct Mol {
     nb = nbonds;
     z.assign(n, 0); deg.assign(n, 0); nH.assign(n, 0); fchg.assign(n, 0);
     nring.assign(n, 0); mass.assign(n, 0.0); aw.assign(n, 0.0);
+    chirposs.assign(n, 0); ctag.assign(n, 0);
     bu.assign(nb, 0); bv.assign(nb, 0); barom.assign(nb, 0); btype.assign(nb, 0);
     ring_off.assign(1, 0);
     ring_at.clear();
@@ -225,6 +242,33 @@ inline void compute(const Mol &m, double kappa1, double kappa2, double *out, Scr
   out[C_HEAVYMOLWT] = amw;
   out[C_FRACCSP3] = nC ? (double)nCSP3 / (double)nC : 0.0;
   out[C_PHI] = heavy ? kappa1 * kappa2 / (double)heavy : 0.0;
+
+  // ---- the two stereo counts ---------------------------------------------------------------
+  // Code/GraphMol/Descriptors/Lipinski.cpp, numAtomStereoCenters / numUnspecifiedAtomStereoCenters,
+  // in full: count the atoms carrying `_ChiralityPossible`, and for the second also require
+  // `getChiralTag() == CHI_UNSPECIFIED`. There is no arithmetic here and no perception -- the
+  // whole descriptor is those two atom properties, which is why these columns cost the pickle
+  // path nothing once molpickle.h stopped skipping the bytes that already held them.
+  //
+  // THIS IS THE LEGACY PERCEPTION AND `SPS` USES THE NEW ONE. The `_ChiralityPossible` set and
+  // the `FindPotentialStereo` set differ on 262 of 4,000 corpus molecules, so the two must not be
+  // wired from one input; src/hume_core/constit.h's `sps()` takes its own pair of arrays.
+  //
+  // NOTE WHAT UPSTREAM DOES NOT DO: it does not run the perception. Both functions throw unless
+  // the molecule already has `_StereochemDone`, so the answer is a function of whatever
+  // assignStereochemistry the caller last ran -- and `flagPossibleStereoCenters=False` (RDKit's
+  // default) leaves the flag cleared and the count at 0. Reproduced as a boundary contract
+  // instead: src/hume/_extract.py passes the argument on both paths.
+  {
+    int n_stereo = 0, n_unspec = 0;
+    for (int i = 0; i < m.n; ++i) {
+      if (!m.chirposs[i]) continue;
+      ++n_stereo;
+      if (m.ctag[i] == 0) ++n_unspec;      // Atom::CHI_UNSPECIFIED
+    }
+    out[C_NATOMSTEREO] = (double)n_stereo;
+    out[C_NUNSPECATOMSTEREO] = (double)n_unspec;
+  }
 
   // ---- the ring predicates -----------------------------------------------------------------
   const int R = m.n_rings();

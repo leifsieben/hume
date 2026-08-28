@@ -128,13 +128,22 @@
 //                         second term is 0.0 on every atom of 500 molecules, so `hchg` is the
 //                         plain charge array in AddHs atom order.
 //
-// TWO INPUTS THAT ARE NOT AT THE BOUNDARY YET, and the two columns that wait on them:
+// NOTHING IS MISSING FROM THIS LIST ANY MORE.  Both of the inputs that used to be described here
+// as "not at the boundary yet" now are, and the two columns that waited on them -- `qed` and
+// `SPS` -- both produce a value:
 //   qedAlerts             the count of rdkit QED's 116 structural-alert SMARTS that match.  The
-//                         other seven QED properties are computed here exactly; see `qedScore`.
+//                         other seven QED properties were always computed here exactly; see
+//                         `qedScore`.  The alerts are compiled by cpp/gen_frag_program.py into
+//                         cpp/qed_alert_program.h and matched by src/hume_core/frag_matcher.h --
+//                         the SAME evaluator as the 74 `rdkit_core` fragment patterns, bound to a
+//                         second program rather than duplicated.  bindings.cpp passes the count
+//                         in; this file still computes none of it.
 //   stereoAtom / stereoBond   rdkit's POTENTIAL stereo perception, which `SPS` reads and the
-//                         boundary's assigned-only `cip` / `bond_s` columns cannot answer.
-// Both are described in the wiring note at the bottom of this file.  Everything downstream of
-// them is implemented and verified here, so each is one boundary column away, not a port.
+//                         boundary's assigned-only `cip` / `bond_s` columns cannot answer.  Two
+//                         arrays from src/hume/_extract.py's `_potential_stereo`, on both
+//                         boundaries.  NOT the same perception as the `_ChiralityPossible` flag
+//                         that src/hume_core/rdkcore.h's two stereo counts read: the two atom
+//                         sets differ on 262 of 4,000 corpus molecules.
 #ifndef HUME_CONSTIT_H
 #define HUME_CONSTIT_H
 
@@ -323,7 +332,13 @@ struct Inputs {
   const double* hchg = 0;
   int nhchg = 0;
 
-  // NOT AT THE BOUNDARY YET.  See the wiring note at the bottom of this file.
+  // COMPUTED ELSEWHERE AND PASSED IN, exactly like `nHBDon` above.  The DEFAULTS ARE THE
+  // "nobody supplied it" SENTINELS and are not zero on purpose: a zeroed alert count and a null
+  // stereo pair would each give a finite, plausible, WRONG answer, where NaN says the input was
+  // never provided.  cpp/verify_constit.py drives this file with all three supplied.
+  //
+  // `qedAlerts` is `fragmatch::countMatching` over cpp/qed_alert_program.h -- how many of QED's
+  // 116 structural alerts match AT ALL, a count of PATTERNS and not of embeddings.
   int qedAlerts = -1;                       // <0 -> qed is NaN
   const int32_t* stereoAtom = 0;            // per heavy atom, rdkit FindMolChiralCenters
                                             //   (includeUnassigned=True, legacy=False)
@@ -1282,11 +1297,20 @@ inline double sps(const Mol& m, const Inputs& in) {
 // says this "tends to count more rings" than NumAromaticRings and names three molecules where
 // they differ; the cyclomatic count reproduces rdkit, not the comment.)
 //
-// ALERTS IS 116 SMARTS THIS FILE CANNOT MATCH.  They use recursive queries, ring closures,
-// component-level `.` grouping, `~` and `@` bonds and isotope queries -- a general matcher, which
-// src/hume_core/frag_matcher.h already is, but bound to `frag_prog`'s tables at namespace scope.
-// Writing a second matcher here would put two subgraph-isomorphism implementations in the repo.
-// So `qedAlerts` is an input; see the wiring note.
+// ALERTS IS 116 SMARTS THIS FILE STILL DOES NOT MATCH, AND THAT IS DELIBERATE.  They use
+// recursive queries, ring closures, component-level `.` grouping, `~` and `@` bonds and isotope
+// queries -- a general matcher, which src/hume_core/frag_matcher.h already is.  It USED to be
+// bound to `frag_prog`'s tables at namespace scope, which is why this file could not reach it;
+// it now takes its program as a reference, so the alerts are a second COMPILED PROGRAM
+// (cpp/qed_alert_program.h) run by the one evaluator.  Writing a matcher here would have put two
+// subgraph-isomorphism implementations in the repo.  So `qedAlerts` stays an INPUT, filled by
+// bindings.cpp from `fragmatch::countMatching`.
+//
+// AND IT IS A COUNT OF PATTERNS, NOT OF MATCHES.  QED.py sums `HasSubstructMatch`, so an alert
+// that matches a molecule forty times contributes 1.  `countMatching` uses `hasMatch`, which
+// stops at the first embedding.  Graded as an integer on 100,000 molecules against
+// `sum(1 for a in QED.StructuralAlerts if m.HasSubstructMatch(a))`: 100,000 / 100,000 exact,
+// with 101 of the 116 alerts firing at least once on cpp/hard.smi.
 // ---------------------------------------------------------------------------------------------
 inline int qedHBA(const Mol& m) {
   int n = 0;
@@ -1467,37 +1491,44 @@ inline void compute(const Mol& m, const Inputs& in, double* out, double tpsa) {
 //        tpsa                     from vsa_bins, for qed's PSA term
 //    Call `constit::checkSpec()` once at module load, next to the other selfChecks.
 //
-// 3. TWO COLUMNS NEED ONE NEW BOUNDARY FIELD EACH, and only that:
+// 3. ONE COLUMN STILL NEEDS A NEW BOUNDARY FIELD.  `SPS`'s pair IS NOW WIRED:
 //
-//    * `SPS` needs rdkit's POTENTIAL stereo, which the assigned-only `cip` and `bond_s` columns
-//      cannot answer.  Two arrays, both one Python call per molecule in src/hume/_extract.py:
+//    * `SPS` reads rdkit's POTENTIAL stereo, which the assigned-only `cip` and `bond_s` columns
+//      cannot answer.  It arrives as two arrays from src/hume/_extract.py's `_potential_stereo`,
+//      on both boundaries, computed once per molecule:
 //          stereoAtom[i] = i in {idx for idx,_ in Chem.FindMolChiralCenters(
 //                              m, includeUnassigned=True, includeCIP=False,
 //                              useLegacyImplementation=False)}
 //          stereoBond[e] = after `rdmolops.FindPotentialStereoBonds(Chem.Mol(m))`,
 //                          bond e is DOUBLE and its GetStereo() != STEREONONE
-//      Do NOT try to derive it: it is a perception, not a graph query.
+//      It is NOT derived: it is a perception, not a graph query.  It costs 52 us/mol, which is
+//      the price of this one column and is recorded in PORT_STATUS.md rather than buried.
 //
-//      IT IS NOT, HOWEVER, THE SAME PERCEPTION `NumAtomStereoCenters` AND
+//      IT IS NOT THE SAME PERCEPTION `NumAtomStereoCenters` AND
 //      `NumUnspecifiedAtomStereoCenters` WANT, and this note used to claim it was ("one boundary
 //      addition unblocks three columns").  Measured at rdkit 2025.09.2:
 //      Code/GraphMol/Descriptors/Lipinski.cpp counts atoms carrying `_ChiralityPossible`, set by
 //      the LEGACY `MolOps::assignStereochemistry(cleanIt, force, flagPossible)` -- not by
-//      FindPotentialStereo.  The two atom sets differ on 262 of 4,000 cpp/hard.smi molecules.  So
-//      those two columns cost nothing (the flag is already in the pickle, explicit-property bit
-//      0x8, and the chiral tag is already in atom-property flag bit 2) while `SPS` still needs a
-//      real boundary addition of its own.
+//      FindPotentialStereo.  The two atom sets differ on 262 of 4,000 cpp/hard.smi molecules.
+//      Those two columns are in src/hume_core/rdkcore.h and cost the pickle path nothing: the
+//      flag was already in the blob (explicit-property bit 0x8) and the chiral tag already in
+//      atom-property flag bit 2, both of which molpickle.h had been skipping.
 //
-//    * `qed` needs `qedAlerts`, the count of rdkit QED's 116 structural-alert SMARTS that match.
-//      The cheapest correct route is to make src/hume_core/frag_matcher.h's `Matcher` take its
-//      program tables (NODES / AROOTS / QBONDS / PATTERNS / N_PATTERNS) as a bound reference
-//      instead of reading `frag_prog`'s at namespace scope, then generate a second program from
-//      QED.StructuralAlertSmarts with cpp/gen_frag_program.py and match it with the SAME
-//      matcher.  That keeps ONE subgraph-isomorphism implementation in the repo.  The alert set
-//      needs opcodes the current program does not exercise -- isotope (`[15N]`), any-bond (`~`),
-//      ring-bond (`@`) and component-level `.` grouping -- so the generator will need those four
-//      added; they are all leaf predicates except the last.
-//      Everything downstream of the count is implemented and exact here.
+//    * `qed`'s `qedAlerts` IS NOW WIRED, by exactly the route this note prescribed.
+//      src/hume_core/frag_matcher.h's `Matcher` takes its program tables as a bound
+//      `frag_prog_types::Program` reference instead of reading `frag_prog`'s at namespace scope;
+//      cpp/gen_frag_program.py generates a second program from QED.StructuralAlertSmarts into
+//      cpp/qed_alert_program.h; and bindings.cpp runs it over the SAME `fragmatch::Mol` the 76
+//      fragment columns read.  ONE subgraph-isomorphism implementation, two compiled programs.
+//
+//      THE FOUR MISSING PRIMITIVES TURNED OUT TO BE TWO, AND A DIFFERENT ONE APPEARED.  `~`
+//      (BondNull) and `@` (BondInRing) were already in both the generator and the evaluator --
+//      the alert set is simply the first spec to exercise them -- and component-level `.` needed
+//      nothing in the matcher at all, because `buildPlan()` already walks every connected
+//      component of the query graph.  What genuinely had to be added was AtomIsotope, plus
+//      AtomInRing (`!r`, alerts 67 and 88), which is a BOOLEAN and not `[R]`'s AtomInNRings.
+//      Only the isotope cost a boundary field, the thirteenth `atom_i` column, and molpickle.h
+//      was already decoding it to compute `mass` and then dropping it.
 //
 // 4. NOTHING IN THIS FILE RECOMPUTES ANOTHER HEADER'S ANSWER.  Crippen, TPSA, the H-bond and
 //    rotatable-bond counts, the ring counts and the numpy summation order all come from the

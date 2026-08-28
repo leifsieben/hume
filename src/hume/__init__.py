@@ -40,29 +40,48 @@ assert _core.N_COLS == N_COLS, (
 # which number is which. FAMILY_OFFSETS says where each family starts.
 ALL_COLUMNS: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail())
 
-# NAMED BUT NOT YET COMPUTED. These columns appear in ALL_COLUMNS and in the output array, and
-# are NaN on every molecule, because each is blocked on a boundary field that does not exist yet:
+# NAMED BUT NOT YET COMPUTED. A column here appears in ALL_COLUMNS and in the output array and
+# is NaN on every molecule, because it is blocked on a boundary field that does not exist yet.
 #
-#   qed  needs qedAlerts -- the count of QED's 116 structural-alert SMARTS that match
-#   SPS  needs RDKit's NEW stereo perception -- FindPotentialStereo, reached through
-#        FindMolChiralCenters(includeUnassigned=True, useLegacyImplementation=False), plus
-#        FindPotentialStereoBonds. It is NOT in the pickle and is not derivable from `cip`.
+# IT IS EMPTY. Every column the package names now produces a value.
 #
-# ONE ADDITION DOES NOT BUY THREE, and the note that used to stand here said it did.
+# `qed` WAS THE LAST ONE OUT AND IS NOT HERE ANY MORE. Its eighth property is ALERTS, the count
+# of QED's 116 structural-alert SMARTS that match; the other seven were already exact in
+# src/hume_core/constit.h. The alerts are compiled by cpp/gen_frag_program.py into
+# cpp/qed_alert_program.h and matched by the SAME evaluator as the 74 `rdkit_core` fragment
+# patterns -- src/hume_core/frag_matcher.h takes its program tables as a bound reference rather
+# than reading one namespace's at global scope, so there is one subgraph-isomorphism
+# implementation in this repo and not two. The alert set needed four query primitives the
+# fragment set never exercised: isotope, `~`, `@` and component-level `.`. The isotope is the
+# thirteenth `atom_i` column, and it is the third field molpickle.h was already decoding and
+# throwing away.
+#
+# `SPS` CAME OUT JUST BEFORE IT. It needed RDKit's NEW stereo perception --
+# FindPotentialStereo plus FindPotentialStereoBonds -- which is not in the pickle and is not
+# derivable from the assigned-only `cip` / `bond_s` columns. It now crosses the boundary as two
+# arrays that `_extract._potential_stereo` computes per molecule, at a measured 52 us/mol.
+#
+# ONE ADDITION DID NOT BUY THREE, and the note that used to stand here said it would.
 # `NumAtomStereoCenters` / `NumUnspecifiedAtomStereoCenters` do NOT use FindPotentialStereo:
 # Code/GraphMol/Descriptors/Lipinski.cpp counts atoms carrying `_ChiralityPossible`, which is the
 # LEGACY `MolOps::assignStereochemistry(cleanIt, force, flagPossible)` perception. The two answer
-# differently on 262 of 4,000 corpus molecules, so `SPS` and the two counts need two different
-# perceptions, and only the legacy one is already in the blob. See the handoff note.
+# differently on 262 of 4,000 corpus molecules, so `SPS` and the two counts needed two different
+# perceptions. Both are now wired, from two different boundary fields: the legacy pair out of the
+# blob (`atom_i` columns 10 and 11, which molpickle.h had been skipping) and the new one out of
+# the two arrays above.
 #
-# They are named rather than dropped so the schema is stable across the port. But COVERAGE MUST
-# NOT COUNT THEM: "842 of 864 have a name" and "840 produce a value" are different claims, and
-# this project has already overstated its position twice by conflating a column count with a
-# capability. Use `covered = set(ALL_COLUMNS) - set(PENDING_COLUMNS)` when reporting.
+# THE CONSTANT STAYS, EMPTY, AND IS NOT DELETED. "N of 864 have a name" and "N produce a value"
+# are different claims, this project has already overstated its position twice by conflating
+# them, and `covered = set(ALL_COLUMNS) - set(PENDING_COLUMNS)` is the expression every reporting
+# path uses. Deleting the constant now would make the next column that lands NaN silently
+# countable as covered.
 #
-# Ipc / AvgIpc / Log2Ipc are NOT here: they are not emitted at all, pending the open bug at the
-# top of src/hume_core/infocontent.h. Two different states, deliberately kept distinct.
-PENDING_COLUMNS: tuple[str, ...] = ("qed", "SPS")
+# `AvgIpc` IS emitted now -- the Ipc bug is closed (it was RDKit's numbering-dependence, not
+# ours; see the determinism evidence at the top of src/hume_core/infocontent.h) -- so it is a
+# member of ALL_COLUMNS and NOT of PENDING_COLUMNS. `Ipc` and `Log2Ipc` are computed alongside it
+# and deliberately not emitted: neither is one of the 865, and both are unbounded where every
+# other column here is not. Three different states, deliberately kept distinct.
+PENDING_COLUMNS: tuple[str, ...] = ()
 
 
 # FOUR NAMES APPEAR TWICE IN ALL_COLUMNS, AND A NAIVE name->index MAP SILENTLY PICKS THE SECOND.
@@ -128,9 +147,13 @@ def featurize_blocks_from_mols(mols: Sequence, batch_size: int = 4096, reader: s
     for lo in range(0, len(mols), batch_size):
         chunk = mols[lo:lo + batch_size]
         if reader == "pickle":
-            out[lo:lo + len(chunk)] = _core.blocks_from_pickles(extract_pickles(chunk).blobs)
+            # `stereo=False`: the 182 blocks read neither potential-stereo array, and running the
+            # perception for them would add 52 us/mol -- a third of this path's whole boundary --
+            # to fill two arrays nothing downstream looks at.
+            out[lo:lo + len(chunk)] = _core.blocks_from_pickles(
+                extract_pickles(chunk, stereo=False).blobs)
         else:
-            out[lo:lo + len(chunk)] = compute(extract(chunk))
+            out[lo:lo + len(chunk)] = compute(extract(chunk, stereo=False))
     return out, COLUMNS
 
 
@@ -188,7 +211,8 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         chunk = mols[lo:lo + batch_size]
         p = extract_pickles(chunk)
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
-            p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs)
+            p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs,
+            p.stereo_a, p.stereo_b)
         for i, m in enumerate(chunk):
             fp[lo + i] = gen.GetFingerprintAsNumPy(m)
     return fp, X, ALL_COLUMNS

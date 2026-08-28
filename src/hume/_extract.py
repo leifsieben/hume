@@ -38,13 +38,30 @@ TopologicalCharge would see them. That asymmetry is mordred's, and it is reprodu
     atom_off  int32   (n_mol + 1,)   atoms of molecule k are [atom_off[k] : atom_off[k+1]]
     bond_off  int32   (n_mol + 1,)
     chg_ok    int32   (n_mol,)       0 = Gasteiger unavailable, charges are 0.0
-    atom_i    int32   (n_atoms, 10)  Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP,
-                                     ring count, total valence
+    atom_i    int32   (n_atoms, 13)  Z, degree, nH, formal charge, hyb, aromatic, in-ring, CIP,
+                                     ring count, total valence, _ChiralityPossible, chiral tag,
+                                     isotope
     atom_d    float64 (n_atoms, 2)   mass, Gasteiger charge
     bond_i    int32   (n_bonds, 6)   u, v, conjugated, in-ring, SMARTS bond code, BondType int
     bond_s    int32   (n_bonds,)     E/Z as +/-1, 0 for none
     bond_d    float64 (n_bonds,)     bond order
     rings                            the ring SET as a two-level CSR; see `Rings` below
+    stereo_a  int32   (n_atoms,)     POTENTIAL tetrahedral stereo, the NEW perception; see
+    stereo_b  int32   (n_bonds,)     `_potential_stereo` -- optional, empty when not asked for
+
+THE LAST TWO ATOM COLUMNS ARE THE **LEGACY** STEREO PERCEPTION AND THE STEREO ARRAYS ARE THE
+**NEW** ONE, and they are not the same question. `_ChiralityPossible` is set by
+`MolOps::assignStereochemistry(cleanIt, force, flagPossible)`; `stereo_a` comes from
+`FindPotentialStereo`. The two atom sets differ on 262 of 4,000 corpus molecules (6.6%), so a
+port that computed one and used it for both would be wrong on one column in fifteen. RDKit's own
+descriptors read them in exactly that split: `NumAtomStereoCenters` and
+`NumUnspecifiedAtomStereoCenters` count `_ChiralityPossible`
+(Code/GraphMol/Descriptors/Lipinski.cpp), while `SPS` (rdkit/Chem/SpacialScore.py) asks
+`FindMolChiralCenters(useLegacyImplementation=False)`.
+
+THE LEGACY PAIR COSTS THE PICKLE PATH NOTHING -- both were already in the blob and were being
+skipped; see src/hume_core/molpickle.h. The NEW perception is not in the blob at all and is a
+real RDKit call per molecule, priced in `_potential_stereo`'s docstring.
 
 Hybridisation is passed through as RDKit's enum value rather than re-derived, for the reason
 export_predict.py gives: HallKierAlpha indexes a per-element table by (hybridisation - 2), and
@@ -105,13 +122,13 @@ from itertools import repeat
 
 import numpy as np
 from rdkit import Chem
-from rdkit.Chem import rdPartialCharges
+from rdkit.Chem import rdPartialCharges, rdmolops
 
 # E/Z as +/-1, matching stereo.py's _E exactly (TRANS is E, CIS is Z).
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 
-N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 10, 2, 6
+N_ATOM_INT, N_ATOM_DBL, N_BOND_INT = 13, 2, 6
 
 # The bond half of the Crippen typer's input, byte-for-byte cpp/export_crippen.py's bond_code():
 # a bit for the bond ORDER when it is one of the three SMARTS knows how to name, and a separate
@@ -144,8 +161,101 @@ _mass = Chem.Atom.GetMass
 _has_prop = Chem.Atom.HasProp
 _double_prop = Chem.Atom.GetDoubleProp
 
+_chiral_tag = Chem.Atom.GetChiralTag
+_isotope = Chem.Atom.GetIsotope
+_bond_stereo = Chem.Bond.GetStereo
+_bond_type = Chem.Bond.GetBondType
+
 _CIP_CODE = "_CIPCode"
+_CHIRALITY_POSSIBLE = "_ChiralityPossible"
 _GASTEIGER = "_GasteigerCharge"
+
+# The NEW stereo perception's three constants, bound once. `Atom_Tetrahedral` is the only
+# StereoType `SPS` reads off `FindPotentialStereo`; the `Bond_Double` entries are NOT what its
+# bond term asks (see `_potential_stereo`).
+_TET = Chem.StereoType.Atom_Tetrahedral
+_BT_DOUBLE = Chem.BondType.DOUBLE
+_STEREONONE = Chem.BondStereo.STEREONONE
+
+# "Not asked for", distinct from "asked for and empty". Shared, and never written to.
+_Z32 = np.zeros(0, dtype=np.int32)
+
+
+def _potential_stereo(mols):
+    """RDKit's POTENTIAL stereo perception, per atom and per bond, for `SPS`.
+
+    -> ``(stereo_a int32 (n_atoms,), stereo_b int32 (n_bonds,))``, flat across the batch in the
+    same atom and bond order as `atom_i` / `bond_i`.
+
+    THE SPECIFICATION IS rdkit/Chem/SpacialScore.py, and it is reproduced call for call:
+
+        molCp = Chem.Mol(mol); rdmolops.FindPotentialStereoBonds(molCp)
+        chiral_idxs = [i for i, _ in Chem.FindMolChiralCenters(
+                           molCp, includeUnassigned=True, includeCIP=False,
+                           useLegacyImplementation=False)]
+        db_stereo   = {(u, v): bond.GetStereo() for DOUBLE bonds}   # on the same copy
+
+    ON A COPY, AND THAT IS LOAD-BEARING RATHER THAN TIDY. `FindPotentialStereoBonds` sets
+    STEREOANY on bonds the caller's molecule has no stereo on, and `FindPotentialStereo` sets its
+    own `_ChiralityPossible` -- the NEW perception's flag, under the LEGACY perception's property
+    name. Letting either touch the caller's molecule would corrupt `bond_s` and would silently
+    overwrite the legacy flag that `NumAtomStereoCenters` counts, which is the one boundary field
+    whose two producers must not be allowed to meet.
+
+    WHY NOT `FindMolChiralCenters` ITSELF: IT IS 4.6x THE PRICE OF WHAT IT COMPUTES. Called
+    verbatim it costs 243 us/mol on 2,000 corpus molecules against 52 us/mol here, and the
+    difference is not perception -- `FindPotentialStereo` is 28 us/mol of it. It is that
+    `for si in itms` over the returned `_vect...StereoInfo` costs **173 us per call regardless of
+    how many items it holds**: 172.9 us for an EMPTY vector and 175.4 for a one-element one,
+    measured. Boost.Python's default iterator ends by taking an out-of-range `__getitem__` and
+    translating the C++ exception, and that unwind is the whole cost. Indexing the same vector by
+    position is 0.3 us. So this loops `range(len(itms))` and indexes -- the same items, the same
+    order, and 0 differing molecules out of 2,000 against the verbatim call.
+
+    A CHEAPER ROUTE WAS TRIED AND IS WRONG: `FindPotentialStereo(c, cleanIt=True,
+    flagPossible=True)` sets `_ChiralityPossible` on the copy, which would let this read the
+    answer with an unbound `HasProp` map for 70 us/mol total. It disagrees with
+    `FindMolChiralCenters` on 121 of 2,000 molecules -- the flag is set on a SUBSET of the
+    `Atom_Tetrahedral` entries. `CC1Cc2ccccc2[N+]1=CC=C1N(C)c2ccccc2C1(C)C[SiH3]` has
+    Atom_Tetrahedral at 1, 21 and 24 and gets the flag on 1 and 21 only.
+
+    THE BOND TERM IS NOT THE `Bond_Double` STEREO INFOS. SpacialScore reads `bond.GetStereo()`
+    off the molecule after `FindPotentialStereoBonds`, which is a different set: a bond can carry
+    STEREOANY there and STEREONONE is the answer for most double bonds. Reproduced as written.
+    """
+    sa: list[int] = []
+    sb: list[int] = []
+    old = Chem.GetUseLegacyStereoPerception()
+    # `FindMolChiralCenters(useLegacyImplementation=False)` sets this global for the duration of
+    # its call and restores it. Hoisted out of the loop here, which is the same state seen by the
+    # same perception -- and it is restored in a `finally`, because leaving it False would change
+    # how every later `Chem.MolFromSmiles` in the process perceives stereo.
+    Chem.SetUseLegacyStereoPerception(False)
+    try:
+        for m in mols:
+            c = Chem.Mol(m)
+            rdmolops.FindPotentialStereoBonds(c)
+
+            row = [0] * c.GetNumAtoms()
+            itms = Chem.FindPotentialStereo(c)
+            for k in range(len(itms)):              # NOT `for si in itms`; see the docstring
+                si = itms[k]
+                if si.type == _TET:
+                    row[si.centeredOn] = 1
+            sa.extend(row)
+
+            nb = c.GetNumBonds()
+            bonds = list(map(c.GetBondWithIdx, range(nb)))
+            brow = [0] * nb
+            # One pass for the stereo, and `GetBondType` only on the few bonds that have any --
+            # STEREONONE is the answer for the overwhelming majority, so the type call is rare.
+            for e, st in enumerate(map(_bond_stereo, bonds)):
+                if st != _STEREONONE and _bond_type(bonds[e]) == _BT_DOUBLE:
+                    brow[e] = 1
+            sb.extend(brow)
+    finally:
+        Chem.SetUseLegacyStereoPerception(old)
+    return np.asarray(sa, dtype=np.int32), np.asarray(sb, dtype=np.int32)
 
 
 @dataclass(frozen=True)
@@ -181,6 +291,12 @@ class Batch:
     bond_s: np.ndarray
     bond_d: np.ndarray
     rings: Rings
+    # Empty when `extract(..., stereo=False)`. NOT zero-filled: a zero array is a valid answer
+    # (no potential stereo anywhere) and would make "nobody asked for this" indistinguishable
+    # from "the perception found nothing", which is exactly how `SPS` would come out finite and
+    # wrong. Length 0 means absent, and bindings.cpp refuses it rather than defaulting.
+    stereo_a: np.ndarray
+    stereo_b: np.ndarray
 
     @property
     def n_mol(self) -> int:
@@ -213,12 +329,18 @@ def _rings_csr(mols) -> Rings:
                  np.asarray(at, dtype=np.int32))
 
 
-def extract(mols) -> Batch:
+def extract(mols, stereo: bool = True) -> Batch:
     """Flatten an iterable of RDKit molecules into one Batch.
 
     Molecules are taken as given -- no filtering, no sanitisation beyond what the caller already
     did. `None` is rejected loudly rather than skipped, because a silently dropped molecule turns
     a row index into a lie, and every consumer of this array indexes by position.
+
+    `stereo` runs the NEW potential-stereo perception (`_potential_stereo`, 52 us/mol) and fills
+    `stereo_a` / `stereo_b`. It is a parameter rather than always-on because the 182-column block
+    path reads neither, and paying 52 us/mol for two arrays nobody looks at is a third of that
+    path's whole boundary cost. The LEGACY pair -- `atom_i`'s last two columns -- is not optional
+    and costs two unbound `map`s.
     """
     mols = list(mols)
     atom_off, bond_off, chg_ok = [0], [0], []
@@ -232,6 +354,9 @@ def extract(mols) -> Batch:
     cip: list[int] = []
     nring: list[int] = []
     tval: list[int] = []
+    chirposs: list[int] = []
+    ctag: list[int] = []
+    iso: list[int] = []
     mass: list[float] = []
     charge: list[float] = []
     bu: list[int] = []
@@ -266,7 +391,14 @@ def extract(mols) -> Batch:
             ok = 0
         # CIP codes for the stereo block. MolFromSmiles assigns them already; the explicit call
         # is the safety net stereo.py also carries, and is verified to change nothing here.
-        Chem.AssignStereochemistry(m, cleanIt=True, force=True)
+        #
+        # `flagPossibleStereoCenters=True` IS NOT OPTIONAL AND OMITTING IT IS A SILENT ZERO.
+        # `cleanIt=True, force=True` CLEARS `_ChiralityPossible` unless it is passed -- on 911 of
+        # 2,000 corpus molecules, measured. `Descriptors.NumAtomStereoCenters` counts exactly that
+        # flag, so without this argument the column comes back 0 with no symptom, and an
+        # ill-posedness screen built on the same call reported a well-posed column as unstable on
+        # 4,125 of 9,000 shuffles. PORT_STATUS.md records it as trap #1.
+        Chem.AssignStereochemistry(m, cleanIt=True, force=True, flagPossibleStereoCenters=True)
 
         z.extend(map(_atomic_num, ats))
         deg.extend(map(_degree, ats))
@@ -286,6 +418,26 @@ def extract(mols) -> Batch:
         # corpus -- so it is carried across the boundary from the single perception RDKit has
         # already done, rather than recomputed and risked diverging.
         nring.extend(map(m.GetRingInfo().NumAtomRings, range(len(ats))))
+        # THE LEGACY POTENTIAL-STEREO FLAG AND THE CHIRAL TAG, the two inputs
+        # `NumAtomStereoCenters` and `NumUnspecifiedAtomStereoCenters` are exactly a function of:
+        # Lipinski.cpp counts atoms carrying `_ChiralityPossible`, and the unspecified variant
+        # additionally requires `getChiralTag() == CHI_UNSPECIFIED`. Reconstructing both from
+        # these two properties reproduces RDKit on 4,000 of 4,000 corpus molecules. `HasProp`
+        # returns 0/1, so the column is the map's result with no second pass.
+        chirposs.extend(map(_has_prop, ats, repeat(_CHIRALITY_POSSIBLE)))
+        # The RAW enum, not a `== CHI_UNSPECIFIED` boolean. CHI_UNSPECIFIED is 0 and the C++ only
+        # tests for that, but carrying the tag itself means the boundary answers a question about
+        # the molecule rather than a question about one descriptor -- and it is what the pickle
+        # already holds (atom property-flag bit 2), so narrowing it here would throw information
+        # away in exchange for nothing.
+        ctag.extend(map(int, map(_chiral_tag, ats)))
+        # SMARTS ISOTOPE, and it exists for exactly four queries: QED structural alerts 112-115
+        # are `[15N]`, `[13C]`, `[18O]` and `[34S]`. It is NOT recoverable from the `mass` column
+        # beside it -- `Atom.GetMass()` returns the isotope's mass, so mass says an atom IS
+        # labelled (which is the test constit.h's `exactMolWt` makes) but not labelled with what,
+        # and inverting RDKit's isotope-mass table would be an injectivity argument standing in
+        # for a value RDKit hands over for free. 0 when unset, which is what `[0*]` asks about.
+        iso.extend(map(_isotope, ats))
 
         # HasProp returns 0/1, so in the overwhelmingly common case of a molecule with no
         # assigned stereocentre the flag list IS the CIP column and no second pass happens.
@@ -341,7 +493,8 @@ def extract(mols) -> Batch:
         chg_ok_a[owners] = 0
 
     atom_i = np.empty((na, N_ATOM_INT), dtype=np.int32)
-    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip, nring, tval)):
+    for col, src in enumerate((z, deg, nh, fchg, hyb, arom, ring, cip, nring, tval,
+                               chirposs, ctag, iso)):
         atom_i[:, col] = src
     atom_d = np.empty((na, N_ATOM_DBL), dtype=np.float64)
     atom_d[:, 0] = mass
@@ -349,6 +502,11 @@ def extract(mols) -> Batch:
     bond_i = np.empty((nb, N_BOND_INT), dtype=np.int32)
     for col, src in enumerate((bu, bv, bconj, bring, bcode, btype)):
         bond_i[:, col] = src
+
+    # The NEW perception, on the SAME shared helper the pickle path uses -- so the two boundaries
+    # cannot disagree about it by construction, which is the only way this repo lets two paths
+    # agree. cpp/verify_molpickle.py asserts it anyway.
+    stereo_a, stereo_b = _potential_stereo(mols) if stereo else (_Z32, _Z32)
 
     return Batch(
         atom_off=atom_off_a,
@@ -360,6 +518,8 @@ def extract(mols) -> Batch:
         bond_s=np.asarray(bs, dtype=np.int32),
         bond_d=np.asarray(bd, dtype=np.float64),
         rings=_rings_csr(mols),
+        stereo_a=stereo_a,
+        stereo_b=stereo_b,
     )
 
 
@@ -417,17 +577,26 @@ class Pickles:
     blobs: list
     rings: Rings
     h_blobs: list
+    # The NEW potential-stereo perception, which the blob does NOT carry and cannot be made to:
+    # `FindPotentialStereoBonds` would have to run on the molecule being serialised, and it sets
+    # STEREOANY on bonds that have no stereo, which is `bond_s`. So `SPS` gets two arrays
+    # alongside the blobs. Empty when `extract_pickles(..., stereo=False)`; see `Batch`.
+    stereo_a: np.ndarray
+    stereo_b: np.ndarray
 
     def __len__(self) -> int:
         return len(self.blobs)
 
 
-def extract_pickles(mols) -> Pickles:
+def extract_pickles(mols, stereo: bool = True) -> Pickles:
     """Serialise molecules for the C++ reader. The Python half of the pickle boundary.
 
     Same contract as `extract()`: `None` is rejected loudly rather than skipped, and the two
     RDKit computations that `extract()` performs happen here in the same order, because both are
     inputs the blob has to carry.
+
+    `stereo` is the same switch `extract()` carries and costs the same 52 us/mol; the 182-column
+    block path passes False because it reads neither array.
     """
     mols = list(mols)
     out, hout = [], []
@@ -452,9 +621,15 @@ def extract_pickles(mols) -> Pickles:
             # this side: the reader then finds no `_GasteigerCharge` on any atom and writes 0.0
             # with chg_ok = 0. `_CIPCode` is private rather than computed and survives.
             m.ClearComputedProps()
-        Chem.AssignStereochemistry(m, cleanIt=True, force=True)
+        # THE ONE ARGUMENT THAT MADE TWO COLUMNS POSSIBLE, and see extract() for the measurement:
+        # without `flagPossibleStereoCenters=True` this call CLEARS `_ChiralityPossible` on 911 of
+        # 2,000 molecules, and the flag is what `NumAtomStereoCenters` counts. The blob already
+        # carried the bit (pickleExplicitProperties 0x8) and molpickle.h was skipping it; this is
+        # the only real change the two columns needed on this side.
+        Chem.AssignStereochemistry(m, cleanIt=True, force=True, flagPossibleStereoCenters=True)
         out.append(_to_binary(m, _PICKLE_FLAGS))
-    return Pickles(out, _rings_csr(mols), hout)
+    sa, sb = _potential_stereo(mols) if stereo else (_Z32, _Z32)
+    return Pickles(out, _rings_csr(mols), hout, sa, sb)
 
 
 def _check_pickle_version() -> None:
@@ -481,4 +656,4 @@ def _empty() -> Batch:
     return Batch(np.zeros(1, np.int32), np.zeros(1, np.int32), z32,
                  z32.reshape(0, N_ATOM_INT), z64.reshape(0, N_ATOM_DBL),
                  z32.reshape(0, N_BOND_INT), z32, z64,
-                 Rings(np.zeros(1, np.int32), np.zeros(1, np.int32), z32))
+                 Rings(np.zeros(1, np.int32), np.zeros(1, np.int32), z32), z32, z32)

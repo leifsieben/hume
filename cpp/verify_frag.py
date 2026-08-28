@@ -420,9 +420,13 @@ def cmd_dump():
         ri = m.GetRingInfo()
         w("%d %d\n" % (m.GetNumAtoms(), m.GetNumBonds()))
         for a in m.GetAtoms():
-            w("%d %d %d %d %d %d %d\n" % (
+            # `iso` is last and is new with the QED alert program: it is the only thing that can
+            # answer alerts 112-115 (`[15N]`, `[13C]`, `[18O]`, `[34S]`).  No `rdkit_core`
+            # fragment pattern reads it, so the 76-column result is unchanged by its presence.
+            w("%d %d %d %d %d %d %d %d\n" % (
                 a.GetAtomicNum(), a.GetDegree(), a.GetTotalNumHs(False), a.GetFormalCharge(),
-                1 if a.GetIsAromatic() else 0, ri.NumAtomRings(a.GetIdx()), a.GetTotalValence()))
+                1 if a.GetIsAromatic() else 0, ri.NumAtomRings(a.GetIdx()), a.GetTotalValence(),
+                a.GetIsotope()))
         for b in m.GetBonds():
             # Bond::BondType as an integer -- AROMATIC is 12.  int(GetBondType()) is exactly the
             # number RDKit's own queryBondOrder compares against.
@@ -473,7 +477,54 @@ def cmd_verify():
         sys.exit(1)
 
 
+def cmd_verify_alerts():
+    """`qedAlerts` as an INTEGER COUNT, graded against RDKit's own matcher.
+
+    This is the input `qed` was missing, and it is graded on its own here rather than only
+    inside the composite: `qed` is a float built from eight desirability functions, and a wrong
+    alert count would show up there as a small float difference that could be mistaken for
+    rounding.  An integer count has nowhere to hide.
+
+    THE ORACLE IS RDKit's `HasSubstructMatch` PER ALERT, which is exactly what QED.py sums:
+        ALERTS = sum(1 for alert in StructuralAlerts if mol.HasSubstructMatch(alert))
+    A count of PATTERNS, not of embeddings.
+
+        "${UV[@]}" python cpp/verify_frag.py dump N > /tmp/d.txt
+        c++ -O3 -std=c++17 -o cpp/frag cpp/frag.cpp && ./cpp/frag alerts < /tmp/d.txt > /tmp/a.txt
+        "${UV[@]}" python cpp/verify_frag.py verify-alerts N /tmp/a.txt
+    """
+    require_pin()
+    from rdkit.Chem import QED
+    n = int(sys.argv[2])
+    got = [int(l) for l in open(sys.argv[3]) if l.strip() and not l.startswith("#")]
+    mols = _mols(n)
+    if len(got) != len(mols):
+        sys.exit("row count %d != molecule count %d" % (len(got), len(mols)))
+    print("RESOLVED rdkit %s" % rdkit.__version__)
+    bad = 0
+    hist = collections.Counter()
+    per_alert = [0] * len(QED.StructuralAlerts)
+    for i, m in enumerate(mols):
+        hits = [j for j, a in enumerate(QED.StructuralAlerts) if m.HasSubstructMatch(a)]
+        for j in hits:
+            per_alert[j] += 1
+        want = len(hits)
+        hist[want] += 1
+        if want != got[i]:
+            bad += 1
+            if bad <= 5:
+                print("  MISMATCH %s  want %d got %d" % (Chem.MolToSmiles(m), want, got[i]))
+    print("qedAlerts EXACT on %d / %d molecules" % (len(mols) - bad, len(mols)))
+    print("  distribution of the count: %s"
+          % sorted((k, v) for k, v in hist.items())[:12])
+    never = [j for j, c in enumerate(per_alert) if c == 0]
+    print("  alerts fired at least once: %d / %d   (never fired: %s)"
+          % (len(per_alert) - len(never), len(per_alert), never))
+    if bad:
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "check"
     {"tables": cmd_tables, "check": cmd_check, "inventory": cmd_inventory,
-     "dump": cmd_dump, "verify": cmd_verify}[cmd]()
+     "dump": cmd_dump, "verify": cmd_verify, "verify-alerts": cmd_verify_alerts}[cmd]()

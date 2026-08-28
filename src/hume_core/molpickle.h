@@ -27,11 +27,16 @@
 // WHAT IS IN THE PICKLE AND WHAT IS NOT, per boundary field. Verified field by field against
 // extract() on 98,905 + 100,000 molecules by cpp/verify_molpickle.py:
 //
-//   IN THE PICKLE   Z, formal charge, hybridisation, aromatic flag, isotope, explicit H count,
-//                   EXPLICIT valence, IMPLICIT valence, no-implicit flag, bond endpoints, bond
-//                   type, bond aromatic flag, bond conjugation flag, bond stereo, the ring atom
-//                   lists, and -- in the per-atom property section -- `_CIPCode` and
-//                   `_GasteigerCharge`.
+//   IN THE PICKLE   Z, formal charge, CHIRAL TAG, hybridisation, aromatic flag, isotope,
+//                   explicit H count, EXPLICIT valence, IMPLICIT valence, no-implicit flag, bond
+//                   endpoints, bond type, bond aromatic flag, bond conjugation flag, bond stereo,
+//                   the ring atom lists, and -- in the per-atom property section -- `_CIPCode`,
+//                   `_GasteigerCharge` and the `_ChiralityPossible` bit.
+//   NOT IN IT, AND NOT MAKEABLE TO BE: RDKit's NEW potential-stereo perception
+//                   (`FindPotentialStereo` / `FindPotentialStereoBonds`), which `SPS` reads.
+//                   Running it on the molecule before ToBinary would set STEREOANY on bonds that
+//                   have no stereo, i.e. would overwrite `bond_s`. It crosses the boundary as two
+//                   separate arrays; see src/hume/_extract.py's `_potential_stereo`.
 //   DERIVED HERE    degree (count the bonds), total H count (explicit + implicit valence, unless
 //                   noImplicit), TOTAL VALENCE (explicit + implicit valence, same guard), atom
 //                   ring membership and RING COUNT (count the pickled rings an atom appears in),
@@ -134,7 +139,28 @@ inline constexpr int HYB_SP3 = 4;
 // Columns per row of the boundary's `atom_i`. Mirrored in src/hume/_extract.py's N_ATOM_INT and
 // in bindings.cpp; every stride in this file goes through it so a tenth column cannot be added
 // in one place and forgotten in another.
-inline constexpr std::size_t N_ATOM_INT = 10;
+//
+// THE ELEVENTH AND TWELFTH COST THIS FILE NOTHING EITHER, and that is the same finding `tval`
+// produced, twice over. `NumAtomStereoCenters` counts atoms carrying `_ChiralityPossible` and
+// `NumUnspecifiedAtomStereoCenters` counts those of them whose chiral tag is CHI_UNSPECIFIED
+// (Code/GraphMol/Descriptors/Lipinski.cpp at rdkit 2025.09.2). Both were ALREADY IN THE BLOB and
+// were being stepped over:
+//   * the chiral tag is atom property-flag bit 2, which this reader used to `r.skip(1)`;
+//   * `_ChiralityPossible` is bit 0x8 of the per-atom `pickleExplicitProperties` bitmask, whose
+//     payload this reader used to `r.skip(2)`.
+// So the reader reads two bytes it was already walking past. The one real change was on the
+// PYTHON side: `extract_pickles` called `AssignStereochemistry(cleanIt, force)` before ToBinary,
+// which CLEARS the flag on 911 of 2,000 molecules unless `flagPossibleStereoCenters=True` is
+// also passed. See src/hume/_extract.py.
+//
+// THE THIRTEENTH IS `getIsotope()`, and it is the third field in a row that was already being
+// decoded and then dropped. The loop below has always read atom property-flag bit 8 into `iso`
+// because `Atom::getMass()` needs it; it now also writes it out. QED's structural alerts 112-115
+// are `[15N]`, `[13C]`, `[18O]` and `[34S]`, and nothing else at the boundary can answer them:
+// `mass` says an atom IS isotope-labelled -- which is exactly the test constit.h's `exactMolWt`
+// makes -- but not labelled with WHAT, and recovering the mass number by searching ISO_MASS
+// backwards would put an injectivity argument where a value RDKit already has would do.
+inline constexpr std::size_t N_ATOM_INT = 13;
 
 // Columns per row of `bond_i`, for the same reason. The sixth is RDKit's Bond::BondType INTEGER,
 // which is NOT recoverable from the five that were already there: the SMARTS code collapses every
@@ -285,7 +311,8 @@ struct Work {
 // where src/hume/_extract.py would need a whole new pair of arrays and another Python pass.
 // Pass nullptr for both and nothing changes for the callers that do not want them.
 struct Sink {
-  int *atom_i;      // (n, 10) Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval
+  int *atom_i;      // (n, 12) Z, deg, nH, fchg, hyb, arom, ring, cip, nring, tval,
+                    //         _ChiralityPossible, chiral tag
   double *atom_d;   // (n, 2)  mass, gasteiger
   int *bond_i;      // (nb, 6) u, v, conjugated, in-ring, SMARTS bond code, BondType int
   int *bond_s;      // (nb,)   E/Z as +/-1
@@ -363,6 +390,7 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
     row[6] = 0;   // in-ring boolean, from the ring section
     row[7] = 0;   // CIP, from the atom property section
     row[8] = 0;   // ring count, from the ring section
+    row[10] = 0;  // _ChiralityPossible, from the atom property section's explicit-property byte
     AD[(std::size_t)i * 2 + 1] = 0.0;   // Gasteiger, from the atom property section
   }
 
@@ -374,10 +402,14 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
     const std::uint8_t flags = r.u8();
     const std::int32_t pf = r.i32();
 
-    int fchg = 0, hyb = HYB_SP3, n_expl_h = 0, expl_val = 0, impl_val = 0;
+    int fchg = 0, hyb = HYB_SP3, n_expl_h = 0, expl_val = 0, impl_val = 0, ctag = 0;
     unsigned iso = 0;
     if (pf & (1 << 1)) fchg = r.i8();
-    if (pf & (1 << 2)) r.skip(1);            // chiral tag -- the boundary carries CIP instead
+    // Atom::ChiralType, verbatim: CHI_UNSPECIFIED 0, CHI_TETRAHEDRAL_CW 1, CHI_TETRAHEDRAL_CCW 2,
+    // CHI_OTHER 3, then the square-planar / trigonal-bipyramidal / octahedral values. The pickler
+    // omits the byte when the tag is CHI_UNSPECIFIED, which is the 0 above -- so this is RDKit's
+    // own enum on every atom. `NumUnspecifiedAtomStereoCenters` tests it against 0.
+    if (pf & (1 << 2)) ctag = r.u8();
     if (pf & (1 << 3)) hyb = r.u8();
     if (pf & (1 << 4)) n_expl_h = r.u8();
     if (pf & (1 << 5)) expl_val = r.u8();    // getExplicitValence(); only written when > 0
@@ -413,6 +445,10 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
     // to the H count, and applied here for the same reason: it is RDKit's accessor, not an
     // observation about what d_implicitValence happens to hold.
     row[9] = expl_val + ((flags & 0x20) ? 0 : impl_val);
+    row[11] = ctag;
+    // SMARTS isotope, for QED's structural alerts. `iso` is already in hand -- `mass_of` on the
+    // next line needs it -- so this costs the fast path a store and not a byte.
+    row[12] = (int)iso;
     AD[(std::size_t)i * 2] = mass_of(z, iso);
   }
 
@@ -555,11 +591,18 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
               skip_value(r, dt);
             }
           }
-          // pickleExplicitProperties: a bitmask byte, then one int16 per set bit. Four are
-          // defined (molStereoCare, molParity, molInversionFlag, _ChiralityPossible); a fifth
-          // would be a format change, so an unknown bit is an error rather than a bad offset.
+          // pickleExplicitProperties: a bitmask byte, then one int16 per set bit, in BIT ORDER.
+          // Four are defined (molStereoCare, molParity, molInversionFlag, _ChiralityPossible);
+          // a fifth would be a format change, so an unknown bit is an error rather than a bad
+          // offset.
+          //
+          // BIT 3 IS `_ChiralityPossible` AND IT IS THE WHOLE OF TWO COLUMNS. What is carried is
+          // the PRESENCE of the property, not its value -- Lipinski.cpp asks `hasProp` and never
+          // reads the number, and MolOps::assignStereochemistry only ever writes 1. So the bit
+          // is the answer and the two payload bytes are still stepped over.
           const std::uint8_t bp = r.u8();
           if (bp & 0xF0) throw Error("unknown explicit atom-property bit");
+          if (bp & 0x8) AI[(std::size_t)i * N_ATOM_INT + 10] = 1;
           for (int k = 0; k < 4; k++) {
             if (bp & (1 << k)) r.skip(2);
           }

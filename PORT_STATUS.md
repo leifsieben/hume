@@ -13,10 +13,19 @@ Regenerate this census with the snippet at the bottom. Do not hand-edit the coun
 
 | | columns |
 |---|---|
-| **producing a value from the package** (`hume.featurize_all`) | **859** |
-| named by the package but NaN (`PENDING_COLUMNS`) | 2 (`qed`, `SPS`) |
+| **producing a value from the package** (`hume.featurize_all`) | **862** |
+| named by the package but NaN (`PENDING_COLUMNS`) | 1 (`qed`) |
 | verified C++ exists, but NOT wired into the extension | 0 |
-| not named at all | 3 (`NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters`, `AvgIpc`) |
+| not named at all | 1 (`AvgIpc`) |
+
+**THIS TABLE IS THE STEREO BRANCH ONLY AND IS A LOWER BOUND.** 859 → 862 is the three
+stereo-dependent columns landing together: `NumAtomStereoCenters` and
+`NumUnspecifiedAtomStereoCenters` (unnamed before) and `SPS` (named and NaN before), measured
+with `bench_e2e._survivors_covered` on an extension built from HEAD plus that change alone and
+nothing else. `qed` and `AvgIpc` were being closed in the same working tree at the same time;
+once both are in, **regenerate this table from the built extension rather than adding the
+numbers up** — the two counts differ by exactly `PENDING_COLUMNS` and that invariant is the point
+of having two of them.
 
 "Verified C++ exists" is a claim about `cpp/*.cpp`; "callable" is a claim about the wheel; and
 "produces a value" is a third claim, narrower than "has a name". Only the last one is what a user
@@ -85,11 +94,14 @@ fixed edges, summed. The contributions are already computed natively (Crippen fr
 Labute ASA and the bin machinery. `MoeType` resolves via `getattr` to the *same* code path and the
 *same* edges as the `rdkit_*` VSA columns, so it is not a separate implementation.
 
-**B. `rdkit_core`, 99 — 76 of them are DONE.** Fragment counts (`fr_*`), H-bond
+**B. `rdkit_core`, 99 — ALL OF IT IS DONE.** Fragment counts (`fr_*`), H-bond
 donors/acceptors, ring and heteroatom counts, all wired via `src/hume_core/frag_matcher.h`; see
-"2. DONE" in the handoff. What is left is `NumAtomStereoCenters` +
-`NumUnspecifiedAtomStereoCenters` (RDKit's `FindPotentialStereo`, a real subsystem) and
-`FpDensityMorgan1/2/3`; the other ~18 are computed elsewhere or trivial from the boundary.
+"2. DONE" in the handoff. The 21 that are not substructure counts are in
+`src/hume_core/rdkcore.h` — 13 ring predicates, `HeavyAtomMolWt`, `FractionCSP3`, `Phi`, the
+three `FpDensityMorgan*`, and **`NumAtomStereoCenters` + `NumUnspecifiedAtomStereoCenters`**,
+which were the last hold-outs. Those two did NOT need `FindPotentialStereo`, and this file used to
+say they did: they count the LEGACY `_ChiralityPossible` flag, which was already in the pickle.
+See the 2026-08-28 stereo handoff.
 
 **C. Mordred Chi + walks, 55.** `Chi` 40 (`AXp-*`/`Xp-*` path, `Xc-*` cluster, `Xpc-*`
 path-cluster, `Xch-*` chain), `WalkCount` 6, `Constitutional` 4, `WienerIndex` 2,
@@ -234,7 +246,11 @@ directory.
     verified C++ NOT yet wired into the extension               0
     not named at all                                            3
 
-THE LAST FIVE, and none is a porting gap of the ordinary kind:
+THE LAST FIVE, and none is a porting gap of the ordinary kind. **THREE OF THEM ARE NOW CLOSED —
+`SPS`, `NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters`; see the 2026-08-28 stereo
+handoff at the bottom of this file. The block below is kept as the record of what was predicted,
+because the prediction was right about the mechanism in both cases and wrong about the price of
+one of them.**
 
   qed                              named, NaN. Needs QED's 116 structural-alert SMARTS. The
                                    cheapest correct route is to give frag_matcher.h's Matcher a
@@ -371,9 +387,10 @@ open bug, see the header.
   comparison.
 * **The end-to-end table needs a QUIET machine.** Everything measured so far says CONTENDED and
   says so in the JSON.
-* Remaining rdkit_core: `NumAtomStereoCenters` + `NumUnspecifiedAtomStereoCenters` (RDKit's
-  `FindPotentialStereo`, a real subsystem) and `FpDensityMorgan1/2/3`. The other ~18 are already
-  computed elsewhere or trivial from the boundary.
+* ~~Remaining rdkit_core~~ **CLOSED.** `FpDensityMorgan1/2/3` landed with `rdkcore.h`;
+  `NumAtomStereoCenters` + `NumUnspecifiedAtomStereoCenters` landed on 2026-08-28 and did NOT
+  need `FindPotentialStereo` — they read the LEGACY `_ChiralityPossible` flag, which the pickle
+  was already carrying. `rdkit_core` is complete.
 
 ## Two things that will waste your time if you forget them
 
@@ -486,9 +503,12 @@ Zero column overlap, confirmed. The names read as a collision to anyone skimming
 **1. `AssignStereochemistry(cleanIt=True, force=True)` CLEARS `_ChiralityPossible`** unless you
 also pass `flagPossibleStereoCenters=True`. `Descriptors.NumAtomStereoCenters` counts that flag,
 so without it the descriptor silently returns 0 — and an ill-posedness screen built on that call
-reported a *well-posed* column as unstable on 4,125 of 9,000 shuffles. **`verify_chiwalk.py`,
-`verify_topo3.py` and `src/hume/_extract.py` all omit the flag.** Any future stereo work run
-through them will measure an artifact.
+reported a *well-posed* column as unstable on 4,125 of 9,000 shuffles. Measured again on
+2026-08-28 on a different sample: the flag is wiped on **911 of 2,000** molecules.
+**`src/hume/_extract.py` now passes the flag on BOTH paths** — it has to, the two columns are a
+function of it — and pays 6.5 µs/mol for it. **`verify_chiwalk.py` and `verify_topo3.py` still
+omit it.** Neither computes a stereo column, so neither is wrong today; any future stereo work
+run through them will measure an artifact.
 
 **2. `hume.ALL_COLUMNS` contains four DUPLICATED names** — `MaxEStateIndex`, `MinEStateIndex`,
 `MaxAbsEStateIndex`, `MinAbsEStateIndex` — emitted once by the 182-column block and again by the
@@ -565,3 +585,134 @@ Two cautions worth carrying:
   large molecules early in the file is the likely one. Cost lives in the tail.
 * an estimate taken from a prefix is a scheduling number and nothing more. It must not reach a
   document, and no correctness claim in this repo rests on one.
+
+---
+
+# HANDOFF — 2026-08-28, the three stereo-dependent columns
+
+**859 → 862 producing a value.** `NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters` and
+`SPS` are wired. `qed` is the only `PENDING_COLUMNS` entry left.
+
+## The prediction was right about the mechanism and wrong about the price
+
+The 2026-08-27 handoff said the two counts were "~a field, not a subsystem" and that `SPS` needed
+a real boundary addition. Both true, and the split really is two perceptions — **not one**:
+
+| | reads | where it comes from | cost |
+|---|---|---|---|
+| `NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters` | LEGACY `_ChiralityPossible` + chiral tag | already in the blob, two bits `molpickle.h` was skipping | **+6.4 µs/mol** |
+| `SPS` | NEW `FindPotentialStereo` + `FindPotentialStereoBonds` | not in the blob and not makeable to be; two extra arrays | **+56.0 µs/mol** |
+
+The 6.4 µs is not the reader — the reader costs nothing, exactly as `tval` and `bond type` did.
+It is `flagPossibleStereoCenters=True` on the `AssignStereochemistry` that `extract_pickles`
+already ran (5.0 → 11.5 µs/mol, measured directly and confirmed by the paired HEAD-vs-now A/B,
+`extract_pickles(stereo=False)` 166.4 → 172.8). Without the argument that call CLEARS the flag on
+**911 of 2,000** molecules and both columns silently return 0.
+
+The 56 µs is the whole price of ONE column and it lands on the hot path: `extract_pickles` 173.2
+→ 229.2 µs/mol, **7.3% of `featurize_all_from_mols`** (772.6 ± 3.47 µs/mol on a box at load 3.9 —
+ordering only, not publishable). It is a parameter, not a constant: `extract(..., stereo=False)`
+and `extract_pickles(..., stereo=False)` skip it, and `featurize_blocks` passes False because the
+182 blocks read neither array. **Length-0 means "not run" and yields NaN for `SPS`; a full-length
+array of zeros means "run, found nothing" and yields a number. `bindings.cpp` refuses any other
+length rather than reading past the end.**
+
+**`SPS` COST 4.6× WHAT IT SHOULD, AND THE CAUSE IS A BOOST.PYTHON ITERATOR.** `FindMolChiralCenters`
+called the way SpacialScore.py calls it is **243 µs/mol**; the perception inside it is 28. The
+other 180 is `for si in itms` over the returned `_vect...StereoInfo`, which costs **173 µs per
+call regardless of length** — 172.9 µs for an EMPTY vector, 175.4 for a one-element one, measured.
+Boost.Python's default iterator terminates by taking an out-of-range `__getitem__` and translating
+the C++ exception, and that unwind is the entire cost. `itms[k]` by index is 0.3 µs. Looping
+`range(len(itms))` gives the same items in the same order and 0 differing molecules of 2,000.
+**Anywhere in this repo that iterates an RDKit-returned `_vect*` is paying ~173 µs per call.**
+
+A cheaper route was tried and IS WRONG: `FindPotentialStereo(c, cleanIt=True, flagPossible=True)`
+sets `_ChiralityPossible` on the copy, so the answer could be read with an unbound `HasProp` map
+for 70 µs/mol total — but the flag lands on a SUBSET of the `Atom_Tetrahedral` entries and
+disagrees with `FindMolChiralCenters` on **121 of 2,000** molecules.
+`CC1Cc2ccccc2[N+]1=CC=C1N(C)c2ccccc2C1(C)C[SiH3]` has Atom_Tetrahedral at 1, 21 and 24 and gets
+the flag on 1 and 21 only.
+
+## Exactness
+
+Every claim below is from the pinned env with the numeric canary checked in-process
+(`rdkit 2025.09.2`, `BCUT2D_MRLOW = -0.07665884800196521`).
+
+* **`cpp/verify_molpickle.py`, both corpora, ALL EXACT** — 98,905 + 100,000 molecules,
+  2,866,100 + 2,868,290 atoms. Four new `FIELDS` rows: `atom chirality possible`,
+  `atom chiral tag`, `stereo_a (potential atom)`, `stereo_b (potential bond)`. The 182 block
+  columns are still bit-identical across the two readers.
+* **`cpp/verify_wiring.py 100000 rdkcore`** — through the shipped wiring, graded in-process
+  against RDKit's own `Descriptors` and `Chem.SpacialScore`, oracles OUTSIDE the code path:
+
+      NumAtomStereoCenters              99,966 / 99,966  EXACT   nonzero on 45,493
+      NumUnspecifiedAtomStereoCenters   99,966 / 99,966  EXACT   nonzero on 30,806
+      SPS                               99,966 / 99,966  EXACT   nonzero on 99,987
+
+  and **100,000 / 100,000 EXACT for all three against a molecule parsed FRESH from the SMILES
+  text**, which is the stricter oracle: `all_cols` runs `extract_pickles`, which mutates the
+  caller's molecules, and these three are a function of exactly what that mutation leaves behind.
+  The 34 excluded are the pre-existing repaired-ring-set population; none of the three moves on
+  them, which is the check that none of them reads the ring set.
+* **`cpp/verify_wiring.py 3000`** — WIRING EXACT, every pre-existing family unchanged, and the
+  NaN audit's always-NaN set is now exactly `['qed']`.
+
+## The screen: all three are WELL-POSED, and the shuffle that shows it is new
+
+`cpp/screen_stereo.py`, 10,000 molecules (45.3% carry a stereocentre), four axes, **99,998
+perturbations, 0 movements on all three columns.**
+
+**The repo could not have answered this before, and the reason is worth keeping.**
+`cpp/verify_ic.py:rebuilt` — the atom+bond shuffle `cpp/screen_constit.py` uses — copies each
+atom's chiral tag verbatim while permuting the bond order the tag is DEFINED AGAINST. It inverts
+roughly half of all stereocentres, so it cannot screen a stereo column; `screen_constit.py` works
+around that by skipping `SPS` whenever the rebuild lost stereo, i.e. `SPS` was only ever screened
+on the stereo-poor molecules. `screen_stereo.py` adds the missing repair: flip CW/CCW exactly when
+the induced permutation of the atom's own incident bonds is ODD, and carry the bond's STEREO ATOMS
+across (in a second pass — `SetStereoAtoms` asserts the reference bonds already exist, which under
+a shuffled insertion order they may not). **It fired on 4,334 of the 6,084 rebuilds that had a
+tetrahedral tag to reorder**, and **0 of 30,000 rebuilds failed the isomeric-canonical-SMILES
+check** — which is what makes "parity-preserving" a measurement rather than an argument.
+
+The second parity-preserving axis is a **random**-SMILES round trip
+(`MolToSmiles(canonical=False, doRandom=True)`), where the parity bookkeeping is RDKit's own. It
+is not the canonical round trip this file calls a control: a random root and random branch order
+give a different atom order AND a different bond list. 2 of 30,000 did not reproduce the molecule
+and were excluded and counted.
+
+    axis                             probed  excluded   NAtomStereo  NUnspecAtomStereo   SPS
+    atom only                         30000         0             0                  0     0
+    atom+bond parity-repaired         30000         0             0                  0     0
+    random-SMILES round trip          29998         2             0                  0     0
+    kekule round trip                 10000         0             0                  0     0
+
+## Nothing pre-existing moved
+
+Direct A/B of the extension: build HEAD, dump 2,000 molecules, rebuild, dump, compare bitwise.
+
+* **1,262 of the 1,263 HEAD columns are bit-identical**, and the one that moved is `SPS` — NaN on
+  2,000/2,000 before, finite on 2,000/2,000 now. The ECFP is identical.
+* The two new columns are APPENDED to `rdkcore`, the LAST family in the layout, so every
+  pre-existing column keeps its index. Asserted in the A/B before comparing, or it would have been
+  comparing shifted rows.
+* `featurize_all[:, :182]` == `featurize_blocks` == HEAD's `featurize_blocks`, for
+  `reader="pickle"` AND `reader="api"`, all bitwise.
+* `src/hume/_verify_crippen.py`: 582,017 / 582,017 atoms exact.
+* The C++ arm is unchanged by the wider `atom_i` (10 → 12 columns): interleaved HEAD/now, three
+  rounds each, **515.3 vs 513.6 µs/mol** — the arms straddle each other, so the cost is below the
+  noise.
+
+## What the next person should know
+
+* **The two perceptions must never be wired from one input.** `atom_i` columns 10-11 are LEGACY;
+  `stereo_a`/`stereo_b` are NEW. Measured again here: they disagree on 262 of 4,000 molecules.
+  `C1CC(C)C(C)C(C)C1` is the smallest example in the corpus — `NumAtomStereoCenters` 2, but the
+  new perception finds three potential centres and `SPS` scores accordingly.
+* **`_potential_stereo` works on `Chem.Mol(m)` copies and that is load-bearing.**
+  `FindPotentialStereoBonds` sets STEREOANY on bonds with no stereo (that is `bond_s`), and
+  `FindPotentialStereo` writes `_ChiralityPossible` — the NEW perception's answer under the LEGACY
+  perception's property name. Letting either touch the caller's molecule would corrupt one column
+  set with the other's answer.
+* It also sets `SetUseLegacyStereoPerception(False)` for the duration of the batch, hoisted out of
+  the per-molecule loop and restored in a `finally`. Leaving it False would change how every later
+  `MolFromSmiles` in the process perceives stereo.

@@ -1,4 +1,20 @@
-// A SMARTS substructure matcher, sized to the `rdkit_core` fragment patterns and no larger.
+// A SMARTS substructure matcher: ONE evaluator, run against whichever compiled query program it
+// is bound to.
+//
+// TWO PROGRAMS GO THROUGH IT TODAY, and that is the reason `Matcher` takes a bound
+// `frag_prog_types::Program` reference rather than reading one namespace's tables at global
+// scope, which is how this file started:
+//
+//     cpp/frag_program.h        74 `rdkit_core` fragment/pattern descriptors, counted as
+//                               len(GetSubstructMatches(patt, uniquify=True))
+//     cpp/qed_alert_program.h   rdkit.Chem.QED.StructuralAlertSmarts, all 116, counted as a
+//                               BOOLEAN per pattern -- QED.py sums HasSubstructMatch, so
+//                               `hasMatch()` and not `matchCount()`
+//
+// A second subgraph-isomorphism implementation for the alerts would have been two things to
+// verify and two places for a divergence to hide.  Both programs are compiled by the same
+// cpp/gen_frag_program.py, from the same parser, validated the same way against RDKit's own
+// DescribeQuery() parse tree.
 //
 // WHY A REAL MATCHER, when crippen_typer.h and estate_typer.h deliberately avoid one.  Those two
 // decode a fixed pattern set into predicates over (element, aromaticity, degree, H-count, charge)
@@ -47,8 +63,11 @@
 //   fchg   A_FCHG   GetFormalCharge()
 //   arom   A_AROM   GetIsAromatic()
 //   nring  A_NRING  RingInfo::NumAtomRings(i)   -- SMARTS `R<n>`; the BOOLEAN A_RING cannot
-//                                                  answer `[R1]` vs `[R2]`
+//                                                  answer `[R1]` vs `[R2]`.  It also answers
+//                                                  SMARTS `r` (AtomInRing), which is `!= 0` of
+//                                                  the same count and is RDKit's own definition
 //   tval   A_TVAL   GetTotalValence()    -- SMARTS `v`; see below
+//   iso    A_ISO    GetIsotope()         -- SMARTS `[15N]`; see below
 //   bond   B_U/B_V/B_RING/B_CODE
 //
 // `border` is NOT a boundary column and must not become one: it is RDKit's Bond::BondType integer
@@ -62,7 +81,7 @@
 //   X (SMARTS total degree) = deg + nH                 == GetTotalDegree()
 //   H (SMARTS H count)      = nH + #neighbours with z==1   == GetTotalNumHs(True)
 //
-// THE ONE COLUMN THAT IS NOT DERIVABLE is SMARTS `v`, total valence, and it is why the boundary
+// THE FIRST COLUMN THAT IS NOT DERIVABLE is SMARTS `v`, total valence, and it is why the boundary
 // grew a tenth `atom_i` column rather than this file growing a reconstruction.  The obvious one
 // -- round(sum of incident bond orders) + nH -- is WRONG on 11,238 of those same 575,571 atoms,
 // because RDKit folds aromatic bond contributions and hydrogens together under its own rounding
@@ -71,6 +90,15 @@
 // `NumHAcceptors` (`v2`, `v3`), so it cannot be dropped either.  It reaches the boundary as
 // `Atom.GetTotalValence()` on the reference path and as the pickle's own explicit + implicit
 // valence on the fast path; the two agree column-wise on both corpora (cpp/verify_molpickle.py).
+//
+// THE SECOND IS SMARTS ISOTOPE, and the QED alert set is what needed it: alerts 112-115 are
+// `[15N]`, `[13C]`, `[18O]` and `[34S]` and nothing else.  The boundary's `mass` column can say an
+// atom IS labelled -- constit.h's `exactMolWt` uses exactly that test, `mass != AWEIGHT[z]` -- but
+// not labelled with WHAT, and recovering the mass number by searching RDKit's isotope-mass table
+// backwards would put an injectivity argument where a value RDKit already has would do.  So it
+// became the ELEVENTH `atom_i` column, the same call the tval addition made.  It is FREE on the
+// fast path: molpickle.h was already decoding atom property-flag bit 8 into a local to compute
+// `mass`, and now writes that local out instead of dropping it.
 //
 // SMARTS BOND SEMANTICS, same trap cpp/estate_tables.h documents.  `:` is BondOrder 12
 // (Bond::AROMATIC), a bond TYPE query, not a getIsAromatic() query; and the default bond written
@@ -84,18 +112,20 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <memory>
 #include <string>
 #include <vector>
 
-#include "../../cpp/frag_program.h"
+#include "../../cpp/frag_prog_types.h"
 
 namespace fragmatch {
 
-using frag_prog::NODES;
-using frag_prog::AROOTS;
-using frag_prog::QBONDS;
-using frag_prog::PATTERNS;
-using frag_prog::Node;
+using frag_prog_types::Node;
+using frag_prog_types::QBond;
+using frag_prog_types::Pattern;
+using frag_prog_types::Named;
+using frag_prog_types::Program;
+namespace ops = frag_prog_types;
 
 // Bond order codes, as RDKit's Bond::BondType numbers them.  AROMATIC is 12; that is not a
 // typo and not a bitmask.
@@ -103,7 +133,7 @@ enum : int { BO_SINGLE = 1, BO_DOUBLE = 2, BO_TRIPLE = 3, BO_AROMATIC = 12 };
 
 struct Mol {
   int n = 0, nb = 0;
-  std::vector<int> z, deg, nH, fchg, arom, nring, tval;
+  std::vector<int> z, deg, nH, fchg, arom, nring, tval, iso;
   std::vector<int> hcount, tdeg;                  // derived: SMARTS H and X
   std::vector<int> bu, bv, border, bring;
   std::vector<int> start, nbr, nbond;             // CSR adjacency + parallel bond index
@@ -111,7 +141,7 @@ struct Mol {
   void alloc(int na, int nbonds) {
     n = na; nb = nbonds;
     z.assign(na, 0); deg.assign(na, 0); nH.assign(na, 0); fchg.assign(na, 0);
-    arom.assign(na, 0); nring.assign(na, 0); tval.assign(na, 0);
+    arom.assign(na, 0); nring.assign(na, 0); tval.assign(na, 0); iso.assign(na, 0);
     hcount.assign(na, 0); tdeg.assign(na, 0);
     bu.assign(nbonds, 0); bv.assign(nbonds, 0); border.assign(nbonds, 0); bring.assign(nbonds, 0);
   }
@@ -150,20 +180,43 @@ struct Mol {
 // Without it `fr_phos_acid`, whose 20 recursive sub-queries sit under an OR that is retried at
 // every candidate atom, re-runs the same sub-search thousands of times per molecule.
 // ---------------------------------------------------------------------------------------------
+
+// The visit order for one pattern's query atoms.  A Plan depends only on the PATTERN, never on
+// the molecule, so it is built once per (program, pattern) for the life of the process.
+// Rebuilding it per enumerate() call cost 9 ms/mol -- the recursive queries call enumerate() once
+// per (sub-pattern, atom) cache miss, so `fr_phos_acid` alone rebuilt 20 plans per candidate atom.
+struct Plan {
+  std::vector<int> order;       // query atom indices, in visit order
+  std::vector<int> parent;      // an earlier query atom adjacent to this one, or -1
+  std::vector<int> parentBond;  // QBONDS index joining them, or -1
+  // every query bond whose BOTH ends are placed at or before this step, for late checking
+  std::vector<std::vector<int> > checks;
+};
+
 class Matcher {
  public:
-  Matcher() : mol_(0) {}
-  explicit Matcher(const Mol& m) : mol_(0) { bind(m); }
+  Matcher() : prog_(0), plans_(0), mol_(0) {}
+  explicit Matcher(const Program& p) : prog_(0), plans_(0), mol_(0) { bindProgram(p); }
+
+  // Point at a compiled query program.  Cheap and idempotent; the per-pattern search plans are
+  // built once per program for the life of the process (see `planCache`), so a batch loop can
+  // bind at construction and never touch this again.
+  void bindProgram(const Program& p) {
+    prog_ = &p;
+    plans_ = &planCache(p);
+  }
 
   // Point at a new molecule and clear the recursive-query cache.  Exists so a batch loop can
   // hold ONE Matcher and pay for the cache's storage once: `assign` reuses the vector's capacity,
-  // where a fresh Matcher per molecule mallocs N_PATTERNS * n bytes every time.  The cache is
+  // where a fresh Matcher per molecule mallocs n_patterns * n bytes every time.  The cache is
   // cleared, not merely resized -- a stale `yes` from the previous molecule would be a wrong
   // count with no symptom.
   void bind(const Mol& m) {
     mol_ = &m;
-    cache_.assign((size_t)frag_prog::N_PATTERNS * (size_t)m.n, 0);
+    cache_.assign((size_t)prog_->n_patterns * (size_t)m.n, 0);
   }
+
+  const Program& program() const { return *prog_; }
 
   int matchCount(int pat) {
     std::vector<std::vector<int> > out;
@@ -175,39 +228,58 @@ class Matcher {
     return (int)out.size();
   }
 
+  // RDKit's `HasSubstructMatch`: does ANY embedding exist.  This is what QED's ALERTS term wants
+  // -- `sum(1 for alert in StructuralAlerts if mol.HasSubstructMatch(alert))` counts patterns,
+  // not embeddings -- and it stops at the first one, so the 1000-embedding trap `matchCount()`
+  // guards against cannot arise here at all.
+  bool hasMatch(int pat) {
+    std::vector<std::vector<int> > out;
+    return enumerate(pat, /*firstOnly=*/true, /*anchor=*/-1, out);
+  }
+
   bool atomMatchesPattern(int pat, int atom) {
     std::vector<std::vector<int> > out;
     return enumerate(pat, /*firstOnly=*/true, /*anchor=*/atom, out);
   }
 
  private:
+  const Program* prog_;
+  const std::vector<Plan>* plans_;
   const Mol* mol_;
   std::vector<uint8_t> cache_;
 
   // -- atom query tree --------------------------------------------------------------------
   bool evalAtom(int node, int a) {
-    const Node& q = NODES[node];
+    const Node& q = prog_->nodes[node];
     bool r;
     switch (q.op) {
-      case frag_prog::OP_ATOMAND: r = evalAtom(q.lhs, a) && evalAtom(q.rhs, a); break;
-      case frag_prog::OP_ATOMOR:  r = evalAtom(q.lhs, a) || evalAtom(q.rhs, a); break;
-      case frag_prog::OP_ATOMNULL: r = true; break;
+      case ops::OP_ATOMAND: r = evalAtom(q.lhs, a) && evalAtom(q.rhs, a); break;
+      case ops::OP_ATOMOR:  r = evalAtom(q.lhs, a) || evalAtom(q.rhs, a); break;
+      case ops::OP_ATOMNULL: r = true; break;
       // AtomType fuses element and aromaticity: 1000+z is aromatic z, plain z is aliphatic z.
-      case frag_prog::OP_ATOMTYPE:
+      case ops::OP_ATOMTYPE:
         r = (mol_->z[a] + 1000 * (mol_->arom[a] ? 1 : 0)) == q.val; break;
-      // AtomAtomicNum (`[#7]`) constrains the element and says NOTHING about aromaticity.
-      case frag_prog::OP_ATOMATOMICNUM: r = mol_->z[a] == q.val; break;
-      case frag_prog::OP_ATOMEXPLICITDEGREE: r = mol_->deg[a] == q.val; break;
-      case frag_prog::OP_ATOMTOTALDEGREE: r = mol_->tdeg[a] == q.val; break;
-      case frag_prog::OP_ATOMHCOUNT: r = mol_->hcount[a] == q.val; break;
-      case frag_prog::OP_ATOMFORMALCHARGE: r = mol_->fchg[a] == q.val; break;
+      // AtomAtomicNum (`[#7]`, and EVERY bracketed symbol outside the organic subset -- `[Si]`,
+      // `[Hg]`, `[Se]`) constrains the element and says NOTHING about aromaticity.
+      case ops::OP_ATOMATOMICNUM: r = mol_->z[a] == q.val; break;
+      case ops::OP_ATOMEXPLICITDEGREE: r = mol_->deg[a] == q.val; break;
+      case ops::OP_ATOMTOTALDEGREE: r = mol_->tdeg[a] == q.val; break;
+      case ops::OP_ATOMHCOUNT: r = mol_->hcount[a] == q.val; break;
+      case ops::OP_ATOMFORMALCHARGE: r = mol_->fchg[a] == q.val; break;
       // -1 is RDKit's sentinel for `[R]` == "in at least one ring", NOT a ring count of -1.
-      case frag_prog::OP_ATOMINNRINGS:
+      case ops::OP_ATOMINNRINGS:
         r = (q.val < 0) ? (mol_->nring[a] != 0) : (mol_->nring[a] == q.val); break;
-      case frag_prog::OP_ATOMTOTALVALENCE: r = mol_->tval[a] == q.val; break;
-      case frag_prog::OP_ATOMISAROMATIC: r = (mol_->arom[a] ? 1 : 0) == q.val; break;
-      case frag_prog::OP_ATOMISALIPHATIC: r = (mol_->arom[a] ? 0 : 1) == q.val; break;
-      case frag_prog::OP_RECURSIVESTRUCTURE: r = recursive(q.val, a); break;
+      case ops::OP_ATOMTOTALVALENCE: r = mol_->tval[a] == q.val; break;
+      case ops::OP_ATOMISAROMATIC: r = (mol_->arom[a] ? 1 : 0) == q.val; break;
+      case ops::OP_ATOMISALIPHATIC: r = (mol_->arom[a] ? 0 : 1) == q.val; break;
+      // SMARTS isotope.  `getIsotope()` is 0 when unset, which is exactly what `[0*]` asks
+      // about, so there is no sentinel here and the comparison is the whole predicate.
+      case ops::OP_ATOMISOTOPE: r = mol_->iso[a] == q.val; break;
+      // SMARTS `r`, a BOOLEAN, and a different primitive from `[R]`'s AtomInNRings above.
+      // RDKit's queryIsAtomInRing is literally `numAtomRings(idx) != 0`, so the ring COUNT
+      // already at the boundary answers it and no second ring perception is involved.
+      case ops::OP_ATOMINRING: r = ((mol_->nring[a] != 0) ? 1 : 0) == q.val; break;
+      case ops::OP_RECURSIVESTRUCTURE: r = recursive(q.val, a); break;
       default:
         std::fprintf(stderr, "fragmatch: atom opcode %d unimplemented\n", (int)q.op);
         std::abort();
@@ -217,17 +289,19 @@ class Matcher {
 
   // -- bond query tree --------------------------------------------------------------------
   bool evalBond(int node, int e) {
-    const Node& q = NODES[node];
+    const Node& q = prog_->nodes[node];
     bool r;
     switch (q.op) {
-      case frag_prog::OP_BONDAND: r = evalBond(q.lhs, e) && evalBond(q.rhs, e); break;
-      case frag_prog::OP_BONDOR:  r = evalBond(q.lhs, e) || evalBond(q.rhs, e); break;
-      case frag_prog::OP_BONDNULL: r = true; break;
-      case frag_prog::OP_BONDORDER: r = mol_->border[e] == q.val; break;
-      case frag_prog::OP_BONDINRING: r = (mol_->bring[e] ? 1 : 0) == q.val; break;
+      case ops::OP_BONDAND: r = evalBond(q.lhs, e) && evalBond(q.rhs, e); break;
+      case ops::OP_BONDOR:  r = evalBond(q.lhs, e) || evalBond(q.rhs, e); break;
+      // SMARTS `~`, the any-bond query.  Exercised for the first time by the QED alerts.
+      case ops::OP_BONDNULL: r = true; break;
+      case ops::OP_BONDORDER: r = mol_->border[e] == q.val; break;
+      // SMARTS `@` / `!@`.  Also first exercised by the QED alerts, alerts 43 and 103.
+      case ops::OP_BONDINRING: r = (mol_->bring[e] ? 1 : 0) == q.val; break;
       // RDKit's queryBondIsSingleOrAromatic, on the bond TYPE.  This is the default bond
       // written between two SMARTS atoms and is a different query from `-` and from `:`.
-      case frag_prog::OP_SINGLEORAROMATICBOND:
+      case ops::OP_SINGLEORAROMATICBOND:
         r = (mol_->border[e] == BO_SINGLE || mol_->border[e] == BO_AROMATIC); break;
       default:
         std::fprintf(stderr, "fragmatch: bond opcode %d unimplemented\n", (int)q.op);
@@ -250,35 +324,34 @@ class Matcher {
   // Query atoms are visited in an order in which every atom after the first of its connected
   // component has an already-placed neighbour, so candidates come from that neighbour's
   // adjacency rather than from a scan of the whole molecule.
-  struct Plan {
-    std::vector<int> order;       // query atom indices, in visit order
-    std::vector<int> parent;      // an earlier query atom adjacent to this one, or -1
-    std::vector<int> parentBond;  // QBONDS index joining them, or -1
-    // every query bond whose BOTH ends are placed at or before this step, for late checking
-    std::vector<std::vector<int> > checks;
-  };
+  //
+  // THE COMPONENT LOOP IS WHAT MAKES `.` WORK and it predates the QED alerts by accident: the
+  // outer `for (int s = 0; s < na; ++s)` restarts at the root of every connected component of the
+  // QUERY graph, so a pattern like `F.F.F.F` or QED alert 91's three disconnected esters needs
+  // nothing new here.  Distinctness across components comes from `used[]`, which is exactly what
+  // RDKit's matcher requires too.
 
-  // A Plan depends only on the PATTERN, never on the molecule, so it is built once for the
-  // process and shared.  Rebuilding it per enumerate() call cost 9 ms/mol -- the recursive
-  // queries call enumerate() once per (sub-pattern, atom) cache miss, so `fr_phos_acid` alone
-  // rebuilt 20 plans per candidate atom.
-  static const Plan& plan(int pat) {
-    static std::vector<Plan> cache;
-    static std::vector<char> built;
-    if (cache.empty()) {
-      cache.resize(frag_prog::N_PATTERNS);
-      built.assign(frag_prog::N_PATTERNS, 0);
-    }
-    if (!built[pat]) { cache[pat] = buildPlan(pat); built[pat] = 1; }
-    return cache[pat];
+  // ONE PLAN SET PER PROGRAM, resolved once per `bindProgram` and then held by pointer.  It used
+  // to be a single function-local static indexed by pattern, which was correct while there was
+  // one program and would silently serve `frag_prog`'s plan for `qed_prog`'s pattern 7 the moment
+  // there were two.  The registry is process-lifetime by design -- a Plan is derived purely from
+  // a constexpr table, so there is nothing to invalidate.
+  static const std::vector<Plan>& planCache(const Program& p) {
+    static std::vector<std::pair<const Program*, std::shared_ptr<std::vector<Plan> > > > reg;
+    for (size_t i = 0; i < reg.size(); ++i)
+      if (reg[i].first == &p) return *reg[i].second;
+    std::shared_ptr<std::vector<Plan> > v(new std::vector<Plan>((size_t)p.n_patterns));
+    for (int k = 0; k < p.n_patterns; ++k) (*v)[k] = buildPlan(p, k);
+    reg.push_back(std::make_pair(&p, v));
+    return *v;
   }
 
-  static Plan buildPlan(int pat) {
-    const frag_prog::Pattern& P = PATTERNS[pat];
+  static Plan buildPlan(const Program& prog, int pat) {
+    const Pattern& P = prog.patterns[pat];
     int na = P.na;
     std::vector<std::vector<std::pair<int, int> > > adj(na);   // (other query atom, qbond idx)
     for (int k = 0; k < P.nb; ++k) {
-      const frag_prog::QBond& b = QBONDS[P.b0 + k];
+      const QBond& b = prog.qbonds[P.b0 + k];
       adj[b.u].push_back(std::make_pair((int)b.v, P.b0 + k));
       adj[b.v].push_back(std::make_pair((int)b.u, P.b0 + k));
     }
@@ -312,7 +385,7 @@ class Matcher {
       if (pl.parentBond[st] >= 0) used[pl.parentBond[st] - P.b0] = 1;
     for (int k = 0; k < P.nb; ++k) {
       if (used[k]) continue;
-      const frag_prog::QBond& b = QBONDS[P.b0 + k];
+      const QBond& b = prog.qbonds[P.b0 + k];
       int st = std::max(pos[b.u], pos[b.v]);
       pl.checks[st].push_back(P.b0 + k);
     }
@@ -320,9 +393,9 @@ class Matcher {
   }
 
   bool enumerate(int pat, bool firstOnly, int anchor, std::vector<std::vector<int> >& out) {
-    const frag_prog::Pattern& P = PATTERNS[pat];
+    const Pattern& P = prog_->patterns[pat];
     if (P.na == 0) return false;
-    const Plan& pl = plan(pat);
+    const Plan& pl = (*plans_)[pat];
     std::vector<int> map(P.na, -1);
     std::vector<char> used(mol_->n, 0);
     return step(pat, pl, 0, map, used, firstOnly, anchor, out);
@@ -330,7 +403,7 @@ class Matcher {
 
   bool step(int pat, const Plan& pl, size_t si, std::vector<int>& map, std::vector<char>& used,
             bool firstOnly, int anchor, std::vector<std::vector<int> >& out) {
-    const frag_prog::Pattern& P = PATTERNS[pat];
+    const Pattern& P = prog_->patterns[pat];
     if (si == pl.order.size()) {
       out.push_back(map);
       if (out.size() >= 1000u && !firstOnly) {
@@ -345,7 +418,7 @@ class Matcher {
       return true;
     }
     int qa = pl.order[si];
-    int qroot = AROOTS[P.a0 + qa];
+    int qroot = prog_->aroots[P.a0 + qa];
     bool any = false;
 
     // Candidate molecule atoms for this query atom.
@@ -366,7 +439,7 @@ class Matcher {
       }
     } else {
       int pa = map[pl.parent[si]];
-      const frag_prog::QBond& pb = QBONDS[pl.parentBond[si]];
+      const QBond& pb = prog_->qbonds[pl.parentBond[si]];
       for (int k = mol_->start[pa]; k < mol_->start[pa + 1]; ++k) {
         int a = mol_->nbr[k];
         if (used[a] || !evalBond(pb.root, mol_->nbond[k]) || !evalAtom(qroot, a)) continue;
@@ -385,7 +458,7 @@ class Matcher {
 
   bool checkClosures(int pat, const Plan& pl, size_t si, const std::vector<int>& map) {
     for (size_t k = 0; k < pl.checks[si].size(); ++k) {
-      const frag_prog::QBond& b = QBONDS[pl.checks[si][k]];
+      const QBond& b = prog_->qbonds[pl.checks[si][k]];
       int e = mol_->bondBetween(map[b.u], map[b.v]);
       if (e < 0 || !evalBond(b.root, e)) return false;
     }
@@ -393,21 +466,27 @@ class Matcher {
   }
 };
 
-// Count every named descriptor's pattern on one molecule.  `out` must have N_NAMED slots.
+// Count every named pattern of the BOUND program on one molecule.  `out` must have
+// `mt.program().n_named` slots.
 //
-// The overload taking a Matcher& is what a batch loop should call: it reuses the matcher's
-// recursive-query cache allocation across molecules instead of mallocing one per molecule.  Both
-// spellings run identical arithmetic -- `bind()` clears the cache, so the second molecule cannot
-// see the first one's answers.
+// The Matcher& is what a batch loop should hold: it reuses the recursive-query cache allocation
+// across molecules instead of mallocing one per molecule, and it resolves the program's plan set
+// once. `bind()` clears the cache, so the second molecule cannot see the first one's answers.
 inline void countAll(const Mol& m, Matcher& mt, int* out) {
   mt.bind(m);
-  for (int i = 0; i < frag_prog::N_NAMED; ++i)
-    out[i] = mt.matchCount(frag_prog::NAMED[i].pattern);
+  const Program& p = mt.program();
+  for (int i = 0; i < p.n_named; ++i) out[i] = mt.matchCount(p.named[i].pattern);
 }
 
-inline void countAll(const Mol& m, int* out) {
-  Matcher mt;
-  countAll(m, mt, out);
+// The QED ALERTS term: how many of the bound program's named patterns match AT ALL.  rdkit's
+// QED.py sums `HasSubstructMatch` over the 116 alerts, so this is a count of PATTERNS and not of
+// embeddings -- see `Matcher::hasMatch`.
+inline int countMatching(const Mol& m, Matcher& mt) {
+  mt.bind(m);
+  const Program& p = mt.program();
+  int n = 0;
+  for (int i = 0; i < p.n_named; ++i) n += mt.hasMatch(p.named[i].pattern) ? 1 : 0;
+  return n;
 }
 
 // ---------------------------------------------------------------------------------------------
