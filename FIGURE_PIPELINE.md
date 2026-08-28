@@ -25,6 +25,30 @@ Harnesses: `make_pairs.py` (Fig A pairs) · `embed_pairs.py` (Fig A embeddings) 
 
 ---
 
+## House style (all four plates)
+
+Derived from CLIMB's `figures/style.py`, near-verbatim, so a reader meeting ECFP4 or ChemBERTa-2
+in both papers sees one object rather than two. What this set fixes on top of it:
+
+* **A4 WIDTH IS THE BUDGET, NOT A4 LENGTH.** Every plate is `STYLE["col2"]` = 6.69 in wide and as
+  short as it can be. B, C and D are one row; A is 2×7. `save()` warns if the rendered PDF drifts
+  more than 5% from the text block, because LaTeX would then scale every font on it.
+* **THE ONLY TEXT ON A PLATE IS THE LEGEND** (Leif 2026-08-28). Footnotes fold into legend labels
+  — "CheMeleon (desc-pretrained)", "no GPU path: CPU measurement", "Pareto frontier" — rather than
+  being dropped, since each was load-bearing.
+* **Colours come from `arms.py` and nowhere else**, so the same arm is the same colour in all four.
+  Fixed on the way: Figure D coloured its Mordred arm as `ecfp_mordred_desc` where the measurement
+  is `ecfp_all_desc`, i.e. one measurement drawn in two colours across two figures.
+* **Bars**: width 0.72–0.80, ink edge at 0.45, hatch reserved for "not measured the way the axis
+  implies" and explained in the legend. Legends are `frameon=False` everywhere.
+
+Layouts are checked against a random FIXTURE before real data exists (`fig_b.py`/`fig_c.py` take a
+path argument for exactly this). It has already earned itself twice: panel titles overprinting
+their neighbours at quarter width, and a legend row wider than the panels silently growing the
+canvas 18% past the text block.
+
+---
+
 ## Figure A — does the representation resolve chemical change?
 
 **Metric (changed 2026-08-28).** Held-out ROC-AUC of a tree trained to tell A from A'. For one
