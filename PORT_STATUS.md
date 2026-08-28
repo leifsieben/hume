@@ -498,7 +498,37 @@ carrying `#include "rdkcore.h"` while the header stayed untracked, so HEAD did n
 Stage named paths, and check `git status --short` for `??` before committing a change that
 introduces a file.
 
-## Prefix sampling: checked repo-wide, and the answer is "fine, but not by design"
+## Cost is heavy-tailed, and that is the finding that matters
+
+**RETRACTED, and the retraction is the useful part.** This section began as "a prefix of the
+corpus is not a sample of it". A paired measurement — same process, same clock, three arms
+interleaved — killed it:
+
+    prefix [0:60]      mean 4669.4 ms   median 4.8 ms   max 36621.7 ms
+    random 60          mean 1148.8 ms   median 4.1 ms   max 35183.8 ms
+    prefix [60:120]    mean 4038.0 ms   median 6.0 ms   max 35741.5 ms
+
+All three **medians agree within 25%**. The means differ by 4x, in the *opposite* direction from
+the original claim. Prefix versus random had nothing to do with it.
+
+**THE MEAN IS ~1000x THE MEDIAN.** A handful of molecules cost ~35 SECONDS against a ~5 ms
+median, so any small sample is an outlier lottery and its *mean* estimates almost nothing. Sample
+size, not sample position, was the whole effect.
+
+### What this demands of every timing number in this project
+
+A mean over N molecules from a distribution with max/median ~7000x is not a stable estimator
+unless N is large enough to sample the tail representatively. `bench_e2e.py` uses N = 2,000. Its
+SD across repetitions is small (mordred 30,030.7 +/- 196.83) — **but that SD measures repetition
+noise on a FIXED sample, not sampling error in the mean**, so it cannot detect this and must not
+be read as if it could.
+
+Before the end-to-end ratio is published: re-run at several N (2,000 / 10,000 / 25,000) and show
+the mean has stopped moving, or report a median-based figure alongside and say which is which.
+This is not hypothetical for HUME either — `bench_e2e.py`'s own docstring already records that
+2.9% of molecules carry 46% of BCUT2D time.
+
+## Prefix sampling: measured anyway, and the answer is "fine, but not by design"
 
 Seven harnesses take a **prefix** of the corpus rather than a random sample —
 `bench_crippen.py`, `verify_estate.py`, `verify_vsa.py`, `verify_constit.py`, `verify_ic.py`,
