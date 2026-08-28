@@ -1,113 +1,118 @@
 {
  "arm": "hume",
- "n_mols": 2000,
+ "n_mols": 10000,
  "steps": {
   "extract_pickles_boundary": {
-   "us_mean": 167.273,
-   "us_sd": 0.76,
-   "us_min": 166.314,
-   "n_reps": 7
+   "us_mean": 161.867,
+   "us_sd": 1.585,
+   "us_min": 160.492,
+   "n_reps": 3
   },
   "ecfp_r3_2048": {
-   "us_mean": 30.22,
-   "us_sd": 0.796,
-   "us_min": 29.465,
-   "n_reps": 7
+   "us_mean": 28.59,
+   "us_sd": 0.434,
+   "us_min": 28.131,
+   "n_reps": 3
   },
   "smiles_parse": {
-   "us_mean": 59.154,
-   "us_sd": 0.356,
-   "us_min": 58.692,
-   "n_reps": 7
+   "us_mean": 56.298,
+   "us_sd": 0.215,
+   "us_min": 56.087,
+   "n_reps": 3
   },
   "cpp_all_columns": {
-   "us_mean": 747.78,
-   "us_sd": 2.056,
-   "us_min": 745.6,
-   "n_reps": 7,
-   "columns": 1190
+   "us_mean": 490.644,
+   "us_sd": 0.7,
+   "us_min": 490.082,
+   "n_reps": 3,
+   "columns": 1263
   }
  },
  "detail": {
   "per_family": {
    "blocks_182": {
-    "us_mean": 199.009,
-    "us_sd": 0.641,
+    "us_mean": 182.896,
+    "us_sd": 2.372,
     "columns": 182
    },
    "vsa": {
-    "us_mean": 12.104,
-    "us_sd": 0.874,
+    "us_mean": 11.123,
+    "us_sd": 2.675,
     "columns": 66
    },
    "estate": {
-    "us_mean": 1.391,
-    "us_sd": 1.145,
+    "us_mean": 0.897,
+    "us_sd": 3.298,
     "columns": 158
    },
    "ringcount": {
-    "us_mean": 0.454,
-    "us_sd": 0.69,
+    "us_mean": 1.167,
+    "us_sd": 0.576,
     "columns": 49
    },
    "pathcount": {
-    "us_mean": 12.367,
-    "us_sd": 0.785,
+    "us_mean": 11.728,
+    "us_sd": 3.056,
     "columns": 11
    },
    "topocharge": {
-    "us_mean": 9.506,
-    "us_sd": 0.852,
+    "us_mean": 9.044,
+    "us_sd": 4.023,
     "columns": 21
    },
    "infocontent": {
-    "us_mean": 280.76,
-    "us_sd": 1.696,
+    "us_mean": 43.727,
+    "us_sd": 0.891,
     "columns": 42
    },
    "autocorr": {
-    "us_mean": 24.396,
-    "us_sd": 0.969,
-    "columns": 486
+    "us_mean": 23.42,
+    "us_sd": 3.176,
+    "columns": 540
    },
    "frag": {
-    "us_mean": 118.756,
-    "us_sd": 0.887,
+    "us_mean": 115.67,
+    "us_sd": 2.731,
     "columns": 76
    },
    "chi": {
-    "us_mean": 51.605,
-    "us_sd": 0.845,
+    "us_mean": 49.914,
+    "us_sd": 2.116,
     "columns": 40
    },
    "topomisc": {
-    "us_mean": 11.368,
-    "us_sd": 0.876,
+    "us_mean": 10.648,
+    "us_sd": 4.472,
     "columns": 15
    },
    "constit": {
-    "us_mean": 17.539,
-    "us_sd": 0.88,
+    "us_mean": 14.382,
+    "us_sd": 3.185,
     "columns": 43
    },
    "alias": {
-    "us_mean": 0.611,
-    "us_sd": 0.734,
+    "us_mean": -0.095,
+    "us_sd": 4.409,
     "columns": 1
+   },
+   "rdkcore": {
+    "us_mean": 9.084,
+    "us_sd": 4.456,
+    "columns": 19
    }
   },
   "cpp_blocks_182_only": {
-   "us_mean": 198.733,
-   "us_sd": 0.811,
-   "us_min": 197.318,
-   "n_reps": 7,
+   "us_mean": 182.971,
+   "us_sd": 1.923,
+   "us_min": 181.454,
+   "n_reps": 3,
    "columns": 182
   },
   "extract_api_boundary": {
-   "us_mean": 134.306,
-   "us_sd": 0.949,
-   "us_min": 132.765,
-   "n_reps": 7
+   "us_mean": 135.083,
+   "us_sd": 1.14,
+   "us_min": 133.955,
+   "n_reps": 3
   },
   "offsets": {
    "blocks": 0,
@@ -118,21 +123,22 @@
    "topocharge": 466,
    "infocontent": 487,
    "autocorr": 529,
-   "frag": 1015,
-   "chi": 1091,
-   "topomisc": 1131,
-   "constit": 1146,
-   "alias": 1189,
-   "end": 1190
+   "frag": 1069,
+   "chi": 1145,
+   "topomisc": 1185,
+   "constit": 1200,
+   "alias": 1243,
+   "rdkcore": 1244,
+   "end": 1263
   }
  },
- "columns_descriptors": 790,
- "columns_emitted": 1190,
+ "columns_descriptors": 861,
+ "columns_emitted": 1263,
  "columns_ecfp": 2048,
  "machine": {
   "platform": "darwin arm64",
   "cpu_count": 12,
-  "load1": 3.38,
+  "load1": 1.52,
   "contended": true,
   "python": "3.12.13"
  },
