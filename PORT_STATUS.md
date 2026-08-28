@@ -497,3 +497,33 @@ new header with `git add -u` produces exactly what happened at `ddc2959`: `bindi
 carrying `#include "rdkcore.h"` while the header stayed untracked, so HEAD did not compile.
 Stage named paths, and check `git status --short` for `??` before committing a change that
 introduces a file.
+
+## Prefix sampling: checked repo-wide, and the answer is "fine, but not by design"
+
+Seven harnesses take a **prefix** of the corpus rather than a random sample —
+`bench_crippen.py`, `verify_estate.py`, `verify_vsa.py`, `verify_constit.py`, `verify_ic.py`,
+`verify_topo3.py`. Only `bench_e2e.py` and `cpp/verify_wiring.py` use `rng.choice`.
+
+That is a latent hazard, so it was measured rather than argued:
+
+    cpp/hard.smi     first 2,000    mean 28.75 heavy atoms, median 26.0
+                     random 2,000   mean 28.59 / 29.07,     median 26.0    <- NOT biased
+    cpp/mols_h.smi   first 200      mean 32.11,             median 28.0
+                     random 200     mean 29.61,             median 28.0    <- biased ~+8%
+
+**`hard.smi` is well mixed, and every subset SCREEN in this repo runs on `hard.smi`** — the
+InformationContent ill-posedness percentages, constit's screen, the topo3 screens. None of them
+is compromised. The full-corpus runs are unaffected by construction, since a prefix of 100,000
+from 100,000 is the whole file.
+
+But this holds by luck rather than by design: nothing enforces that `hard.smi` stays shuffled,
+and a future corpus built by concatenating sources would break every one of those seven
+harnesses silently. **Prefer `rng.choice` in new harnesses.**
+
+Two cautions worth carrying:
+* a prefix can be unrepresentative in ways a mean does not show. `mols_h.smi`'s prefix is ~8%
+  larger by mean atom count, which for an O(n²) block predicts ~17% more cost — yet the
+  measured cost difference was **14×**. The mean is not the mechanism; a small number of very
+  large molecules early in the file is the likely one. Cost lives in the tail.
+* an estimate taken from a prefix is a scheduling number and nothing more. It must not reach a
+  document, and no correctness claim in this repo rests on one.
