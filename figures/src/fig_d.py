@@ -73,8 +73,8 @@ ARMKEY = {"ecfp": "ecfp", "hume": "hume_core", "chemprop": "chemprop",
 
 
 SHORT = {"ecfp": "ECFP", "hume": "HUME", "chemprop": "chemprop",
-         "chemberta": "ChemBERTa-2", "chemeleon": "CheMeleon", "mordred": "Mordred"}
-BUDGET_LABEL = {"cpu": "16 vCPU, no GPU", "gpu": "1 GPU, 4 vCPU"}
+         "chemberta": "ChemBERTa", "chemeleon": "CheMeleon", "mordred": "Mordred"}
+BUDGET_LABEL = {"cpu": "16 vCPU", "gpu": "1 GPU + 4 vCPU"}
 
 
 def _group_header(ax, groups):
@@ -86,7 +86,7 @@ def _group_header(ax, groups):
             if seen is not None:
                 mid = (start + i - 1) / 2
                 inst = groups[start][2]["instance"]
-                ax.text(mid, 1.02, f"{inst}\n{BUDGET_LABEL.get(seen, seen)}",
+                ax.text(mid, 1.03, f"{inst}\n{BUDGET_LABEL.get(seen, seen)}",
                         transform=ax.get_xaxis_transform(), ha="center", va="bottom",
                         fontsize=FS["annot"], color=STYLE["mute"])
                 if i < len(groups):
@@ -221,7 +221,11 @@ def panel_b(ax, runs, skipped):
         ax.set_yscale("log")
         ax.set_ylim(top=ax.get_ylim()[1] * 3.0)
         ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, fontsize=FS["annot"], rotation=45, ha="right")
+        # VERTICAL, NOT 45 DEGREES. At nine bars in a third of the text block the rotated
+        # labels overlapped -- "ChemBERTa-2" ran into "CheMeleon" -- and the roster is still
+        # growing, so an angle that fits today collides on the next arm.
+        ax.set_xticklabels(labels, fontsize=FS["annot"], rotation=90, ha="right",
+                           va="center", rotation_mode="anchor")
         ax.set_ylabel("wall clock for 1e9 molecules (hours)", fontsize=FS["label"])
         _group_header(ax, groups)
         title(ax, "B  How long does it take?", pad=22)
@@ -248,7 +252,8 @@ def panel_c(ax, runs):
     ax.set_yscale("log")
     ax.set_ylim(top=ax.get_ylim()[1] * 3.0)
     ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([SHORT[a] for a, _p in rows], fontsize=FS["annot"], rotation=45, ha="right")
+    ax.set_xticklabels([SHORT[a] for a, _p in rows], fontsize=FS["annot"],
+                       rotation=90, ha="right", va="center", rotation_mode="anchor")
     ax.set_ylabel("USD per 1e9 molecules", fontsize=FS["label"])
     _group_header(ax, [(p["budget"], a, p) for a, p in rows])
     title(ax, "C  What does it cost?", pad=22)
@@ -268,19 +273,23 @@ def main(paths):
     panel_c(axes[2], runs)
     h, l = axes[0].get_legend_handles_labels()
     if h:
+        # THE LEGEND HAS TO CLEAR THE TICK LABELS, which are vertical and up to nine characters
+        # long. At -0.04 its opaque box was drawn straight over them and ate the first letter of
+        # the longest ones -- "ChemBERTa" rendered as "hemBERTa", which looks like a typo in the
+        # label rather than a layout collision, so it is the kind of defect that ships.
         fig.legend(h, l, loc="lower center", ncol=3,
-                   fontsize=FS["annot"], bbox_to_anchor=(0.5, -0.04), **LEGEND_BOX)
+                   fontsize=FS["annot"], bbox_to_anchor=(0.5, -0.135), **LEGEND_BOX)
     if skipped:
-        fig.text(0.5, -0.10, "not extrapolated (cost per molecule not flat in N): "
+        fig.text(0.5, -0.20, "not extrapolated (cost per molecule not flat in N): "
                  + "; ".join(skipped), ha="center", fontsize=FS["annot"])
-    fig.text(0.5, -0.055,
+    fig.text(0.5, -0.152,
              "A: horizontal = cost per molecule independent of N.   C: bar = on-demand, "
              "tick = spot.\nB: rule inside a bar marks time spent in RDKit input preparation; "
              "the remainder is the forward pass.",
              ha="center", va="top", fontsize=FS["annot"])
     if runs:
         m = runs[0]
-        fig.text(0.5, -0.145,
+        fig.text(0.5, -0.242,
                  f"prices: AWS EC2 on-demand, {m['region']}, pulled {m['priced_on']}",
                  ha="center", fontsize=FS["annot"])
     fig.tight_layout()

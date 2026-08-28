@@ -1,60 +1,57 @@
-"""Fig A — does the representation respond when the CHEMISTRY changes?
+"""Fig A — can a model TELL TWO MOLECULES APART after one defined chemical change?
 
-ONE script, ONE figure: figures/fig_a.pdf (panels a–m), plus figures/build/fig_a.csv as the
+ONE script, ONE figure: figures/fig_a.pdf (panels a–n), plus figures/build/fig_a.csv as the
 durable numeric record.
 
-    python3 -m figures.fig_a
+    python3 figa_resolution.py          # measures; writes results/figures/figA/resolution.json
+    python3 -m figures.fig_a            # draws
 
-Ten chemical edits, 1,000 molecule pairs each. In every one the two molecules are GENUINELY
-DIFFERENT, so a usable representation has to respond. "Respond" is measured in a unit the reader
-can check on the same axis: the shift the change produces, divided by THAT MODEL'S OWN shift when
-a completely different compound of matched molecular weight is substituted. 1.00 therefore means
-"this change moves the embedding as far as changing the molecule". No threshold anywhere, and the
-denominator is measured per model, so a 768-d transformer and a 2048-bit fingerprint sit on one
-axis honestly. Panel (k) IS that reference and is 1.000 by construction — it stays on the plate so
-the unit is visible rather than asserted.
+THE AXIS IS HELD-OUT AUC, NOT A DISTANCE (Leif 2026-08-28). Every bar is a supervised question
+asked of the representation itself: label the pre-edit molecule 0 and the post-edit molecule 1,
+fit XGBoost on 80% of the pairs, and score ROC-AUC on the 20% it never saw. 1.0 means the edit
+leaves a signature the model can find and generalise; 0.5 means it does not.
 
-THE TWO CONTROLS (l, m) ARE THE LOAD-BEARING PART OF THE DESIGN and they invert the reading: the
-same molecule written two ways, so a HIGH bar is a FAILURE. They carry a warm tint for that
-reason, and the caption MUST state the inversion — a reader who carries the class-A reading
-across gets both panels backwards. Without them a large response is uninterpretable, because a
-model that reacts to re-writing a SMILES string is reacting to formatting, and its response to a
-real edit cannot be separated from that noise.
+WHY THIS REPLACED THE DISTANCE RATIO. The old axis was |dx|/sigma relative to swapping in a
+different compound of matched mass, and it had two defects that no amount of tuning removes.
+(i) It rewards MAGNITUDE, and magnitude is not resolution: a model can move a long way in a
+direction that is different for every pair, which is unusable downstream and scored well. (ii)
+For a continuous embedding the "different compound" denominator IS a random background pair, so
+any background-calibrated threshold drives the reference cell to ~0 by construction. AUC has no
+free parameter, is scale-free, and asks the question a tree ensemble actually asks: is there a
+coordinate, or a combination, that separates A from A' CONSISTENTLY.
 
-WHY THE UNIT IS A RATIO AND NOT A THRESHOLD COUNT. Counting dimensions displaced past 0.5 sigma
-was proposed and measured on this data. It tracks how DENSE a representation is rather than how
-well it resolves an edit — ECFP4 moves ~1.4% of its bits for a completely different compound
-where a CLM moves ~82% of its coordinates — and it is threshold-critical exactly where the CLM
-arms sit. Kept in the SI as a normalised ratio; not the main axis. See FIGURES.md.
+THE AXIS STARTS AT 0.5 BECAUSE 0.5 IS THE NULL. Below-chance is noise around it, not a
+direction, so cells at or under 0.5 are drawn at the floor and labelled. The null is NOT shaded
+(Leif 2026-08-28) -- a band across every panel reads as a confidence interval on the bars, which
+it is not.
 
-WHISKERS ARE THE INTERQUARTILE RANGE OVER THE 1,000 PAIRS, NOT AN ERROR BAR. Every representation
-here is deterministic: re-embedding reproduces the vectors exactly, so there is no sampling noise
-for an error bar to describe. The spread shown is chemistry — an inverted stereocentre on a rigid
-ring is not the same edit as one on a flexible chain. Reading whisker overlap as "not different"
-is therefore wrong, and the caption has to say so.
+*** THREE DIFFERENT THINGS LOOK LIKE "NO BAR", AND THE CAPTION MUST SEPARATE THEM. ***
+(raised by the CLIMB figure session, 2026-08-28, and it is the most likely misreading here)
+  1. NO CONSISTENT SIGNATURE. A class-A panel at 0.5: the edit does move the embedding, but not
+     in a direction that generalises to a held-out pair. This is the failure the figure is for.
+  2. CANNOT POSSIBLY DIFFER. The two vectors are bitwise identical, so there is nothing to
+     learn -- Morgan invariants do not carry isotope, so ECFP4 is identical on 969 of 1,000
+     13-C pairs. Marked with a triple bar on the plate; it is a fact about the representation,
+     not a score it earned.
+  3. THE QUESTION IS ILL-POSED. In the two notation controls the "edit" is not a chemical change
+     at all, so "is this the A or the B of its pair" has no answer that transfers. 0.5 is the
+     CORRECT result there and a HIGH bar is the failure. Tinted, for that reason.
+Measured on our own set, the same holds for a matched-mass substitution: the molecules are as
+different as two molecules get (mean Tanimoto ~0.1) and every arm still scores ~0.50, because
+which of two unrelated compounds is called "A" is arbitrary. That is reported in the printed
+summary and the CSV as the empirical null, and it is deliberately NOT a panel -- it measures the
+metric, not a representation (Leif 2026-08-28: "drop it and replace it with another change we
+could measure"), and CH2 homologation took its cell.
 
-sigma_j is estimated once per representation on 10,000 background molecules that appear in NO
-pair, so no edit can inflate its own denominator.
+ERROR BARS ARE OVER FIVE SPLIT SEEDS, and they earn their place: CLIMB measured 0.833 +/- 0.020
+across seeds on one cell, so a single split was worth about +/-0.04 -- wider than several gaps
+this figure is asked to support.
 
-WHAT THE FIGURE SAYS (three arms as of 2026-08-26; desc and the CLM/GNN roster still landing)
---------------------------------------------------------------------------------------------
-1. THE CONTROLS ARE THE RESULT. ChemBERTa-2 moves 1.108 for a Kekulé re-write of the SAME
-   molecule — FURTHER than substituting a completely different compound of matched mass — and
-   0.772 for a re-written SMILES. Both fingerprints are exactly 0.000 on both, as they must be:
-   they are notation-invariant by construction. Without panels (l) and (m) the CLM's mid-range
-   class-A numbers would read as respectable sensitivity; with them, an unknown fraction of that
-   response is notation noise.
-2. STEREOCHEMISTRY AND PROTONATION ARE THE CLM'S BLIND SPOTS. An inverted stereocentre moves
-   ECFP4 0.494 and ChemBERTa-2 0.000; a protonation change moves ECFP4 0.835 and ChemBERTa-2
-   0.000; E/Z is 0.689 against 0.027.
-3. ISOTOPES ARE THE FINGERPRINTS' BLIND SPOT (c). 12C→13C is exactly 0.000 for both Morgan
-   variants — the atom invariants do not carry isotope for a same-element substitution — against
-   0.402 for ChemBERTa-2. The descriptor block should close this (it carries exact mass), which
-   is the single most informative thing the pending `desc` arm will tell us.
-4. RADIUS 3 RESOLVES BETTER AND SCORES WORSE DOWNSTREAM. Morgan r=3 beats r=2 on stereo
-   (0.559 vs 0.494), added methyl (0.607 vs 0.518) and ring fusion (0.863 vs 0.693), while losing
-   to it on 20 of 28 DEV datasets. That dissociation between resolution and downstream value is a
-   result in its own right and belongs in the text, not only here.
+SPLITS ARE BY CONNECTED COMPONENT, NOT BY PAIR. 32 molecules in our set appear in more than one
+pair; a plain 80/20 over pairs can then put a molecule in train and in test, and the leak RAISES
+AUC, so the failure mode looks like a better result. figa_resolution.py groups pairs under
+"shares a molecule" and assigns whole components, with an assertion that the two sides are
+disjoint. Largest component is 2 pairs (0.2%) in every mode, so the split stays clean.
 """
 from __future__ import annotations
 
@@ -71,202 +68,119 @@ if __package__ in (None, ""):                       # allow `python figures/fig_
 import matplotlib.pyplot as plt                                             # noqa: E402
 from matplotlib.patches import Patch                                        # noqa: E402
 
-import arms as A                                               # noqa: E402
-from style import (FS, STYLE, TINT_CONTROL, TINT_REF, check_font,   # noqa: E402
-                           LEGEND_BOX, mark_empty, row_ncol, save)
+import arms as A                                                            # noqa: E402
+from style import (FS, STYLE, TINT_CONTROL, check_font,                      # noqa: E402
+                   LEGEND_BOX, mark_empty, row_ncol, save)
 
 check_font()
 ROOT = Path(__file__).resolve().parents[2]
 FIGA = ROOT / "results" / "figures" / "figA"
-EMB = FIGA / "embeddings"
+RES = FIGA / "resolution.json"
 INK = STYLE["ink"]
 
+NULL = 0.5                  # chance. The floor of the axis and the null of the test.
+YMAX = 1.0
+DEGEN_MARK = 0.50           # >=50% identical vectors -> the cell is degenerate, not weak
+FLOOR_TOL = 0.005           # within this of chance -> label it rather than draw a sliver
+
 # (mode, class, two-line panel title). CLASS decides the reading rule and the tint:
-#   "A"    a real chemical change -- a HIGH bar is good
-#   "REF"  the matched-MW substitution that DEFINES 1.00 -- cool tint
-#   "B"    notation only, same molecule -- a HIGH bar is a FAILURE -- warm tint
+#   "A"  a real chemical change -- a HIGH bar is good
+#   "B"  notation only, same molecule -- a HIGH bar is a FAILURE -- warm tint
 #
-# ROW ORDER IS SEMANTIC, not alphabetical. Row 1 collects the edits that leave the plain
-# heavy-atom graph untouched or nearly so -- stereochemistry, isotope, charge, one halogen for
-# another -- i.e. exactly the properties a graph invariant has to carry explicitly. Row 2 is
-# edits to the graph itself. Row 3 is the calibration row: the unit, then the two controls.
-# FOURTEEN PANELS ON A 2x7 GRID, NO SPARE CELL, and each row ENDS on a tinted panel
-# (Leif 2026-08-26). The rows are semantic, not arbitrary:
-#
-#   Row 1  the skeleton is untouched and something else changed -- stereochemistry, isotope,
-#          charge, element, bond order. These are the properties a graph invariant has to carry
-#          explicitly, and they are where the arms disagree most.
-#   Row 2  the skeleton itself changed, then the reference that defines the unit.
-#
-# Each row closes on a panel whose reading rule is different from its neighbours', so the eye
-# meets the tint at a row boundary rather than mid-scan.
+# ROW ORDER IS SEMANTIC. Row 1 is edits that leave the plain heavy-atom graph untouched or
+# nearly so -- stereochemistry, isotope, charge, element, bond order -- i.e. exactly the
+# properties a graph invariant has to carry EXPLICITLY, and where the arms disagree most. Row 2
+# is edits to the skeleton itself. Each row ENDS on a tinted control, so the eye meets the
+# reading inversion at a row boundary rather than mid-scan.
 MODES = [
-    ("stereo_flip",    "A",   "Inverted\nstereocentre"),
-    ("ez_flip",        "A",   "Flipped E/Z\ndouble bond"),
-    ("isotope_13c",    "A",   "$^{12}$C→$^{13}$C,\ngraph unchanged"),
-    ("protonate",      "A",   "Protonation\nstate changed"),
-    ("halogen_swap",   "A",   "Halogen\nswapped"),
-    ("saturate",       "A",   "C=C reduced\nto C–C"),
-    ("null_enumerate", "B",   "Re-written\nSMILES"),
-    ("h_to_methyl",    "A",   "One methyl\nadded"),
-    ("n_methylation",  "A",   "Amide N–H →\nN–methyl"),
-    ("scaffold_hop",   "A",   "Aromatic C→N\n(benzene→pyridine)"),
-    ("ring_contract",  "A",   "Cyclohexyl →\ncyclopentyl"),
-    ("regioisomer",    "A",   "Substituent moved\n(ortho ↔ meta)"),
-    ("matched_mw",     "REF", "Different molecules,\nsame MW"),
-    ("null_kekulize",  "B",   "Kekulé\nform"),
+    ("stereo_flip",    "A", "Inverted\nstereocentre"),
+    ("ez_flip",        "A", "Flipped E/Z\ndouble bond"),
+    ("isotope_13c",    "A", "$^{12}$C→$^{13}$C,\ngraph unchanged"),
+    ("protonate",      "A", "Protonation\nstate changed"),
+    ("halogen_swap",   "A", "Halogen\nswapped"),
+    ("saturate",       "A", "C=C reduced\nto C–C"),
+    ("null_enumerate", "B", "Re-written\nSMILES"),
+    ("h_to_methyl",    "A", "One methyl\nadded"),
+    ("n_methylation",  "A", "Amide N–H →\nN–methyl"),
+    ("ch2_homolog",    "A", "One CH$_2$ inserted\n(homologation)"),
+    ("scaffold_hop",   "A", "Aromatic C→N\n(benzene→pyridine)"),
+    ("ring_contract",  "A", "Cyclohexyl →\ncyclopentyl"),
+    ("regioisomer",    "A", "Substituent moved\n(ortho ↔ meta)"),
+    ("null_kekulize",  "B", "Kekulé\nform"),
 ]
 NROW, NCOL = 2, 7
-# THE REFERENCE PANEL SHARES THE CONTROLS' WARM TINT (Leif 2026-08-28). All three are
-# CALIBRATION rather than chemistry -- (m) sets the unit, (g) and (n) show what notation alone
-# buys -- so tinting them alike groups "not a chemical edit" and leaves the untinted panels as
-# exactly the ten edits. The caption still has to state the reading inversion for (g) and (n),
-# because the tint no longer distinguishes them from (m): a high bar is a FAILURE there and the
-# unit by construction here.
-TINT = {"A": None, "REF": TINT_CONTROL, "B": TINT_CONTROL}
+TINT = {"A": None, "B": TINT_CONTROL}
 
-# What counts as "0" on the plate. NOT `== 0.0`, which was the first rule and it drew an
-# inconsistent figure: the fingerprints and CheMeleon are bitwise invariant to a re-written
-# SMILES and label as zero, while MiniMol and untrained Chemprop land at 1e-6 -- float32
-# residue from a message-passing forward pass over the same graph reached in a different atom
-# order -- and silently got no label at all, which reads as "no bar was drawn" rather than "this
-# model does not respond".
-#
-# 1e-3 is three orders above that residue and 700x below the smallest genuine response anywhere
-# on the plate (Chemprop's 0.061 on regioisomer), so nothing real can be swallowed by it. The
-# label therefore means "zero to within floating-point reproducibility", not "bitwise identical";
-# the CSV carries the unrounded value for anyone who needs the distinction.
-ZERO_TOL = 1e-3
+# NOT A PANEL. The matched-mass substitution measures the METRIC's null, not a representation,
+# so it is reported in the summary and the CSV and never drawn. See the module head.
+NULL_MODE = "matched_mw"
 
 
-# --------------------------------------------------------------------------------------------
-# compute
-# --------------------------------------------------------------------------------------------
+def load():
+    """-> (armlist, {arm: {mode: cell}}) from resolution.json.
 
-def compute():
-    """-> (armlist, {arm: {mode: (median, q1, q3, n)}}, {arm: raw matched-MW sigma-RMS}).
-
-    Effect size is the RMS per-dimension change in units of that dimension's spread over the
-    10,000 background molecules; relative response divides it by the arm's OWN median matched-MW
-    effect size. Arms are whatever embeddings exist -- the roster is still landing, and a figure
-    that renders from what is ready beats one that waits for the slowest arm.
+    Nothing is recomputed here. The AUCs come from figa_resolution.py, which owns the split, the
+    leak assertion and the seeds; a figure that re-derived them could disagree with the record.
     """
-    pairs = json.load(open(FIGA / "pairs.json"))["pairs"]
-    idx = json.load(open(FIGA / "smiles_index.json"))
-    pos = {s: i for i, s in enumerate(idx["order"])}
-    n_pair = len(idx["order"])
-
-    out, refs = {}, {}
-    for f in sorted(EMB.glob("*.npz")):
-        z = np.load(f)
-        X = z["X"].astype(np.float64)
-        # sigma from the BACKGROUND block only -- rows n_pair: onward appear in no pair.
-        sd = np.nanstd(X[n_pair:], axis=0)
-        sd[~np.isfinite(sd) | (sd == 0)] = np.inf       # dead dims contribute nothing
-        Xp = np.nan_to_num(X[:n_pair])
-
-        # HOW MANY COORDINATES ACTUALLY MOVED, alongside how far the vector moved.
-        #
-        # DISCRETE AND CONTINUOUS ARMS ARE COUNTED DIFFERENTLY AND THE TWO NUMBERS ARE NOT THE
-        # SAME QUANTITY. For an integer count fingerprint a coordinate either changed or it did
-        # not, so the count is exact and needs no threshold. A continuous embedding has no such
-        # notion -- every coordinate changes a little -- so one has to say what "changed" means,
-        # and the answer is threshold-critical exactly where the CLM arms sit (see the header).
-        #
-        # Rather than invent a sigma multiple, "moved" is defined against THE SAME REFERENCE THE
-        # AXIS USES: a dimension counts as moved if |dx_j|/sd_j exceeds the median per-dimension
-        # |dx|/sd that THIS arm shows under the matched-MW edit -- i.e. more than a completely
-        # different compound typically moves that coordinate. No new free constant enters the
-        # figure, and the annotation is on the same footing as the bar it sits above.
-        is_discrete = bool(np.all(np.equal(np.mod(Xp[np.isfinite(Xp)], 1), 0)))
-
-        raw, moved, dmat = {}, {}, {}
-        for p in pairs:
-            ia, ib = pos.get(p["a"]), pos.get(p["b"])
-            if ia is None or ib is None:
+    if not RES.exists():
+        raise SystemExit(f"fig_a: {RES} does not exist. Run `python3 figa_resolution.py` first --\n"
+                         f"       it embeds nothing, it only scores whatever .npz files are in\n"
+                         f"       {FIGA / 'embeddings'}.")
+    raw = json.load(open(RES))
+    known = {m for m, _, _ in MODES} | {NULL_MODE}
+    for arm, cells in raw.items():
+        missing = [m for m, _, _ in MODES if m not in cells]
+        if missing:
+            print(f"  ! {arm}: no cell for {missing} -- those panels will be blank for this arm")
+        for m, c in cells.items():
+            if m not in known:
                 continue
-            d = (Xp[ia] - Xp[ib]) / sd
-            raw.setdefault(p["edit"], []).append(float(np.sqrt(np.mean(d * d))))
-            dmat.setdefault(p["edit"], []).append(np.abs(d))
-
-        if is_discrete:
-            thr = 0.0                                   # any change at all is a change
-        else:
-            ref_abs = dmat.get("matched_mw")
-            thr = float(np.median(np.concatenate(ref_abs))) if ref_abs else np.inf
-        for m, arrs in dmat.items():
-            moved[m] = float(np.median([float((a > thr).sum()) for a in arrs]))
-        del dmat
-
-        ref = float(np.median(raw.get("matched_mw", [np.nan])))
-        assert np.isfinite(ref) and ref > 0, (
-            f"{f.stem}: matched-MW reference is {ref}. That is the DENOMINATOR of every cell in "
-            f"this arm's column -- without it the arm cannot share the axis and must not be drawn "
-            f"on an unnormalised one.")
-        refs[f.stem] = ref
-        out[f.stem] = {m: (float(np.median(v)) / ref, float(np.percentile(v, 25)) / ref,
-                           float(np.percentile(v, 75)) / ref, len(v),
-                           moved.get(m, float("nan")), moved.get("matched_mw", float("nan")),
-                           is_discrete)
-                       for m, v in raw.items() if len(v)}
-
-    assert out, "no embeddings yet -- run embed_pairs.py first"
-    n = sorted({c[3] for a in out.values() for c in a.values()})
-    assert min(n) >= 1000, f"fig_a: expected >=1000 pairs per cell, found n in {n[:5]}"
-    return A.order(out), out, refs
+            if c["n_seeds"] < 2:
+                raise SystemExit(
+                    f"fig_a: {arm}/{m} was scored on {c['n_seeds']} split seed(s). The error bars "
+                    f"on this plate ARE the seed spread, and one seed cannot produce one. "
+                    f"Re-run figa_resolution.py (N_SEEDS is 5).")
+    return A.order(list(raw)), raw
 
 
-# --------------------------------------------------------------------------------------------
-# draw
-# --------------------------------------------------------------------------------------------
-
-def _panel(ax, armlist, cells, mode, klass, title, ymax):
-    """One mode. Bars are the response RELATIVE to swapping in a different molecule of matched MW.
-
-    The reference line at 1.0 is the whole point of the unit: without it a reader has no way to
-    know whether 0.49 is large. With it, panel (a) reads "an inverted stereocentre moves ECFP4
-    half as far as a completely different compound, and ChemBERTa-2 not at all".
-
-    EXACT ZEROS ARE LABELLED. Many cells here are 0.000 by construction -- a fingerprint cannot
-    see a re-written string, and Morgan invariants cannot see an isotope -- and an unlabelled flat
-    baseline is indistinguishable from a bar that was never drawn. That ambiguity is the single
-    most likely misreading on this plate, so it is closed at the draw site rather than left to the
-    caption.
-    """
+def _panel(ax, armlist, cells, mode, klass, title):
+    """One edit. Bar height is held-out AUC above chance; the baseline of the axis IS chance."""
     if TINT[klass]:
         ax.set_facecolor(TINT[klass])
     x = np.arange(len(armlist))
-    med = np.array([cells[a][mode][0] if mode in cells[a] else np.nan for a in armlist])
-    q1 = np.array([cells[a][mode][1] if mode in cells[a] else np.nan for a in armlist])
-    q3 = np.array([cells[a][mode][2] if mode in cells[a] else np.nan for a in armlist])
+    mu = np.array([cells[a].get(mode, {}).get("mean", np.nan) for a in armlist])
+    sd = np.array([cells[a].get(mode, {}).get("sd", np.nan) for a in armlist])
+    dg = np.array([cells[a].get(mode, {}).get("degenerate_frac", np.nan) for a in armlist])
 
-    ax.bar(x, med, width=0.80, color=[A.color(a) for a in armlist],
-           hatch=None, edgecolor=INK, linewidth=0.45, zorder=3)
+    # Drawn from the null upward. A bar whose base is 0 would put nine tenths of its ink below
+    # the lowest value any cell can meaningfully take, and compress the whole range that matters.
+    shown = np.clip(mu, NULL, YMAX)
+    ax.bar(x, shown - NULL, bottom=NULL, width=0.80, color=[A.color(a) for a in armlist],
+           edgecolor=INK, linewidth=0.45, zorder=3)
     for xi, a in zip(x, armlist):                 # hatch marks PREDICTED, never a second hue
         if A.hatch(a):
             ax.patches[xi].set_hatch(A.hatch(a))
-    err = np.vstack([np.clip(med - q1, 0, None), np.clip(q3 - med, 0, None)])
-    ax.errorbar(x, med, yerr=err, fmt="none", ecolor=INK, elinewidth=0.55,
-                capsize=1.3, capthick=0.55, zorder=4)
-    ax.axhline(1.0, color=INK, ls=(0, (3, 2)), lw=0.7, zorder=4)
-    for xi, v in zip(x, med):
-        if np.isfinite(v) and v < ZERO_TOL:
-            ax.text(xi, ymax * 0.022, "0", ha="center", va="bottom",
+    lo = np.clip(shown - sd, NULL, YMAX)
+    hi = np.clip(shown + sd, NULL, YMAX)
+    ax.errorbar(x, shown, yerr=np.vstack([shown - lo, hi - shown]), fmt="none", ecolor=INK,
+                elinewidth=0.55, capsize=1.3, capthick=0.55, zorder=4)
+
+    # A CELL AT THE FLOOR IS LABELLED, and the two reasons a cell can sit there are labelled
+    # DIFFERENTLY. An unlabelled flat baseline is indistinguishable from an arm that was never
+    # drawn, and "cannot possibly differ" is not the same finding as "no consistent signature".
+    for xi, m_, d_ in zip(x, mu, dg):
+        if not np.isfinite(m_):
+            continue
+        if np.isfinite(d_) and d_ >= DEGEN_MARK:
+            ax.text(xi, NULL + (YMAX - NULL) * 0.02, "≡", ha="center", va="bottom",
+                    fontsize=FS["annot"] - 1.0, color=INK, zorder=5)
+        elif m_ <= NULL + FLOOR_TOL:
+            ax.text(xi, NULL + (YMAX - NULL) * 0.02, "0.5", ha="center", va="bottom",
                     fontsize=FS["annot"] - 2.5, color=INK, zorder=5)
 
-    # HOW MANY COORDINATES MOVED, over each bar, as `n/n_ref` rather than a bare count.
-    #
-    # A BARE COUNT WOULD UNDO THE AXIS. This plate's whole unit exists so a 2048-bit fingerprint
-    # and a 768-d transformer can share one scale; printing "12" over one and "410" over the
-    # other invites exactly the cross-model reading the ratio was built to prevent, because the
-    # difference is mostly DENSITY -- ECFP4 moves ~1.4% of its bits for a completely different
-    # compound where a CLM moves ~82% of its coordinates. The denominator is that same
-    # matched-MW reference, so `12/29` reads "twelve of the twenty-nine positions that a
-    # different compound would move", which is comparable across arms and still shows the count.
-    ax.set_ylim(0, ymax)
-    ticks = np.arange(0, ymax + 1e-9, 0.5)
-    ax.set_yticks(ticks)
-    ax.set_yticklabels([f"{t:g}" for t in ticks])
+    ax.set_ylim(NULL, YMAX)
+    ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
+    ax.set_yticklabels(["0.5", "", "0.7", "", "0.9", "1"])
     ax.set_xticks([])
     ax.set_xlim(-0.70, len(armlist) - 0.30)
     ax.grid(axis="y", ls=":", lw=0.6, color=STYLE["grid"])
@@ -278,51 +192,30 @@ def _panel(ax, armlist, cells, mode, klass, title, ymax):
 
 
 def main():
-    armlist, cells, refs = compute()
+    armlist, cells = load()
     print(f"arms: {armlist}")
-    for a in armlist:
-        print(f"  {A.label(a):<24s} matched-MW reference (raw sigma-RMS) = {refs[a]:.4f}")
 
-    # THE CEILING IS COMPUTED, NOT HARDCODED. CLIMB pins YMAX because its arm roster is closed;
-    # ours is not -- arms are still being embedded, and a ceiling set on today's three would
-    # silently clip tomorrow's. Rounded up to the next half so the tick set stays clean.
-    q3max = max(c[2] for a in armlist for c in cells[a].values())
-    ymax = max(1.5, np.ceil(q3max / 0.5) * 0.5)
-    print(f"  tallest drawn q3 = {q3max:.3f}  ->  y-limit {ymax:g}")
-
-    # The legend row is NOT a gridspec row. hspace is uniform, so a short third row still gets a
-    # full row's gap above it and the plate rendered with a dead band taller than the legend
-    # itself. Panels get the gridspec; the legend gets its own axes underneath them.
     fig = plt.figure(figsize=(STYLE["col2"], 3.30))
     gs = fig.add_gridspec(NROW, NCOL, left=0.062, right=0.995, top=0.885, bottom=0.215,
                           wspace=0.42, hspace=0.72)
+    assert len(MODES) == NROW * NCOL, (
+        f"fig_a: {len(MODES)} panels on a {NROW}x{NCOL} grid. The plate is designed to fill "
+        f"exactly -- adding or removing a mode means re-choosing the grid, not leaving a hole.")
     tags = "abcdefghijklmnopqrstuvwxyz"[:len(MODES)]
     for i, (mode, klass, title) in enumerate(MODES):
         ax = fig.add_subplot(gs[i // NCOL, i % NCOL])
         assert any(mode in cells[a] for a in armlist), f"fig_a: no data for {mode}"
-        _panel(ax, armlist, cells, mode, klass, title, ymax)
+        _panel(ax, armlist, cells, mode, klass, title)
         ax.text(0.0, 1.30, tags[i], transform=ax.transAxes, fontsize=FS["panel_tag"],
                 fontweight="bold", va="bottom", ha="left", color=INK)
         if i % NCOL == 0:
-            ax.set_ylabel("response relative to a\ndifferent molecule", fontsize=FS["annot"])
+            ax.set_ylabel("held-out AUC:\nA vs A′", fontsize=FS["annot"])
 
-    assert len(MODES) == NROW * NCOL, (
-        f"fig_a: {len(MODES)} panels on a {NROW}x{NCOL} grid. The plate is designed to fill "
-        f"exactly -- adding or removing a mode means re-choosing the grid, not leaving a hole.")
-
-    # THE LEGEND LIVES IN THE GRID, in its own short row, not floating below the axes. A legend
-    # anchored outside the canvas grows the plate under savefig("tight") and LaTeX then scales the
-    # whole figure -- and every font on it -- down to fit the text block. Inside the gridspec it
-    # cannot do that, and the rendered width stays pinned to the 6.69in text block.
     lax = fig.add_axes([0.062, 0.008, 0.933, 0.172])
     lax.axis("off")
     mark_empty(lax, "holds the legend")
     handles = [Patch(facecolor=A.color(a), edgecolor=INK, lw=0.6, hatch=A.hatch(a),
                      label=A.label(a)) for a in armlist]
-    # ONE ROW up to six arms, TWO beyond. Measured, not guessed: eight arms in one row rendered
-    # the plate at 7.15in against a 6.69in text block (+7%), because savefig("tight") grows the
-    # canvas to whatever hangs off the axes and the legend -- not the panels -- was setting the
-    # width. LaTeX would then scale the plate down and every font on it with it.
     lax.legend(handles=handles, loc="center",
                ncol=row_ncol(handles, rows=1 if len(handles) <= 6 else 2),
                fontsize=FS["legend"], handletextpad=0.5, columnspacing=1.1,
@@ -331,33 +224,42 @@ def main():
     save(fig, "fig_a")
     plt.close(fig)
 
-    # The durable record. Same resolution path as the bars, so the CSV cannot disagree with them.
     with open(ROOT / "figures" / "build" / "fig_a.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["arm", "label", "mode", "klass", "relative_response", "q1", "q3", "n",
-                    "matched_mw_reference_raw", "coords_moved", "coords_moved_reference",
-                    "count_is_exact"])
+        w.writerow(["arm", "label", "mode", "klass", "auc_mean", "auc_sd", "auc_min", "auc_max",
+                    "n_pairs", "n_seeds", "degenerate_pairs", "degenerate_frac"])
         for a in armlist:
-            for mode, klass, _ in MODES:
-                if mode in cells[a]:
-                    m, lo, hi, n, mv, mvref, disc = cells[a][mode]
-                    w.writerow([a, A.label(a), mode, klass, f"{m:.6f}", f"{lo:.6f}",
-                                f"{hi:.6f}", n, f"{refs[a]:.6f}", f"{mv:.1f}", f"{mvref:.1f}",
-                                int(disc)])
-    print(f"  wrote  figures/fig_a.csv")
+            for mode, klass in [(m, k) for m, k, _ in MODES] + [(NULL_MODE, "NULL")]:
+                c = cells[a].get(mode)
+                if not c:
+                    continue
+                w.writerow([a, A.label(a), mode, klass, f"{c['mean']:.4f}", f"{c['sd']:.4f}",
+                            f"{c['min']:.4f}", f"{c['max']:.4f}", c["n_pairs"], c["n_seeds"],
+                            c["degenerate_pairs"], f"{c['degenerate_frac']:.3f}"])
+    print("  wrote  figures/build/fig_a.csv")
 
-    print("\n   " + "mode".ljust(18) + "".join(f"{A.label(a)[:19]:>21s}" for a in armlist))
-    for mode, klass, _ in MODES:
-        row = f"   {mode:<18}"
+    print("\n   " + "mode".ljust(17) + "".join(f"{A.label(a)[:15]:>17s}" for a in armlist))
+    for mode, klass, _ in MODES + [(NULL_MODE, "NULL", "")]:
+        row = f"   {mode:<17}"
         for a in armlist:
             c = cells[a].get(mode)
-            row += (f"{c[0]:>7.3f}[{c[1]:.2f},{c[2]:.2f}]" if c else f"{'—':>21}")
-        print(row)
-    print("\n   median [IQR] over 1,000 pairs. 1.000 = moves the embedding as far as a completely")
-    print("   different compound of the same molecular weight; matched_mw IS that reference, so")
-    print("   its median is 1.000 by construction and its IQR is the reference's own spread.")
-    print("   null_enumerate and null_kekulize are the SAME molecule written two ways: for those")
-    print("   two rows a HIGH number is a failure, not a response.")
+            row += (f"{c['mean']:>11.3f}±{c['sd']:.3f}" if c else f"{'—':>17}")
+        print(row + ("   <- the METRIC's null, not a panel" if klass == "NULL" else ""))
+    print("\n   Held-out ROC-AUC over 5 component splits, mean ± sd. 0.500 = chance.")
+    print("   ≡ on the plate: the two vectors are IDENTICAL in >=50% of pairs, so the cell is")
+    print("   degenerate by construction and cannot be resolved by anything.")
+    print("   null_enumerate and null_kekulize are the SAME molecule written two ways: there a")
+    print("   HIGH number is a failure, and 0.500 is the correct answer.")
+
+    # THE NULL IS AN ASSERTION, NOT A FOOTNOTE. If a matched-mass substitution -- two unrelated
+    # compounds -- ever scores well above chance, the split leaked and every bar above is inflated.
+    bad = {a: cells[a][NULL_MODE]["mean"] for a in armlist
+           if NULL_MODE in cells[a] and cells[a][NULL_MODE]["mean"] > 0.60}
+    assert not bad, (
+        f"fig_a: the matched-mass null is above 0.60 for {bad}. Two unrelated molecules carry no "
+        f"consistent A/B signature, so this can only be a leak between the train and test halves "
+        f"of the split. Do not publish the plate; re-check split_components() in "
+        f"figa_resolution.py.")
 
 
 if __name__ == "__main__":

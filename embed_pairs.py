@@ -113,6 +113,41 @@ def arm_hume(smiles):
     return out
 
 
+def arm_notation(smiles):
+    """A DIFFICULTY FLOOR, not a representation. Character 1- and 2-gram counts of the SMILES.
+
+    This arm models no chemistry whatsoever -- it cannot tell an aromatic ring from a chain
+    except by which characters were typed -- so whatever AUC it reaches on an edit is available
+    to ANY model FOR FREE, from notation and gross composition alone. A panel where this scores
+    ~1.0 does not discriminate between representations no matter what the bars look like.
+
+    It exists because the CLIMB figure session found their regioisomer panel reading 1.000 for
+    every arm INCLUDING an untrained random encoder: they had paired ortho against meta, so every
+    A lacked a branch and every B had one, and the classifier was reading "is there a branch",
+    not "where is the substituent". Leif's rule from that: an edit should MOVE a feature, never
+    CREATE one. Our own regioisomer generator moves an existing substituent (49% of pairs have
+    identical character multisets) and does not have the defect -- but asserting that is worth
+    less than measuring it, and the same measurement audits every other panel at the same time.
+
+    Counted on the SMILES AS WRITTEN, deliberately not canonicalised: the point is what the
+    string hands over, and re-canonicalising would measure a different string than the one the
+    CLM arms are fed.
+    """
+    from collections import Counter
+    grams, rows = {}, []
+    for s in smiles:
+        c = Counter(s)
+        c.update(s[i:i + 2] for i in range(len(s) - 1))
+        rows.append(c)
+        for g in c:
+            grams.setdefault(g, len(grams))
+    out = np.zeros((len(rows), len(grams)), np.float32)
+    for i, c in enumerate(rows):
+        for g, v in c.items():
+            out[i, grams[g]] = v
+    return out
+
+
 def arm_desc(smiles):
     from mordred import Calculator, descriptors as mdesc
     from rdkit import Chem, RDLogger
@@ -307,6 +342,7 @@ def arm_chemprop(smiles):
 
 
 ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "r4cfp": arm_r4cfp, "desc": arm_desc, "hume": arm_hume,
+        "notation": arm_notation,
         "chemberta_mlm": arm_chemberta_mlm, "chemberta_mtr": arm_chemberta_mtr,
         "molformer": arm_molformer,
         "selfies_ted": arm_selfies_ted, "minimol": arm_minimol,

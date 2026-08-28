@@ -169,6 +169,13 @@ ARMS = {
 
     # ---- HUME (crimson) ---------------------------------------------------------------------
     # The `_predict` arms share their exact counterpart's colour and add a hatch. See module head.
+    # THE HUME ARM. One arm, not a family (Leif 2026-08-28: "there is just one hume ... right
+    # now its ecfp + all descriptors (incl our own) we compute full stop"). The `hume_core*`
+    # entries below are an earlier factorisation that no figure draws any more; they are kept
+    # so an old CSV still resolves its labels. They remain in ARM_ORDER, which is harmless --
+    # `order()` only positions arms that are actually passed to it -- but a figure must not draw
+    # `hume` and `hume_core_custom` together, because they share a shade.
+    "hume": dict(label="HUME", family="hume", color=SHADES["hume"][0]),
     "hume_core": dict(label="HUME core", family="hume", color=SHADES["hume"][1]),
     "hume_core_custom": dict(label="HUME core + blocks", family="hume", color=SHADES["hume"][0]),
     "hume_core_predict": dict(label="HUME core, predicted", family="hume",
@@ -285,6 +292,7 @@ ARMS = {
 # the axis the whole paper is about.
 ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
+             "hume",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
              # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all

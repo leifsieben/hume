@@ -80,6 +80,32 @@ everything and measures nothing.
 
 ---
 
+**Panel admission, and the free-separability floor.** A panel earns its cell only if it can
+distinguish representations. Two ways it fails, and both look like a finding:
+
+* **Nobody clears chance.** Then "ill-posed question" cannot be told from "universally
+  unresolved". This is why `matched_mw` is no longer a panel — two unrelated molecules have no
+  consistent A/B signature, so every arm sits at 0.50 by construction. It survives as a HARNESS
+  CHECK (all arms 0.500–0.513, so the split is not leaking) and `fig_a.py` asserts on it.
+* **Everybody hits the ceiling.** A panel at 1.000 for every arm measures the pair generator,
+  not the representations.
+
+The `notation` arm is the instrument for the second case: character 1- and 2-gram counts of the
+SMILES, no chemistry at all. Whatever it scores on an edit is available to any model for free.
+It is an AUDIT ROW in `figures/build/fig_a.csv`, not a bar on the plate.
+
+It exists because the CLIMB figure session found their regioisomer panel reading 1.000 for all
+seven arms including an untrained random encoder: they had paired ortho against meta, so every A
+lacked a branch and every B had one, and the classifier read "is there a branch". Leif's rule
+from it — **an edit must MOVE a feature, never CREATE one**. Audited across our 15 modes: our
+`regioisomer` generator moves an existing substituent (49% of pairs have identical character
+multisets, and it scores 0.73–0.78, not 1.000), so we do not have their defect. `n_methylation`
+does add a branch in 94% of pairs and reads 0.997–0.998 for every arm — but that is inherent to
+the chemistry rather than an artefact of the template, which is exactly why `ch2_homolog` earns
+its place beside it: homologation inserts CH2 into a chain and creates nothing.
+
+---
+
 ## Figure B — does each block earn its place downstream?
 
 Two panels with a changing reference block: (1) do descriptors carry information ECFP lacks;
@@ -91,6 +117,38 @@ arm appears anywhere in `grid_all.json`.
 
 **Protocol.** 28 DEV datasets from the ChemPFN lake, 5 scaffold folds (seed 0), capped at 50,000
 molecules, metrics rmse / auroc / acc — all matching `grid_all.json` so new arms are comparable.
+
+**The 12 concatenations are generated, not typed** (`FIGB_BASES` × `FIGB_ADDS` in
+`bench_downstream.py`): 3 bases (`ecfp`, `desc`, `ecfp_all_desc`) × 4 embeddings
+(`chemeleon`, `minimol`, `chemberta_mtr`, `molformer`), named `base__add`. A hand-written list
+is where `ecfp_chemeleon` quietly becomes `desc_chemeleon`.
+
+**`grid_all.json` cannot be reused.** Its 840 records have no `w` field — they predate
+`feature_weights` — so they do not satisfy the methods below and the whole grid is being
+re-measured.
+
+**Fleet hardening (2026-08-28), each item a failure that had already happened or was one boot
+away:**
+
+* `shutdown -h +330` against a ~14 h grid would have killed dsA 40% through. The cap is now an
+  argument to `launch_ds.sh`, sized to the work (20 h for the full 28-dataset grid).
+* `grid.json` was uploaded only after the LAST dataset, so a killed box took every completed
+  dataset with it. It now ships to `downstream/<iid>.partial.json` every 30 s alongside the log.
+* The DONE marker read `"complete": len(r) > 0` — a box killed after one dataset wrote a
+  completion marker. It now names the missing arms and datasets explicitly.
+* `minimol` failed to build (`torch-sparse` imports torch in its own setup.py without declaring
+  it) and the line ended in `|| echo "(minimol unavailable)"`, so a 5-arm box would have produced
+  a 4-arm grid and looked complete. Now `--no-build-isolation`, and a hard failure when minimol
+  is a requested arm.
+* The bundle carried the ChemBERTa weights at its ROOT while `embed_pairs.py` looks under
+  `models_hf/`, and had no MolFormer at all. Both fixed; every learned arm on dsB would have
+  died after the classical arms were paid for.
+* The preflight now calls `BD.ARMS[arm](['CCO','c1ccccc1'])` for EVERY requested arm. Two boots
+  have already been lost to gates that tested a path the run does not take.
+
+`launch_ds.sh` + `queue_runner.sh` (in the session scratchpad) hold the queue: the account cap is
+32 Standard vCPUs and each box is 16, so at most two run at once and the rest launch as headroom
+appears.
 
 **Head: untuned XGBoost, with one documented exception.** Everything is left at a fixed default
 so a difference between arms is a difference between representations. The exception is

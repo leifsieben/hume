@@ -151,6 +151,310 @@
    "degenerate_frac": 0.121
   }
  },
+ "r3cfp": {
+  "ch2_homolog": {
+   "mean": 0.7860474999999999,
+   "sd": 0.011243399174626877,
+   "min": 0.7748999999999999,
+   "max": 0.804125,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ez_flip": {
+   "mean": 0.955815,
+   "sd": 0.00412300254668849,
+   "min": 0.9509000000000001,
+   "max": 0.962675,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "h_to_methyl": {
+   "mean": 0.94879,
+   "sd": 0.007031226777739427,
+   "min": 0.937425,
+   "max": 0.95915,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "halogen_swap": {
+   "mean": 0.87188,
+   "sd": 0.01754026368102829,
+   "min": 0.85685,
+   "max": 0.9028,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "isotope_13c": {
+   "mean": 0.5005825000000002,
+   "sd": 0.002955372226979209,
+   "min": 0.4966625,
+   "max": 0.503775,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 968,
+   "degenerate_frac": 0.968
+  },
+  "matched_mw": {
+   "mean": 0.5050375,
+   "sd": 0.024975543037139353,
+   "min": 0.45757499999999995,
+   "max": 0.528975,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "n_methylation": {
+   "mean": 0.9976325000000001,
+   "sd": 0.0015803797012110697,
+   "min": 0.9949749999999999,
+   "max": 0.9995999999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "null_enumerate": {
+   "mean": 0.4999999999999999,
+   "sd": 5.551115123125783e-17,
+   "min": 0.49999999999999994,
+   "max": 0.49999999999999994,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 1000,
+   "degenerate_frac": 1.0
+  },
+  "null_kekulize": {
+   "mean": 0.4999999999999999,
+   "sd": 5.551115123125783e-17,
+   "min": 0.49999999999999994,
+   "max": 0.49999999999999994,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 1000,
+   "degenerate_frac": 1.0
+  },
+  "protonate": {
+   "mean": 0.9999750000000001,
+   "sd": 2.738612787527556e-05,
+   "min": 0.999925,
+   "max": 1.0,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "regioisomer": {
+   "mean": 0.76755,
+   "sd": 0.01911408348574422,
+   "min": 0.7338125,
+   "max": 0.7920499999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ring_contract": {
+   "mean": 0.979525,
+   "sd": 0.005699517523440019,
+   "min": 0.9712500000000001,
+   "max": 0.9859249999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "saturate": {
+   "mean": 0.9772500000000001,
+   "sd": 0.004486061747234421,
+   "min": 0.9721,
+   "max": 0.9835499999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "scaffold_hop": {
+   "mean": 0.945345,
+   "sd": 0.00528879475873286,
+   "min": 0.93695,
+   "max": 0.95325,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "stereo_flip": {
+   "mean": 0.7510724999999999,
+   "sd": 0.018619392444438148,
+   "min": 0.7308625,
+   "max": 0.78505,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 82,
+   "degenerate_frac": 0.082
+  }
+ },
+ "r4cfp": {
+  "ch2_homolog": {
+   "mean": 0.7818324999999999,
+   "sd": 0.015068268812308805,
+   "min": 0.7574750000000001,
+   "max": 0.7971499999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ez_flip": {
+   "mean": 0.9542425,
+   "sd": 0.006339329617554244,
+   "min": 0.9450375,
+   "max": 0.9606250000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "h_to_methyl": {
+   "mean": 0.94913,
+   "sd": 0.009366368026081368,
+   "min": 0.9378500000000001,
+   "max": 0.965425,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "halogen_swap": {
+   "mean": 0.8659250000000001,
+   "sd": 0.022658265599996865,
+   "min": 0.8372999999999999,
+   "max": 0.902375,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "isotope_13c": {
+   "mean": 0.50071,
+   "sd": 0.0018343663756185556,
+   "min": 0.49892499999999995,
+   "max": 0.5041249999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 968,
+   "degenerate_frac": 0.968
+  },
+  "matched_mw": {
+   "mean": 0.5120525,
+   "sd": 0.015166303933391266,
+   "min": 0.4856250000000001,
+   "max": 0.532575,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "n_methylation": {
+   "mean": 0.9977575,
+   "sd": 0.0013505461858078064,
+   "min": 0.995475,
+   "max": 0.999475,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "null_enumerate": {
+   "mean": 0.4999999999999999,
+   "sd": 5.551115123125783e-17,
+   "min": 0.49999999999999994,
+   "max": 0.49999999999999994,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 1000,
+   "degenerate_frac": 1.0
+  },
+  "null_kekulize": {
+   "mean": 0.4999999999999999,
+   "sd": 5.551115123125783e-17,
+   "min": 0.49999999999999994,
+   "max": 0.49999999999999994,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 1000,
+   "degenerate_frac": 1.0
+  },
+  "protonate": {
+   "mean": 0.9998400000000001,
+   "sd": 0.0001328533025558563,
+   "min": 0.99965,
+   "max": 1.0,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "regioisomer": {
+   "mean": 0.748245,
+   "sd": 0.015446780813489956,
+   "min": 0.7325499999999999,
+   "max": 0.7743625000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ring_contract": {
+   "mean": 0.9786100000000001,
+   "sd": 0.00600648815864978,
+   "min": 0.968225,
+   "max": 0.983375,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "saturate": {
+   "mean": 0.974865,
+   "sd": 0.0034018965298785843,
+   "min": 0.9706,
+   "max": 0.9794,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "scaffold_hop": {
+   "mean": 0.9412799999999999,
+   "sd": 0.0027926421181383243,
+   "min": 0.937775,
+   "max": 0.9456000000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "stereo_flip": {
+   "mean": 0.7437475,
+   "sd": 0.016465800542336227,
+   "min": 0.7221375000000001,
+   "max": 0.7670250000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 58,
+   "degenerate_frac": 0.058
+  }
+ },
  "hume": {
   "ch2_homolog": {
    "mean": 0.7658999999999999,
@@ -301,6 +605,310 @@
    "n_seeds": 5,
    "degenerate_pairs": 56,
    "degenerate_frac": 0.056
+  }
+ },
+ "notation": {
+  "ch2_homolog": {
+   "mean": 0.6945649999999999,
+   "sd": 0.012497678284385407,
+   "min": 0.676475,
+   "max": 0.7091874999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ez_flip": {
+   "mean": 0.9472400000000001,
+   "sd": 0.006573480813085289,
+   "min": 0.9368749999999999,
+   "max": 0.9541000000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "h_to_methyl": {
+   "mean": 0.8573625,
+   "sd": 0.01124907773997495,
+   "min": 0.8432875000000001,
+   "max": 0.87055,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "halogen_swap": {
+   "mean": 0.8557549999999999,
+   "sd": 0.02272072512047091,
+   "min": 0.8266,
+   "max": 0.8838249999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "isotope_13c": {
+   "mean": 1.0,
+   "sd": 0.0,
+   "min": 1.0,
+   "max": 1.0,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "matched_mw": {
+   "mean": 0.52515,
+   "sd": 0.0342840597071,
+   "min": 0.49711249999999996,
+   "max": 0.5926374999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 6,
+   "degenerate_frac": 0.006
+  },
+  "n_methylation": {
+   "mean": 0.9906424999999999,
+   "sd": 0.0011181346072812542,
+   "min": 0.9890625,
+   "max": 0.9922,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "null_enumerate": {
+   "mean": 0.9624925,
+   "sd": 0.004914109787133407,
+   "min": 0.9545999999999999,
+   "max": 0.9683625,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 6,
+   "degenerate_frac": 0.006
+  },
+  "null_kekulize": {
+   "mean": 0.9996525,
+   "sd": 0.0002792176570348189,
+   "min": 0.9991249999999999,
+   "max": 0.9998625,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 20,
+   "degenerate_frac": 0.02
+  },
+  "protonate": {
+   "mean": 0.9999925,
+   "sd": 1.0000000000015552e-05,
+   "min": 0.999975,
+   "max": 1.0,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "regioisomer": {
+   "mean": 0.6179075,
+   "sd": 0.018765414663683852,
+   "min": 0.5907125,
+   "max": 0.6439125,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 403,
+   "degenerate_frac": 0.403
+  },
+  "ring_contract": {
+   "mean": 0.8147074999999999,
+   "sd": 0.009886349806677845,
+   "min": 0.8057250000000001,
+   "max": 0.8313124999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "saturate": {
+   "mean": 0.974295,
+   "sd": 0.003396704285038706,
+   "min": 0.9714499999999999,
+   "max": 0.9805250000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "scaffold_hop": {
+   "mean": 0.91381,
+   "sd": 0.005277584674829927,
+   "min": 0.907475,
+   "max": 0.9231499999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "stereo_flip": {
+   "mean": 0.740675,
+   "sd": 0.0056963091120479075,
+   "min": 0.734875,
+   "max": 0.750925,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  }
+ },
+ "chemeleon": {
+  "ch2_homolog": {
+   "mean": 0.782965,
+   "sd": 0.005832465173492268,
+   "min": 0.7728499999999999,
+   "max": 0.789975,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ez_flip": {
+   "mean": 0.7880125,
+   "sd": 0.022969847082642957,
+   "min": 0.7604249999999999,
+   "max": 0.8302625,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "h_to_methyl": {
+   "mean": 0.946235,
+   "sd": 0.007257368669152779,
+   "min": 0.93785,
+   "max": 0.9582,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "halogen_swap": {
+   "mean": 0.8886049999999999,
+   "sd": 0.017151402275032805,
+   "min": 0.8647999999999999,
+   "max": 0.9085,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "isotope_13c": {
+   "mean": 0.49957,
+   "sd": 0.001486304141150138,
+   "min": 0.49735,
+   "max": 0.5019750000000001,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "matched_mw": {
+   "mean": 0.5083599999999999,
+   "sd": 0.018532745344389753,
+   "min": 0.47204999999999997,
+   "max": 0.521875,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "n_methylation": {
+   "mean": 0.9963374999999999,
+   "sd": 0.00234366166500201,
+   "min": 0.9932,
+   "max": 0.998825,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "null_enumerate": {
+   "mean": 0.5002625,
+   "sd": 0.0022800219297190987,
+   "min": 0.4961,
+   "max": 0.502225,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 4,
+   "degenerate_frac": 0.004
+  },
+  "null_kekulize": {
+   "mean": 0.500025,
+   "sd": 0.0009685685313905266,
+   "min": 0.49858749999999996,
+   "max": 0.501225,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 745,
+   "degenerate_frac": 0.745
+  },
+  "protonate": {
+   "mean": 0.99993,
+   "sd": 0.00010653637876332273,
+   "min": 0.999725,
+   "max": 1.0,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "regioisomer": {
+   "mean": 0.7329399999999999,
+   "sd": 0.013157634190841445,
+   "min": 0.71635,
+   "max": 0.7511375,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "ring_contract": {
+   "mean": 0.9942,
+   "sd": 0.0017256882684888526,
+   "min": 0.992375,
+   "max": 0.997075,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "saturate": {
+   "mean": 0.9856299999999999,
+   "sd": 0.004538678221685287,
+   "min": 0.9777999999999999,
+   "max": 0.991075,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "scaffold_hop": {
+   "mean": 0.9667850000000001,
+   "sd": 0.0012282711427042596,
+   "min": 0.965325,
+   "max": 0.96855,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
+  },
+  "stereo_flip": {
+   "mean": 0.544255,
+   "sd": 0.011231208194134742,
+   "min": 0.52515,
+   "max": 0.5595874999999999,
+   "n_pairs": 1000,
+   "n_seeds": 5,
+   "degenerate_pairs": 0,
+   "degenerate_frac": 0.0
   }
  }
 }

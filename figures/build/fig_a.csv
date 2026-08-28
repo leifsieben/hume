@@ -1,155 +1,31 @@
-arm,label,mode,klass,relative_response,q1,q3,n,matched_mw_reference_raw,coords_moved,coords_moved_reference,count_is_exact
-ecfp,ECFP4,stereo_flip,A,0.506569,0.272448,0.605304,1000,1.198726,9.0,66.0,1
-ecfp,ECFP4,ez_flip,A,0.691744,0.633474,0.764730,1000,1.198726,12.0,66.0,1
-ecfp,ECFP4,isotope_13c,A,0.000000,0.000000,0.000000,1000,1.198726,0.0,66.0,1
-ecfp,ECFP4,protonate,A,0.780057,0.646042,0.875896,1000,1.198726,18.0,66.0,1
-ecfp,ECFP4,halogen_swap,A,0.351860,0.219152,0.451258,1000,1.198726,12.0,66.0,1
-ecfp,ECFP4,saturate,A,0.814256,0.691545,0.951064,1000,1.198726,26.0,66.0,1
-ecfp,ECFP4,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.198726,0.0,66.0,1
-ecfp,ECFP4,h_to_methyl,A,0.514466,0.420586,0.624080,1000,1.198726,20.0,66.0,1
-ecfp,ECFP4,n_methylation,A,0.685943,0.598870,0.763571,1000,1.198726,20.0,66.0,1
-ecfp,ECFP4,scaffold_hop,A,0.520181,0.435721,0.609995,1000,1.198726,19.0,66.0,1
-ecfp,ECFP4,ring_contract,A,0.336043,0.050124,0.619597,1000,1.198726,10.0,66.0,1
-ecfp,ECFP4,regioisomer,A,0.521378,0.416920,0.616667,1000,1.198726,19.0,66.0,1
-ecfp,ECFP4,matched_mw,REF,1.000000,0.868157,1.114071,1000,1.198726,66.0,66.0,1
-ecfp,ECFP4,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.198726,0.0,66.0,1
-r3cfp,Morgan r=3,stereo_flip,A,0.554124,0.399833,0.624053,1000,1.193346,20.0,94.0,1
-r3cfp,Morgan r=3,ez_flip,A,0.655798,0.612675,0.701785,1000,1.193346,24.0,94.0,1
-r3cfp,Morgan r=3,isotope_13c,A,0.000000,0.000000,0.000000,1000,1.193346,0.0,94.0,1
-r3cfp,Morgan r=3,protonate,A,0.722937,0.625283,0.784997,1000,1.193346,32.0,94.0,1
-r3cfp,Morgan r=3,halogen_swap,A,0.431625,0.395478,0.483033,1000,1.193346,20.0,94.0,1
-r3cfp,Morgan r=3,saturate,A,0.793936,0.702721,0.895165,1000,1.193346,44.0,94.0,1
-r3cfp,Morgan r=3,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.193346,0.0,94.0,1
-r3cfp,Morgan r=3,h_to_methyl,A,0.605942,0.535633,0.672011,1000,1.193346,34.0,94.0,1
-r3cfp,Morgan r=3,n_methylation,A,0.682679,0.639357,0.734111,1000,1.193346,36.0,94.0,1
-r3cfp,Morgan r=3,scaffold_hop,A,0.605614,0.545907,0.672728,1000,1.193346,33.0,94.0,1
-r3cfp,Morgan r=3,ring_contract,A,0.515750,0.273695,0.646930,1000,1.193346,23.0,94.0,1
-r3cfp,Morgan r=3,regioisomer,A,0.627752,0.557965,0.701867,1000,1.193346,34.0,94.0,1
-r3cfp,Morgan r=3,matched_mw,REF,1.000000,0.903664,1.077053,1000,1.193346,94.0,94.0,1
-r3cfp,Morgan r=3,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.193346,0.0,94.0,1
-r4cfp,Morgan r=4,stereo_flip,A,0.615497,0.489203,0.710047,1000,1.177319,32.0,111.0,1
-r4cfp,Morgan r=4,ez_flip,A,0.705075,0.655202,0.761921,1000,1.177319,40.0,111.0,1
-r4cfp,Morgan r=4,isotope_13c,A,0.000000,0.000000,0.000000,1000,1.177319,0.0,111.0,1
-r4cfp,Morgan r=4,protonate,A,0.757067,0.623010,0.826894,1000,1.177319,48.0,111.0,1
-r4cfp,Morgan r=4,halogen_swap,A,0.459054,0.413444,0.510956,1000,1.177319,25.0,111.0,1
-r4cfp,Morgan r=4,saturate,A,0.833608,0.745988,0.938517,1000,1.177319,63.0,111.0,1
-r4cfp,Morgan r=4,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.177319,0.0,111.0,1
-r4cfp,Morgan r=4,h_to_methyl,A,0.652102,0.576426,0.725475,1000,1.177319,46.0,111.0,1
-r4cfp,Morgan r=4,n_methylation,A,0.746979,0.694999,0.794761,1000,1.177319,54.0,111.0,1
-r4cfp,Morgan r=4,scaffold_hop,A,0.654048,0.583458,0.727764,1000,1.177319,46.0,111.0,1
-r4cfp,Morgan r=4,ring_contract,A,0.603758,0.251889,0.733317,1000,1.177319,36.0,111.0,1
-r4cfp,Morgan r=4,regioisomer,A,0.684592,0.609385,0.754925,1000,1.177319,47.0,111.0,1
-r4cfp,Morgan r=4,matched_mw,REF,1.000000,0.897546,1.076216,1000,1.177319,111.0,111.0,1
-r4cfp,Morgan r=4,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.177319,0.0,111.0,1
-desc,RDKit + Mordred,stereo_flip,A,0.000000,0.000000,0.000000,1000,1.329184,0.0,967.5,0
-desc,RDKit + Mordred,ez_flip,A,0.000000,0.000000,0.000000,1000,1.329184,0.0,967.5,0
-desc,RDKit + Mordred,isotope_13c,A,0.003249,0.001007,0.006559,1000,1.329184,0.0,967.5,0
-desc,RDKit + Mordred,protonate,A,1.267502,1.111521,1.346090,1000,1.329184,212.0,967.5,0
-desc,RDKit + Mordred,halogen_swap,A,0.731044,0.619446,0.847052,1000,1.329184,407.0,967.5,0
-desc,RDKit + Mordred,saturate,A,0.191328,0.170849,0.216255,1000,1.329184,296.0,967.5,0
-desc,RDKit + Mordred,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.329184,0.0,967.5,0
-desc,RDKit + Mordred,h_to_methyl,A,0.175893,0.143811,0.230850,1000,1.329184,402.0,967.5,0
-desc,RDKit + Mordred,n_methylation,A,0.272658,0.242065,0.303912,1000,1.329184,470.5,967.5,0
-desc,RDKit + Mordred,scaffold_hop,A,0.335992,0.149707,0.376338,1000,1.329184,311.0,967.5,0
-desc,RDKit + Mordred,ring_contract,A,0.140558,0.124246,0.192269,1000,1.329184,332.0,967.5,0
-desc,RDKit + Mordred,regioisomer,A,0.174471,0.131908,0.220357,1000,1.329184,242.0,967.5,0
-desc,RDKit + Mordred,matched_mw,REF,1.000000,0.797204,1.240478,1000,1.329184,967.5,967.5,0
-desc,RDKit + Mordred,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.329184,0.0,967.5,0
-minimol,MiniMol,stereo_flip,A,0.000000,0.000000,0.000000,1000,1.172031,0.0,271.5,0
-minimol,MiniMol,ez_flip,A,0.283309,0.239523,0.327482,1000,1.172031,33.0,271.5,0
-minimol,MiniMol,isotope_13c,A,0.003354,0.001281,0.005555,1000,1.172031,0.0,271.5,0
-minimol,MiniMol,protonate,A,0.191725,0.155597,0.238210,1000,1.172031,14.0,271.5,0
-minimol,MiniMol,halogen_swap,A,0.313581,0.264120,0.362572,1000,1.172031,33.0,271.5,0
-minimol,MiniMol,saturate,A,0.478256,0.385517,0.567333,1000,1.172031,79.0,271.5,0
-minimol,MiniMol,null_enumerate,B,0.000001,0.000001,0.000002,1000,1.172031,0.0,271.5,0
-minimol,MiniMol,h_to_methyl,A,0.321777,0.279939,0.365805,1000,1.172031,39.0,271.5,0
-minimol,MiniMol,n_methylation,A,0.459899,0.396190,0.540174,1000,1.172031,83.0,271.5,0
-minimol,MiniMol,scaffold_hop,A,0.497884,0.437107,0.551965,1000,1.172031,97.0,271.5,0
-minimol,MiniMol,ring_contract,A,0.289850,0.224029,0.370520,1000,1.172031,33.5,271.5,0
-minimol,MiniMol,regioisomer,A,0.341449,0.261070,0.437433,1000,1.172031,48.0,271.5,0
-minimol,MiniMol,matched_mw,REF,1.000000,0.869229,1.127534,1000,1.172031,271.5,271.5,0
-minimol,MiniMol,null_kekulize,B,0.000000,0.000000,0.000001,1000,1.172031,0.0,271.5,0
-chemeleon,CheMeleon,stereo_flip,A,0.012766,0.008089,0.020627,1000,1.168307,542.0,1054.0,0
-chemeleon,CheMeleon,ez_flip,A,0.046388,0.023257,0.087638,1000,1.168307,774.0,1054.0,0
-chemeleon,CheMeleon,isotope_13c,A,0.001207,0.000815,0.001695,1000,1.168307,57.0,1054.0,0
-chemeleon,CheMeleon,protonate,A,0.773046,0.547470,0.996620,1000,1.168307,923.0,1054.0,0
-chemeleon,CheMeleon,halogen_swap,A,0.306104,0.256178,0.387496,1000,1.168307,857.0,1054.0,0
-chemeleon,CheMeleon,saturate,A,0.325893,0.263140,0.410378,1000,1.168307,967.0,1054.0,0
-chemeleon,CheMeleon,null_enumerate,B,0.000000,0.000000,0.000000,1000,1.168307,0.0,1054.0,0
-chemeleon,CheMeleon,h_to_methyl,A,0.230519,0.195057,0.286536,1000,1.168307,1025.5,1054.0,0
-chemeleon,CheMeleon,n_methylation,A,0.268520,0.232408,0.319702,1000,1.168307,1076.0,1054.0,0
-chemeleon,CheMeleon,scaffold_hop,A,0.226602,0.189936,0.277059,1000,1.168307,911.0,1054.0,0
-chemeleon,CheMeleon,ring_contract,A,0.331978,0.241870,0.468717,1000,1.168307,1023.0,1054.0,0
-chemeleon,CheMeleon,regioisomer,A,0.281590,0.230534,0.358370,1000,1.168307,940.5,1054.0,0
-chemeleon,CheMeleon,matched_mw,REF,1.000000,0.829536,1.252564,1000,1.168307,1054.0,1054.0,0
-chemeleon,CheMeleon,null_kekulize,B,0.000000,0.000000,0.000000,1000,1.168307,0.0,1054.0,0
-chemprop,"Chemprop, untrained",stereo_flip,A,0.180422,0.143795,0.228244,1000,1.263996,6.0,160.0,0
-chemprop,"Chemprop, untrained",ez_flip,A,0.096789,0.078256,0.122525,1000,1.263996,1.0,160.0,0
-chemprop,"Chemprop, untrained",isotope_13c,A,0.000836,0.000674,0.001125,1000,1.263996,0.0,160.0,0
-chemprop,"Chemprop, untrained",protonate,A,0.284050,0.238261,0.362975,1000,1.263996,19.0,160.0,0
-chemprop,"Chemprop, untrained",halogen_swap,A,0.102700,0.089764,0.120352,1000,1.263996,3.0,160.0,0
-chemprop,"Chemprop, untrained",saturate,A,0.287000,0.247031,0.384752,1000,1.263996,23.0,160.0,0
-chemprop,"Chemprop, untrained",null_enumerate,B,0.000000,0.000000,0.000001,1000,1.263996,0.0,160.0,0
-chemprop,"Chemprop, untrained",h_to_methyl,A,0.144756,0.122745,0.179082,1000,1.263996,2.0,160.0,0
-chemprop,"Chemprop, untrained",n_methylation,A,0.172478,0.136906,0.223555,1000,1.263996,5.0,160.0,0
-chemprop,"Chemprop, untrained",scaffold_hop,A,0.171897,0.149693,0.204640,1000,1.263996,6.0,160.0,0
-chemprop,"Chemprop, untrained",ring_contract,A,0.135455,0.101645,0.211461,1000,1.263996,2.0,160.0,0
-chemprop,"Chemprop, untrained",regioisomer,A,0.066083,0.047852,0.086809,1000,1.263996,0.0,160.0,0
-chemprop,"Chemprop, untrained",matched_mw,REF,1.000000,0.741743,1.301928,1000,1.263996,160.0,160.0,0
-chemprop,"Chemprop, untrained",null_kekulize,B,0.000000,0.000000,0.000000,1000,1.263996,0.0,160.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),stereo_flip,A,0.000000,0.000000,0.000000,1000,1.449516,0.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),ez_flip,A,0.027592,0.021564,0.034162,1000,1.449516,0.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),isotope_13c,A,0.406413,0.322276,0.515533,1000,1.449516,41.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),protonate,A,0.000000,0.000000,0.000000,1000,1.449516,0.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),halogen_swap,A,0.131680,0.100225,0.170584,1000,1.449516,0.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),saturate,A,0.278636,0.205010,0.377244,1000,1.449516,7.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),null_enumerate,B,0.783684,0.689446,0.900785,1000,1.449516,153.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),h_to_methyl,A,0.418725,0.241182,0.565675,1000,1.449516,45.5,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),n_methylation,A,0.268043,0.187939,0.402551,1000,1.449516,5.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),scaffold_hop,A,0.175052,0.140541,0.230666,1000,1.449516,0.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),ring_contract,A,0.161766,0.118991,0.235589,1000,1.449516,0.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),regioisomer,A,0.260972,0.195918,0.353625,1000,1.449516,5.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),matched_mw,REF,1.000000,0.866670,1.157031,1000,1.449516,199.0,199.0,0
-chemberta_mlm,ChemBERTa-2 (MLM),null_kekulize,B,1.172237,0.961065,1.330536,1000,1.449516,216.0,199.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),stereo_flip,A,0.000000,0.000000,0.000000,1000,1.105980,0.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),ez_flip,A,0.006215,0.004694,0.008202,1000,1.105980,0.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),isotope_13c,A,0.378199,0.286920,0.480101,1000,1.105980,32.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),protonate,A,0.000000,0.000000,0.000000,1000,1.105980,0.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),halogen_swap,A,0.331295,0.284473,0.380642,1000,1.105980,18.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),saturate,A,0.361182,0.300256,0.441429,1000,1.105980,26.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),null_enumerate,B,0.672783,0.515604,0.860845,1000,1.105980,128.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),h_to_methyl,A,0.272129,0.223565,0.346283,1000,1.105980,5.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),n_methylation,A,0.330221,0.294213,0.374929,1000,1.105980,18.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),scaffold_hop,A,0.392352,0.337856,0.465215,1000,1.105980,37.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),ring_contract,A,0.109243,0.081735,0.146378,1000,1.105980,0.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),regioisomer,A,0.172566,0.123531,0.250195,1000,1.105980,0.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),matched_mw,REF,1.000000,0.830777,1.183990,1000,1.105980,202.0,202.0,0
-chemberta_mtr,ChemBERTa-2 (MTR),null_kekulize,B,1.807292,1.402978,2.333671,1000,1.105980,278.0,202.0,0
-molformer,MoLFormer,stereo_flip,A,0.063718,0.048939,0.084937,1000,1.441609,0.0,399.0,0
-molformer,MoLFormer,ez_flip,A,0.057157,0.048015,0.067709,1000,1.441609,0.0,399.0,0
-molformer,MoLFormer,isotope_13c,A,0.083443,0.061241,0.120925,1000,1.441609,0.0,399.0,0
-molformer,MoLFormer,protonate,A,0.290012,0.244233,0.347629,1000,1.441609,19.0,399.0,0
-molformer,MoLFormer,halogen_swap,A,0.237286,0.203197,0.283886,1000,1.441609,5.0,399.0,0
-molformer,MoLFormer,saturate,A,0.313727,0.240795,0.394939,1000,1.441609,29.5,399.0,0
-molformer,MoLFormer,null_enumerate,B,0.781172,0.689950,0.874507,1000,1.441609,311.0,399.0,0
-molformer,MoLFormer,h_to_methyl,A,0.429803,0.272105,0.560011,1000,1.441609,102.5,399.0,0
-molformer,MoLFormer,n_methylation,A,0.313968,0.253214,0.405481,1000,1.441609,30.0,399.0,0
-molformer,MoLFormer,scaffold_hop,A,0.265489,0.216720,0.318740,1000,1.441609,10.0,399.0,0
-molformer,MoLFormer,ring_contract,A,0.178730,0.139427,0.266607,1000,1.441609,0.0,399.0,0
-molformer,MoLFormer,regioisomer,A,0.267217,0.197912,0.340319,1000,1.441609,12.0,399.0,0
-molformer,MoLFormer,matched_mw,REF,1.000000,0.909461,1.095785,1000,1.441609,399.0,399.0,0
-molformer,MoLFormer,null_kekulize,B,0.854712,0.749896,0.939486,1000,1.441609,347.0,399.0,0
-selfies_ted,SELFIES-TED,stereo_flip,A,0.071639,0.056724,0.091090,1000,1.344533,0.0,538.0,0
-selfies_ted,SELFIES-TED,ez_flip,A,0.210486,0.170100,0.255648,1000,1.344533,3.0,538.0,0
-selfies_ted,SELFIES-TED,isotope_13c,A,0.682630,0.575045,0.801144,1000,1.344533,351.0,538.0,0
-selfies_ted,SELFIES-TED,protonate,A,0.415035,0.348099,0.494676,1000,1.344533,122.0,538.0,0
-selfies_ted,SELFIES-TED,halogen_swap,A,0.120777,0.102541,0.149378,1000,1.344533,0.0,538.0,0
-selfies_ted,SELFIES-TED,saturate,A,0.244657,0.124567,0.379806,1000,1.344533,9.0,538.0,0
-selfies_ted,SELFIES-TED,null_enumerate,B,0.744933,0.654488,0.852753,1000,1.344533,388.5,538.0,0
-selfies_ted,SELFIES-TED,h_to_methyl,A,0.493561,0.291123,0.681038,1000,1.344533,186.0,538.0,0
-selfies_ted,SELFIES-TED,n_methylation,A,0.320023,0.254604,0.563174,1000,1.344533,44.0,538.0,0
-selfies_ted,SELFIES-TED,scaffold_hop,A,0.133402,0.102628,0.184712,1000,1.344533,0.0,538.0,0
-selfies_ted,SELFIES-TED,ring_contract,A,0.209481,0.171126,0.281543,1000,1.344533,3.0,538.0,0
-selfies_ted,SELFIES-TED,regioisomer,A,0.285340,0.174863,0.406929,1000,1.344533,26.0,538.0,0
-selfies_ted,SELFIES-TED,matched_mw,REF,1.000000,0.848778,1.138941,1000,1.344533,538.0,538.0,0
-selfies_ted,SELFIES-TED,null_kekulize,B,0.000000,0.000000,0.232289,1000,1.344533,0.0,538.0,0
+arm,label,mode,klass,auc_mean,auc_sd,auc_min,auc_max,n_pairs,n_seeds,degenerate_pairs,degenerate_frac
+ecfp,ECFP4,stereo_flip,A,0.7516,0.0232,0.7212,0.7902,1000,5,121,0.121
+ecfp,ECFP4,ez_flip,A,0.9575,0.0052,0.9521,0.9647,1000,5,0,0.000
+ecfp,ECFP4,isotope_13c,A,0.5022,0.0038,0.4973,0.5080,1000,5,969,0.969
+ecfp,ECFP4,protonate,A,1.0000,0.0000,1.0000,1.0000,1000,5,0,0.000
+ecfp,ECFP4,halogen_swap,A,0.8767,0.0182,0.8503,0.9037,1000,5,0,0.000
+ecfp,ECFP4,saturate,A,0.9803,0.0042,0.9740,0.9869,1000,5,0,0.000
+ecfp,ECFP4,null_enumerate,B,0.5000,0.0000,0.5000,0.5000,1000,5,1000,1.000
+ecfp,ECFP4,h_to_methyl,A,0.9486,0.0071,0.9370,0.9589,1000,5,0,0.000
+ecfp,ECFP4,n_methylation,A,0.9983,0.0009,0.9970,0.9996,1000,5,0,0.000
+ecfp,ECFP4,ch2_homolog,A,0.7990,0.0131,0.7780,0.8165,1000,5,0,0.000
+ecfp,ECFP4,scaffold_hop,A,0.9478,0.0065,0.9391,0.9576,1000,5,0,0.000
+ecfp,ECFP4,ring_contract,A,0.9775,0.0023,0.9747,0.9811,1000,5,0,0.000
+ecfp,ECFP4,regioisomer,A,0.7756,0.0160,0.7459,0.7899,1000,5,1,0.001
+ecfp,ECFP4,null_kekulize,B,0.5000,0.0000,0.5000,0.5000,1000,5,1000,1.000
+ecfp,ECFP4,matched_mw,NULL,0.5005,0.0273,0.4732,0.5378,1000,5,0,0.000
+hume,HUME,stereo_flip,A,0.7938,0.0141,0.7817,0.8201,1000,5,56,0.056
+hume,HUME,ez_flip,A,0.9647,0.0036,0.9616,0.9717,1000,5,0,0.000
+hume,HUME,isotope_13c,A,0.6238,0.0121,0.6041,0.6356,1000,5,0,0.000
+hume,HUME,protonate,A,1.0000,0.0000,1.0000,1.0000,1000,5,0,0.000
+hume,HUME,halogen_swap,A,0.8784,0.0151,0.8527,0.8961,1000,5,0,0.000
+hume,HUME,saturate,A,0.9892,0.0027,0.9847,0.9925,1000,5,0,0.000
+hume,HUME,null_enumerate,B,0.5001,0.0003,0.4996,0.5004,1000,5,975,0.975
+hume,HUME,h_to_methyl,A,0.9510,0.0065,0.9402,0.9591,1000,5,0,0.000
+hume,HUME,n_methylation,A,0.9969,0.0016,0.9949,0.9993,1000,5,0,0.000
+hume,HUME,ch2_homolog,A,0.7659,0.0161,0.7489,0.7847,1000,5,0,0.000
+hume,HUME,scaffold_hop,A,0.9688,0.0024,0.9659,0.9724,1000,5,0,0.000
+hume,HUME,ring_contract,A,0.9986,0.0017,0.9954,1.0000,1000,5,0,0.000
+hume,HUME,regioisomer,A,0.7297,0.0310,0.6805,0.7681,1000,5,0,0.000
+hume,HUME,null_kekulize,B,0.5000,0.0000,0.5000,0.5000,1000,5,997,0.997
+hume,HUME,matched_mw,NULL,0.5133,0.0229,0.4839,0.5450,1000,5,0,0.000

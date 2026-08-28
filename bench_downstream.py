@@ -209,6 +209,29 @@ ARMS = {
     "molformer":       f_learned("molformer"),
 }
 
+# ---- FIGURE B PANEL 2: base (x) add ---------------------------------------------------------
+#
+# Figure B's whole claim is a CONCATENATION test -- if a learned embedding carries chemical
+# signal a classical block lacks, gluing it on must beat the block alone -- so the plate needs
+# every base(x)add cell, not just the bases and the adds separately. Three bases against four
+# embeddings is twelve arms, and they are generated rather than typed out because a hand-written
+# list is where `ecfp_chemeleon` quietly becomes `desc_chemeleon`.
+#
+# THE FINGERPRINT BLOCK STAYS AT THE HEAD in every generated arm, because `_cat` concatenates in
+# the order given and the base is always first. `desc` has no bits at all, so those four arms
+# have no fingerprint/descriptor split and correctly skip the `w` tuning.
+FIGB_BASES = {"ecfp": (f_ecfp, "all"),
+              "desc": (_cat(f_rdkit_desc, f_mordred_desc), None),
+              "ecfp_all_desc": (_cat(f_ecfp, f_rdkit_desc, f_mordred_desc), ("head", 2048))}
+FIGB_ADDS = ["chemeleon", "minimol", "chemberta_mtr", "molformer"]
+for _b, (_fn, _blk) in FIGB_BASES.items():
+    for _a in FIGB_ADDS:
+        _k = f"{_b}__{_a}"
+        ARMS[_k] = _cat(_fn, f_learned(_a))
+        # The added block is dense, so the base's own bit layout carries over unchanged: a
+        # "head" block stays at the head and an all-bits base stops being all-bits.
+        FP_BLOCK[_k] = ("head", 2048) if _blk in ("all", ("head", 2048)) else None
+
 DATASETS = ["ames", "aqsoldb", "bioavail", "cycpept_pampa", "cyp2d6_inh", "esol", "fartdb",
             "hia", "ld50_zhu", "lipophilicity", "pb_ames", "pb_bbb", "pb_cyp2c9", "pb_cyp2d6",
             "pb_cyp3a4", "pb_hum_mic_cl", "pb_logd", "pb_mou_mic_cl", "pb_ppb",
