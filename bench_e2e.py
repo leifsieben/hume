@@ -473,10 +473,45 @@ def report() -> None:
               f"port is complete.")
 
 
+def sweep(arm: str, sizes, n_reps: int) -> None:
+    """Is N large enough for the MEAN to have stopped moving?
+
+    THIS EXISTS BECAUSE THE PER-MOLECULE COST DISTRIBUTION IS EXTREMELY HEAVY-TAILED. Measured on
+    this corpus: median ~5 ms, max ~35 s, so max/median is ~7000x and a handful of molecules
+    dominate any sample's mean. The repetition SD this file already reports CANNOT detect that --
+    it measures noise on a FIXED sample, so it is small and reassuring precisely when the sample
+    is unrepresentative. Two different quantities:
+
+        us_sd        how much the number moves when you re-time the SAME molecules
+        this sweep   how much it moves when you draw DIFFERENT molecules
+
+    A ratio quoted from a single N is only as good as the second, and nothing in this harness
+    measured it until now. Run to convergence, or report the median alongside and say which is
+    which -- do not quote a mean that is still drifting.
+    """
+    fn = {"hume": arm_hume, "baseline": arm_baseline}[arm]
+    print(f"{arm}: sample-size sweep, {n_reps} reps each\n")
+    print(f"  {'N':>7s} {'total us/mol':>13s} {'vs previous':>12s}")
+    prev = None
+    for n in sizes:
+        res = fn(n, n_reps)
+        tot = sum(st["us_mean"] for st in res["steps"].values())
+        delta = "" if prev is None else f"{100 * (tot - prev) / prev:+11.1f}%"
+        print(f"  {n:7,d} {tot:13.1f} {delta:>12s}", flush=True)
+        prev = tot
+    print("\n  The mean has converged when successive rows agree to within the repetition SD.")
+    print("  If the last step is still several percent, N is too small and the ratio is not")
+    print("  quotable -- draw more molecules rather than more repetitions.")
+
+
 def main() -> None:
     cmd = sys.argv[1] if len(sys.argv) > 1 else "report"
     if cmd == "report":
         return report()
+    if cmd == "sweep":
+        arm = sys.argv[2] if len(sys.argv) > 2 else "hume"
+        reps = int(sys.argv[3]) if len(sys.argv) > 3 else 3
+        return sweep(arm, [1000, 2000, 5000, 10000, 25000], reps)
     n_mols = int(sys.argv[2]) if len(sys.argv) > 2 else 2000
     n_reps = int(sys.argv[3]) if len(sys.argv) > 3 else 7
     OUT.mkdir(parents=True, exist_ok=True)
