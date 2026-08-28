@@ -882,6 +882,78 @@ def nan_audit(mols, X) -> int:
 
 
 # --------------------------------------------------------------------------------------------
+def main_qed(n_want: int) -> int:
+    """`cpp/verify_wiring.py N qed` -- `qed` and its alert count ONLY, over the whole corpus.
+
+    WHY A SEPARATE ENTRY POINT RATHER THAN A BIGGER `N`, the same reason `rdkcore` has one: house
+    rule 5 wants exactness reported on all 100,000 molecules of cpp/hard.smi, and the full run
+    cannot be asked for that because its VSA arm calls 65 RDKit descriptors per molecule and its
+    mordred arm is minutes per thousand. This runs the same `check_qed` -- same oracle, same code
+    path, same in-process comparison -- in batches over the whole file, and accumulates.
+    """
+    from rdkit.Chem import QED
+
+    smis = [s for s in (ROOT / "cpp" / "hard.smi").read_text().split("\n") if s][:n_want]
+    print(f"{len(smis)} molecules from cpp/hard.smi, qed only\n")
+    j = col("qed")
+    n_bitwise = n_alert_ok = n_graded = 0
+    dev = 0.0
+    margin = float("inf")
+    n_nonfinite = 0
+    fired = [0] * len(QED.StructuralAlerts)
+    first = None
+    B = 2000
+    for lo_i in range(0, len(smis), B):
+        chunk_s = smis[lo_i:lo_i + B]
+        chunk = [Chem.MolFromSmiles(s) for s in chunk_s]
+        if any(m is None for m in chunk):
+            raise ValueError("unparseable SMILES in the corpus")
+        got = all_cols(chunk)[:, j]
+        # A FRESH PARSE FOR THE ORACLE. `all_cols` has just run `extract_pickles`, which calls
+        # AssignStereochemistry(cleanIt=True, force=True, flagPossibleStereoCenters=True) on the
+        # caller's molecules; grading against a mutated molecule is how a harness passes while
+        # measuring nothing. `qed` does not read stereo, so this is belt and braces -- and it is
+        # exactly the arm that would catch it if that ever stopped being true.
+        fresh = [Chem.MolFromSmiles(s) for s in chunk_s]
+        props = [QED.properties(m) for m in fresh]
+        want = np.array([float(QED.qed(m, qedProperties=p)) for m, p in zip(fresh, props)])
+        for m in fresh:
+            for k, a in enumerate(QED.StructuralAlerts):
+                if m.HasSubstructMatch(a):
+                    fired[k] += 1
+        n_bitwise += int(np.count_nonzero(got.view(np.uint64) == want.view(np.uint64)))
+        fin = np.isfinite(got) & np.isfinite(want)
+        n_nonfinite += int(np.count_nonzero(~np.isfinite(got)))
+        if fin.any():
+            dev = max(dev, float(np.max(np.abs(got[fin] - want[fin]) /
+                                        np.maximum(np.abs(want[fin]), 1e-300))))
+        for i, (m, p) in enumerate(zip(fresh, props)):
+            cand = {int(p.ALERTS), max(0, int(p.ALERTS) - 1), int(p.ALERTS) + 1}
+            vals = sorted((abs(got[i] - float(QED.qed(m, qedProperties=p._replace(ALERTS=k)))), k)
+                          for k in cand)
+            margin = min(margin, vals[1][0])
+            if vals[0][1] == int(p.ALERTS):
+                n_alert_ok += 1
+            elif first is None:
+                first = (Chem.MolToSmiles(m), int(p.ALERTS), vals[0][1])
+        n_graded += len(chunk)
+        print(f"  {n_graded:7d} / {len(smis)} ...", flush=True)
+
+    never = [k for k, c in enumerate(fired) if c == 0]
+    print(f"\n  qed        bitwise on {n_bitwise} / {n_graded}   max rel dev {dev:.3e}   "
+          f"non-finite {n_nonfinite}")
+    print(f"  qedAlerts  EXACT on {n_alert_ok} / {n_graded}   (integer count, recovered from the "
+          f"emitted float; smallest recovery margin {margin:.3e})")
+    print(f"  alerts that fire at least once on the corpus: {len(fired) - len(never)} / "
+          f"{len(fired)}   never fired: {never}")
+    if first is not None:
+        print(f"  first alert mismatch: {first[0]}  rdkit {first[1]}, recovered {first[2]}")
+    bad = (n_alert_ok != n_graded) or (dev > 1e-12)
+    print("\nQED EXACT -- qedAlerts bitwise-integer exact, qed within the stated float bound"
+          if not bad else "\nQED DISAGREES")
+    return 0 if not bad else 1
+
+
 def main_rdkcore(n_want: int) -> int:
     """`cpp/verify_wiring.py N rdkcore` -- the rdkcore family plus `SPS`, over the whole corpus.
 
@@ -1025,6 +1097,8 @@ def main() -> int:
         raise SystemExit(f"CANARY MISMATCH: {canary!r}, expected -0.07665884800196521 (rdkit "
                          f"2025.09.2). The RDKit executing is not the one on the label.")
     print(f"{_core.N_ALL_COLS} columns, offsets {dict(OFF)}\n")
+    if only == "qed":
+        return main_qed(n_want)
     if only == "rdkcore":
         return main_rdkcore(n_want)
 

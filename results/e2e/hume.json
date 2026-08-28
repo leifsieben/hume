@@ -3,27 +3,27 @@
  "n_mols": 10000,
  "steps": {
   "extract_pickles_boundary": {
-   "us_mean": 230.265,
-   "us_sd": 0.591,
-   "us_min": 229.832,
+   "us_mean": 219.863,
+   "us_sd": 2.622,
+   "us_min": 217.382,
    "n_reps": 3
   },
   "ecfp_r3_2048": {
-   "us_mean": 29.744,
-   "us_sd": 0.23,
-   "us_min": 29.493,
+   "us_mean": 28.437,
+   "us_sd": 1.129,
+   "us_min": 27.718,
    "n_reps": 3
   },
   "smiles_parse": {
-   "us_mean": 58.242,
-   "us_sd": 0.47,
-   "us_min": 57.782,
+   "us_mean": 55.692,
+   "us_sd": 0.394,
+   "us_min": 55.459,
    "n_reps": 3
   },
   "cpp_all_columns": {
-   "us_mean": 581.901,
-   "us_sd": 3.702,
-   "us_min": 578.711,
+   "us_mean": 629.877,
+   "us_sd": 1.393,
+   "us_min": 628.394,
    "n_reps": 3,
    "columns": 1266
   }
@@ -31,87 +31,87 @@
  "detail": {
   "per_family": {
    "blocks_182": {
-    "us_mean": 192.808,
-    "us_sd": 0.682,
+    "us_mean": 178.22,
+    "us_sd": 1.803,
     "columns": 182
    },
    "vsa": {
-    "us_mean": 9.756,
-    "us_sd": 2.303,
+    "us_mean": 11.85,
+    "us_sd": 0.419,
     "columns": 66
    },
    "estate": {
-    "us_mean": -4.368,
-    "us_sd": 0.185,
+    "us_mean": 4.994,
+    "us_sd": 3.53,
     "columns": 158
    },
    "ringcount": {
-    "us_mean": -2.789,
-    "us_sd": 0.858,
+    "us_mean": 2.031,
+    "us_sd": 2.244,
     "columns": 49
    },
    "pathcount": {
-    "us_mean": 7.561,
-    "us_sd": 0.336,
+    "us_mean": 12.072,
+    "us_sd": 1.259,
     "columns": 11
    },
    "topocharge": {
-    "us_mean": 5.062,
-    "us_sd": 1.905,
+    "us_mean": 11.881,
+    "us_sd": 2.215,
     "columns": 21
    },
    "infocontent": {
-    "us_mean": 119.003,
-    "us_sd": 1.831,
+    "us_mean": 119.454,
+    "us_sd": 1.675,
     "columns": 43
    },
    "autocorr": {
-    "us_mean": 21.547,
-    "us_sd": 3.109,
+    "us_mean": 25.669,
+    "us_sd": 4.072,
     "columns": 540
    },
    "frag": {
-    "us_mean": 117.821,
-    "us_sd": 2.441,
+    "us_mean": 114.847,
+    "us_sd": 2.449,
     "columns": 76
    },
    "chi": {
-    "us_mean": 49.259,
-    "us_sd": 4.275,
+    "us_mean": 49.487,
+    "us_sd": 0.908,
     "columns": 40
    },
    "topomisc": {
-    "us_mean": 8.554,
-    "us_sd": 3.762,
+    "us_mean": 15.264,
+    "us_sd": 0.942,
     "columns": 15
    },
    "constit": {
-    "us_mean": 20.409,
-    "us_sd": 1.628,
+    "us_mean": 87.879,
+    "us_sd": 2.077,
     "columns": 43
    },
    "alias": {
-    "us_mean": -2.524,
-    "us_sd": 2.015,
+    "us_mean": 1.392,
+    "us_sd": 0.931,
     "columns": 1
    },
    "rdkcore": {
-    "us_mean": 7.371,
-    "us_sd": 2.865,
+    "us_mean": 9.416,
+    "us_sd": 1.183,
     "columns": 21
    }
   },
   "cpp_blocks_182_only": {
-   "us_mean": 192.732,
-   "us_sd": 0.347,
-   "us_min": 192.513,
+   "us_mean": 181.425,
+   "us_sd": 1.892,
+   "us_min": 180.125,
    "n_reps": 3,
    "columns": 182
   },
   "extract_api_boundary": {
-   "us_mean": 209.087,
-   "us_sd": 0.906,
-   "us_min": 208.12,
+   "us_mean": 208.432,
+   "us_sd": 1.442,
+   "us_min": 206.767,
    "n_reps": 3
   },
   "offsets": {
@@ -138,7 +138,7 @@
  "machine": {
   "platform": "darwin arm64",
   "cpu_count": 12,
-  "load1": 2.19,
+  "load1": 1.77,
   "contended": true,
   "python": "3.12.13"
  },
