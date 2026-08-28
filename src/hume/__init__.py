@@ -180,11 +180,25 @@ def featurize_blocks(smiles: Iterable[str], batch_size: int = 4096, reader: str 
 # ------------------------------------------------------------------------------------------
 
 def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: int = 3,
-                            fp_size: int = 2048):
+                            fp_size: int = 2048, optional=None):
     """-> ``(fp, X, ALL_COLUMNS)``: the ECFP and every natively computed descriptor column.
 
     ``fp`` is ``(len(mols), fp_size)`` uint8 Morgan/ECFP with chirality; ``X`` is
     ``(len(mols), N_ALL_COLS)`` float64.
+
+    ``optional`` NAMES THE EXPENSIVE COLUMNS TO COMPUTE, and it is the only knob here that
+    changes what is in ``X`` rather than how it is produced. Two of the 864 cost more than most
+    whole families -- ``qed`` 69.3 us/mol and ``AvgIpc`` 64.6, against 629.9 for all of them --
+    so each can be declined:
+
+        optional=None                default: `AvgIpc` on, `qed` off
+        optional=()                  neither
+        optional=("qed", "AvgIpc")   the full suite, and what the exactness claims are measured on
+
+    A declined column is NaN in its usual position. THE SHAPE AND THE COLUMN LIST DO NOT MOVE:
+    `ALL_COLUMNS`, `N_ALL_COLS` and every family offset are the same whichever way this is set,
+    because a column set that shifts with a keyword argument is how two callers end up
+    disagreeing about what a column index means.
 
     THE BOUNDARY IS THE PICKLE ONE: `m.ToBinary()` once per molecule plus the ring CSR, parsed
     in C++. `featurize_blocks(reader="api")` still exists as the reference implementation and the
@@ -212,14 +226,14 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         p = extract_pickles(chunk)
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
             p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs,
-            p.stereo_a, p.stereo_b)
+            p.stereo_a, p.stereo_b, optional=optional)
         for i, m in enumerate(chunk):
             fp[lo + i] = gen.GetFingerprintAsNumPy(m)
     return fp, X, ALL_COLUMNS
 
 
 def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int = 3,
-                  fp_size: int = 2048):
+                  fp_size: int = 2048, optional=None):
     """`featurize_all_from_mols` from SMILES. Unparseable input raises; see `featurize_blocks`."""
     from rdkit import Chem
 
@@ -230,7 +244,7 @@ def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int 
             raise ValueError(f"could not parse SMILES at index {i}: {s!r}")
         mols.append(m)
     return featurize_all_from_mols(mols, batch_size=batch_size, fp_radius=fp_radius,
-                                   fp_size=fp_size)
+                                   fp_size=fp_size, optional=optional)
 
 
 def compute(batch: Batch) -> np.ndarray:

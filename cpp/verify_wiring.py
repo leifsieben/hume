@@ -110,9 +110,15 @@ NAMES = list(COLUMNS) + TAIL
 
 
 def all_cols(mols) -> np.ndarray:
+    # `optional` NAMES BOTH COLUMNS EXPLICITLY, and this file must never take the library
+    # default. The default declines `qed` -- 81.9 us/mol for one column -- and a declined column
+    # is NaN by design, so a grader that took the default would compare NaN against RDKit's
+    # `qed` and report a failure that is really a configuration. This file's job is to grade
+    # every column that exists, so it asks for every column that exists.
     p = extract_pickles(mols)
     return _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr,
-                                  p.rings.ring_at, p.h_blobs, p.stereo_a, p.stereo_b)
+                                  p.rings.ring_at, p.h_blobs, p.stereo_a, p.stereo_b,
+                                  optional=("qed", "AvgIpc"))
 
 
 def col(name: str) -> int:

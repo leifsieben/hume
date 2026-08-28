@@ -913,3 +913,122 @@ each pattern's required elements before the search starts, is the obvious first 
   rebuild no plans (those are process-lifetime) but WOULD throw the recursive-query cache away
   twice per molecule, which is the allocation `bind()` exists to avoid. They share one
   `fragmatch::Mol`, filled once.
+
+---
+
+# HANDOFF — 2026-08-28, the two optional columns
+
+Owner decision, taken on the numbers below: **`qed` is no longer computed by default.**
+`AvgIpc` still is. Both are now per-column switches rather than edits.
+
+## The measurement that prompted it
+
+Sub-family timings, which did not exist before today. 10,000-molecule stride samples of the
+verification corpora (mean 28.6–28.7 heavy atoms), each arm alternated within every repetition:
+
+| cost centre | µs/mol | columns | µs/column | how measured |
+|---|---|---|---|---|
+| `qed`'s 116 alert SMARTS | 69.3 | 1 | **69.3** | scratch A/B, `countAll` vs `countMatching` on one `fragmatch::Mol` |
+| `AvgIpc` (the Ipc block) | 64.6 | 1 | **64.6** | `./cpp/infocontent ipcbench` — `compute` 105.5 vs `computeIC` 41.0 |
+| BCUT2D | 99.2 | 8 | 12.4 | `./cpp/hume bench` — 50% matrix assembly, 50% the four eigensolves |
+| 76 fragment columns | 111.1 | 76 | 1.46 | same scratch A/B |
+| resistance | 32.6 | 60 | 0.54 | `./cpp/hume bench` |
+| Autocorrelation | 25.7 | 540 | **0.048** | `bench_e2e.py` per-family |
+
+Three descriptors are **37% of the 629.9 µs/mol of compute for 10 of the 864 columns.**
+
+Through the real entry point, 10,000 molecules of `cpp/hard.smi`, four arms alternated per
+repetition and differenced within it: **`qed` 81.9 ± 3.54 µs/mol, `AvgIpc` 76.9 ± 3.42, both
+158.2 ± 4.36.** The per-column figures above are larger than the isolated matcher measurement
+because they include the rest of `qedScore` and the cache effects of the second program; both
+numbers are right and they measure different boundaries.
+
+## What the switch is, and the property it stands on
+
+`all_from_pickles(..., optional=...)` and `featurize_all(..., optional=...)`. `None` is the
+default set (`AvgIpc` on, `qed` off); `()` is neither; `("qed", "AvgIpc")` is the full suite.
+
+**`optional` IS NOT `families`, and the two must not be confused.** `families` selects whole
+families, its off-columns are **zero**, and it is documented as a measurement hook that is
+unsafe in production. `optional` is per-column, its off-value is **NaN**, and it is meant to be
+used. NaN because that is already this file's word for "nobody computed this" — `SPS` is NaN
+when the potential-stereo arrays are absent, for the same stated reason.
+
+**The schema does not move.** `N_ALL_COLS`, every family offset and every name are identical
+whichever way it is set. Verified directly: under `None`, `()` and `("qed",)`, **all 1,264 other
+columns are bit-identical to the full-suite run** (NaN-aware comparison, 5 molecules × every
+column). That is the property that makes the switch safe to expose, and it is checked rather
+than argued.
+
+Neither side needed new code. `constit::qedScore()` has always returned NaN for
+`Inputs::qedAlerts < 0`, and `infoic::computeIC()` has always been `compute()` with the Ipc
+block skipped and the 42 IC columns bit-identical either way. The switches name two paths that
+already existed.
+
+**Two callers pass `("qed", "AvgIpc")` explicitly and must keep doing so.** `bench_e2e.py`,
+because its claim is a like-for-like ratio against an arm computing all 864 names — taking the
+default would cut 82 µs off HUME's total and quietly compare 863 columns against 864, a better
+ratio obtained by computing less. And `cpp/verify_wiring.py`, because a grader that took the
+default would compare NaN against RDKit's `qed` and report a configuration as a failure.
+`verify_wiring.py` re-run after the change: **WIRING EXACT**, `qed` max dev 1.665e-16.
+
+## Why `qed` and not the others
+
+It is a drug-likeness **score**: a weighted geometric mean of eight properties this matrix
+already carries as columns in their own right (MolWt, MolLogP, TPSA, NumHDonors,
+NumRotatableBonds, aromatic ring count, plus the alert count). For an encoding it is a fixed
+nonlinear function of features the model already has, at 13% of the compute. It stays available
+because reproducing RDKit's `qed` is a legitimate thing to want; it stops being the default
+because paying for it silently is not.
+
+`AvgIpc` is not derivable that way — see below — so it stays on.
+
+## `AvgIpc`: what it is, and whether an approximation is available
+
+The Shannon entropy of the distribution of |coefficients of the characteristic polynomial of the
+adjacency matrix| (Bonchev–Trinajstić). A global topological-complexity index.
+
+**An approximate implementation already exists and it is RDKit's, and it is not "99% accurate" —
+above ~70 heavy atoms it is not a function of the molecule at all.** RDKit runs Le
+Verrier–Faddeev–Frame in floating point; the coefficients come out of a trace after catastrophic
+cancellation, so the answer depends on the atom numbering. Six random renumberings of one
+199-atom molecule give `AvgIpc` from 0.6905 to 1.5129 — a factor of 2.2. That is 2.9% of
+`cpp/hard.smi`, and it is exactly the ill-posedness `infocontent.h` was written to fix.
+
+**The exact algorithm is already near its floor.** O(n²·nb) with a single-64-bit-word fast path
+that 97.9% of molecules take. The remaining lever is constant-factor, not asymptotic: the inner
+`T[u] += M[v]` row addition is overflow-checked **per addition**, which is what prevents the
+compiler from vectorising it. Replacing the per-add check with an a-priori magnitude bound on
+the W = 1 path — max|entry| after a step is bounded by deg_max·B + |c| — would let it compile to
+a plain int64 vector add, plausibly 2–3×, with **no accuracy trade at all**. The cost is
+regenerating the determinism artifact (8 inputs × 100,000 molecules × 45 columns, md5
+`6b5ddecc…`). Not done; recorded as the next lever if the column is wanted cheaper.
+
+**If it is not wanted, turn it off rather than approximate it.** An approximation has a
+wrong-value failure mode; `optional=()` has a NaN that cannot be mistaken for a value.
+
+## The ridge proposal, tested: predicting `AvgIpc` and BCUT2D instead of computing them
+
+Held-out R², 25,000 molecules of `cpp/hard.smi`, ridge with λ tuned on a validation slice of
+train. Descriptor inputs go through clip → standardise → clip with all statistics from train
+(without it the scaffold arm extrapolates to R² ≈ −1e18, which is a bug report, not a finding).
+
+| input | split | AvgIpc | BCUT2D, worst → best |
+|---|---|---|---|
+| ECFP counts (2048) | **scaffold** | **−0.180** | **−0.292 → 0.488** (5 of 8 negative) |
+| other 855 descriptors | **scaffold** | 0.943 | −0.317 → 0.773 |
+| ECFP counts (2048) | random | 0.859 | 0.483 → 0.667 |
+| other 855 descriptors | random | 0.991 | 0.879 → 0.982 |
+
+**On unseen scaffolds, ECFP-ridge is worse than predicting the constant mean** for `AvgIpc` and
+for five of the eight BCUT2D columns. The random split says 0.86 and the scaffold split says
+−0.18 for the same target and the same model: the gap between those two rows is the entire
+result, and it is `PLAN.md`'s open risk #1 confirmed on the nose — these are global spectral and
+characteristic-polynomial invariants, and a bag of local environments does not determine them.
+
+**Caveat, stated because it is the obvious objection:** ridge is linear and is a floor, not a
+ceiling; an MLP was not tested. But `PLAN.md`'s own rule applies — a negative R² against a
+constant predictor is not a capacity gap, it is the input not carrying the information.
+
+So: **do not predict these.** The lever that works is the switch above, which costs nothing and
+has no failure mode.

@@ -631,6 +631,50 @@ enum : unsigned {
   F_ALL = 16383u,
 };
 
+// ---- OPTIONAL COLUMNS: members of the 864 the caller can decline to pay for -----------------
+//
+// SEPARATE FROM THE FAMILY MASK ON PURPOSE, and the two must not be confused. `fams` selects
+// whole families, its off-columns are ZERO, and it is documented above as a measurement hook
+// that is unsafe in production. This is the opposite in every one of those respects: it is a
+// PER-COLUMN switch, its off-value is NaN, and it is meant to be used.
+//
+// NaN rather than zero because NaN is already this file's word for "nobody computed this" --
+// `SPS` is NaN when the potential-stereo arrays are absent, for the stated reason that "nobody
+// ran the perception" and "the perception found nothing" are different facts. A zero would be a
+// finite, plausible, wrong descriptor, which is the failure mode this whole file is written
+// against.
+//
+// THE SCHEMA DOES NOT CHANGE. N_ALL_COLS, every family offset and every column name are the same
+// whichever way these are set; only the two cells move. A column set that shifts with a keyword
+// argument is how two callers end up disagreeing about what column 1244 means, and the four
+// duplicated names in ALL_COLUMNS are already evidence of how expensive that class of confusion
+// is to unpick after the fact.
+//
+// WHY THESE TWO. They are the most expensive columns in the suite and each costs more than most
+// entire families. Measured on 10,000 molecules of cpp/hard.smi (mean 28.7 heavy atoms), by
+// running the two arms alternated within each repetition:
+//
+//     qed      69.3 us/mol   116 structural-alert SMARTS, one subgraph-isomorphism pass each
+//     AvgIpc   64.6 us/mol   exact-integer Le Verrier-Faddeev-Frame characteristic polynomial
+//                            (infocontent's `compute` 105.5 against `computeIC` 41.0)
+//
+// against 629.9 us/mol for all 864. Declining both is a 21% cut of the compute for two columns.
+//
+// NEITHER NEEDED NEW CODE, which is why this is a small change rather than a risky one.
+// `constit::qedScore()` already returns NaN when `Inputs::qedAlerts < 0`, and
+// `infoic::computeIC()` is already `infoic::compute()` with the Ipc block skipped, with the 42
+// IC columns BIT-IDENTICAL either way. The switches name those two existing paths; they do not
+// introduce a third.
+enum : unsigned { OPT_QED = 1u, OPT_AVGIPC = 2u };
+
+// The default set, and `qed` is deliberately NOT in it. It is the single most expensive column
+// in the suite and it is a drug-likeness SCORE -- a weighted geometric mean of eight properties
+// this matrix already carries as columns in their own right (MolWt, MolLogP, TPSA, NumHDonors,
+// NumRotatableBonds, aromatic ring count) -- so for an encoding it is a nonlinear function of
+// features the model already has, at 11% of the compute. Owner's decision, 2026-08-28.
+// `AvgIpc` stays on: it is not derivable from anything else here. See PORT_STATUS.md.
+inline constexpr unsigned OPT_DEFAULT = OPT_AVGIPC;
+
 //! Families that need the hydrogen-added blob parsed. Autocorrelation descriptors that graph
 //! directly; constit reads only its Gasteiger charges off it (RNCG/RPCG). Keeping the two in one
 //! predicate is what stops `["constit"]` from silently getting a null charge array -- and what
@@ -642,7 +686,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
                     const int *ring_ptr, const int *ring_at, int n_rings,
                     const int *HAI, const int *HBI, const double *HAC, int ha0, int hb0,
                     int hn, int hnb, int h_chg_ok, const int *SA, const int *SB, unsigned fams,
-                    double *out) {
+                    unsigned opts, double *out) {
   const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
   const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
@@ -745,21 +789,28 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     W.im.bcode[b] = (uint8_t)r[B_CODE];
     W.im.bord[b] = bd[b];
   }
-  // compute(), not computeIC(): `AvgIpc` IS one of the 865 and is emitted below, so the Ipc
-  // block has to run. It is not cheap -- an exact-integer Le Verrier-Faddeev-Frame recurrence,
-  // O(n^3) in the HEAVY-atom count -- and this line was `computeIC()` for exactly as long as the
-  // three Ipc columns were unwired and the recurrence's result went on the floor.
+  // compute() vs computeIC() IS NOW THE `AvgIpc` SWITCH, and it is the same decision this
+  // comment has always described -- only the thing that decides it has moved from an edit to an
+  // argument. `compute()` runs the Ipc block: an exact-integer Le Verrier-Faddeev-Frame
+  // recurrence, O(n^3) in the HEAVY-atom count, 64.6 us/mol, feeding the one emitted column
+  // below. `computeIC()` is the same function with that block skipped.
   //
-  // IF AvgIpc IS EVER DROPPED, PUT `computeIC()` BACK IN THE SAME EDIT. The 42 IC columns are
-  // bit-identical either way, so nothing would fail; the recurrence would simply run for nobody,
-  // which is the bug that cost this family 68% of its CPU once already.
-  infoic::compute(W.im, W.irow);
+  // THE 42 IC COLUMNS ARE BIT-IDENTICAL EITHER WAY -- nothing above the Ipc block reads anything
+  // the Ipc block writes -- so the copy below is unconditional and this switch cannot reach any
+  // column but `AvgIpc`. That is the property that makes it safe to expose.
+  //
+  // The trap it replaces is still the trap: calling `compute()` while `AvgIpc` goes unread runs
+  // the recurrence for nobody, which cost this family 68% of its CPU once already. Routing both
+  // sides through `opts` is what makes that state unrepresentable rather than merely documented.
+  const bool want_ipc = (opts & OPT_AVGIPC) != 0;
+  if (want_ipc) infoic::compute(W.im, W.irow);
+  else          infoic::computeIC(W.im, W.irow);
   for (int c = 0; c < infoic::N_IC; c++) out[OFF_IC + c] = W.irow.v[c];
   // `Ipc` and `Log2Ipc` are computed and deliberately NOT emitted -- they are not members of the
   // 865, and unlike everything else here they are unbounded (`Ipc` reaches 1.65e88 and saturates
   // at DBL_MAX by design; `Log2Ipc` is -inf where `Ipc` is 0). Adding them is one line each and
   // costs no compute, but putting an unbounded column in front of a model is the owner's call.
-  out[OFF_IC + infoic::N_IC] = W.irow.v[infoic::C_AVGIPC];
+  out[OFF_IC + infoic::N_IC] = want_ipc ? W.irow.v[infoic::C_AVGIPC] : std::nan("");
   }
 
   // ---- Autocorrelation: 540 columns, on the HYDROGEN-ADDED graph ----
@@ -905,7 +956,14 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     //
     // F_CONSTIT IMPLIES F_FRAG (see `parse_families`), so `W.fm` is filled and finished above on
     // every path that reaches here. It is the same graph, read twice, never rebuilt.
-    in.qedAlerts = fragmatch::countMatching(W.fm, W.qmt);
+    //
+    // AND IT IS OPTIONAL, off by default -- see OPT_QED. The 116 alerts are 69.3 us/mol, the
+    // most expensive column in the suite. `-1` is not a sentinel invented here: `qedScore()`
+    // has always returned NaN for a negative alert count, because "the alerts were not counted"
+    // and "no alert matched" are different facts and a zero would silently claim the second.
+    // So the off path is the SAME path the column took before the alerts were wired at all, and
+    // it is the reason this switch needed no new code in constit.h.
+    in.qedAlerts = (opts & OPT_QED) ? fragmatch::countMatching(W.fm, W.qmt) : -1;
 
     // `SPS` IS NO LONGER ONE OF THEM. Its two inputs are RDKit's POTENTIAL stereo perception,
     // which the ASSIGNED-only `cip` and `bond_s` columns cannot answer and which the pickle does
@@ -991,14 +1049,40 @@ static unsigned family_mask(const py::object &families) {
   return mask;
 }
 
+//! `None` -> the default set; a sequence of column names -> exactly those; `()` -> neither.
+static unsigned optional_mask(const py::object &optional) {
+  if (optional.is_none()) return OPT_DEFAULT;
+  static const std::pair<const char *, unsigned> NAMED[] = {{"qed", OPT_QED},
+                                                            {"AvgIpc", OPT_AVGIPC}};
+  unsigned mask = 0;
+  for (auto h : optional) {
+    const std::string want = py::cast<std::string>(h);
+    unsigned bit = 0;
+    for (const auto &kv : NAMED)
+      if (want == kv.first) bit = kv.second;
+    if (!bit)
+      throw std::invalid_argument(
+          "hume._core: '" + want +
+          "' is not an optional column. Exactly two columns are optional -- 'qed' and 'AvgIpc' "
+          "-- and every other one of the 864 is always computed. Pass optional=None for the "
+          "default set ('AvgIpc' on, 'qed' off), optional=() for neither, or name the ones you "
+          "want: optional=('qed', 'AvgIpc') computes the full suite. A column that is off is "
+          "NaN in its usual position; no offset and no name changes.");
+    mask |= bit;
+  }
+  return mask;
+}
+
 static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff, ArrI ring_ptr,
                                             ArrI ring_at, py::sequence h_pickles, ArrI stereo_a,
-                                            ArrI stereo_b, py::object families) {
+                                            ArrI stereo_b, py::object families,
+                                            py::object optional) {
   Blobs b = borrow(pickles);
   Blobs hb = borrow(h_pickles);
   need((ssize_t)hb.ptr.size() == (ssize_t)b.ptr.size(),
        "h_pickles must have one hydrogen-added blob per molecule");
   const unsigned fams = family_mask(families);
+  const unsigned opts = optional_mask(optional);
   const ssize_t nm = (ssize_t)b.ptr.size();
   need(ring_moff.ndim() == 1 && ring_ptr.ndim() == 1 && ring_at.ndim() == 1,
        "the ring arrays must be 1-D");
@@ -1050,7 +1134,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
               f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
               h.atom_i.data(), h.bond_i.data(), h.ac_charge.data(), ha0, hb0,
               need_h ? h.atom_off[k + 1] - ha0 : 0,
-              need_h ? h.bond_off[k + 1] - hb0 : 0, need_h ? h.chg_ok[k] : 0, SA, SB, fams,
+              need_h ? h.bond_off[k + 1] - hb0 : 0, need_h ? h.chg_ok[k] : 0, SA, SB, fams, opts,
               O + (ssize_t)k * N_ALL_COLS);
     }
   }
@@ -1192,6 +1276,7 @@ PYBIND11_MODULE(_core, mod) {
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"), py::arg("stereo_a"),
           py::arg("stereo_b"), py::arg("families") = py::none(),
+          py::arg("optional") = py::none(),
           "Every natively computed column for a batch of ToBinary() blobs, as "
           "(n_mol, N_ALL_COLS). Pickle-only: RingCount needs the SSSR ring lists, which are in "
           "the pickle and not in the extract() boundary arrays. `stereo_a` / `stereo_b` are "
@@ -1199,7 +1284,12 @@ PYBIND11_MODULE(_core, mod) {
           "carry -- see src/hume/_extract.py's _potential_stereo(); pass length-0 arrays to say "
           "it was not run, and `SPS` is then NaN. `families` restricts which families are "
           "computed -- for cpp/bench_e2e.py's per-family breakdown, NOT for production use; the "
-          "columns of a family left out are zero, not missing.");
+          "columns of a family left out are zero, not missing. `optional` is the opposite and IS "
+          "for production: the two most expensive columns of the 864 -- 'qed' at 69.3 us/mol and "
+          "'AvgIpc' at 64.6, against 629.9 for all of them -- can be declined per column. None "
+          "means the default set ('AvgIpc' on, 'qed' off); () means neither; ('qed', 'AvgIpc') "
+          "means the full suite. A declined column is NaN in its usual position and no offset, "
+          "name or column count changes.");
   mod.def("all_column_names_tail", &all_column_names_tail,
           "Column names for everything after the first 182; src/hume/_columns.py names those.");
 }

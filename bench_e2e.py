@@ -265,8 +265,15 @@ def arm_hume(n_mols: int, n_reps: int) -> dict:
     def _all(sel=None):
         # `families` is passed BY KEYWORD: the potential-stereo pair sits between `h_blobs` and
         # it in the signature, and a positional `sel` would silently land in `stereo_a`.
+        #
+        # `optional` IS PASSED EXPLICITLY AND NAMES BOTH COLUMNS, which is the opposite of what a
+        # user should do and exactly right here. The library default declines `qed` (69.3 us/mol
+        # for one column); this file's whole claim is a LIKE-FOR-LIKE ratio against an arm that
+        # computes all 864 names, so it must pay for all 864. Taking the default here would cut
+        # 69 us off HUME's total and quietly compare 863 columns against 864 -- a better ratio
+        # obtained by computing less, which is the one way this benchmark must not be wrong.
         return _core.all_from_pickles(pk.blobs, *rings, pk.h_blobs, pk.stereo_a, pk.stereo_b,
-                                      families=sel)
+                                      families=sel, optional=("qed", "AvgIpc"))
 
     res["cpp_all_columns"] = _timed(lambda _b: _all(), lambda: None)
     res["cpp_all_columns"]["columns"] = len(cols)
