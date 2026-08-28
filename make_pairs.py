@@ -139,12 +139,29 @@ def n_methylation(m):
 
 
 def isotope_13c(m):
+    """[12C] against [13C] -- BOTH members carry an explicit isotope, and that is the point.
+
+    This used to leave A as the plain molecule and give B a single [13C], so the two SMILES
+    differed by a whole bracket atom appearing out of nowhere. The `notation` control scored
+    1.000 on this panel: a character counter separates "contains [13C]" from "contains no
+    bracket" perfectly, with no chemistry at all, and the CLM arms' scores here were therefore
+    unreadable -- true that they resolve the edit, but they need only to see the token.
+
+    Writing A as [12C] leaves the difference at ONE CHARACTER, 2 against 3, inside a string that
+    is already full of digits from ring closures. The structures still differ exactly as before:
+    carbon-12 against carbon-13 at the same position.
+
+    Chemically A is unchanged -- 12C is carbon's dominant isotope -- so this is a notation change
+    on the A side and nothing more.
+    """
     cs = [a.GetIdx() for a in m.GetAtoms() if a.GetAtomicNum() == 6 and a.GetIsotope() == 0]
     if not cs:
         return None
-    e = Chem.RWMol(m)
-    e.GetAtomWithIdx(random.choice(cs)).SetIsotope(13)
-    return e.GetMol()
+    i = random.choice(cs)
+    a, b = Chem.Mol(m), Chem.Mol(m)
+    a.GetAtomWithIdx(i).SetIsotope(12)
+    b.GetAtomWithIdx(i).SetIsotope(13)
+    return a, b
 
 
 def _rings(m, size, arom):
@@ -248,11 +265,41 @@ def protonate(m):
     # an aniline nitrogen, neither of which is basic, so the panel would be measuring a charge
     # state no molecule adopts. Caught by eye in the regenerated pair dump -- the first
     # scaffold_hop molecule came back as C(=O)[NH+]2CCN..., a protonated piperazine amide.
-    for a, b in (("[NX3;H0;!$(N=*);!$(N-[!#6]);!$(N-C=O);!$(N-a);!+]", "[NH+]"),
-                 ("[CX3](=O)[OX2H1]", "C(=O)[O-]")):
-        r = _sub(m, a, b)
-        if r is not None:
-            return r
+    # BOTH MEMBERS ARE WRITTEN IN BRACKETS, for the same reason as isotope_13c above: the old
+    # version left A as a bare `N` or `O` and gave B a `[NH+]` or `[O-]`, so the panel could be
+    # solved by noticing that one string contains a bracket and the other does not. `notation`
+    # scored 1.000. Forcing explicit-H notation on the A-side atom too leaves `[N]` against
+    # `[NH+]` and `[OH]` against `[O-]`.
+    #
+    # `SetNoImplicit` + `SetNumExplicitHs` alone does NOT produce brackets -- RDKit drops them
+    # again whenever the atom is in its default valence state, which was measured, not assumed.
+    # What does force them is a declared isotope, so both members get the atom's DOMINANT isotope
+    # pinned: 14N is 99.6% of natural nitrogen and 16O is 99.8% of natural oxygen, so this is a
+    # notation change and not a chemical one, and it is identical on both sides so it carries no
+    # signal of its own. Same device as isotope_13c, one panel up.
+    #
+    # THIS DOES NOT MAKE THE PANEL UNFREE, and it cannot: a formal charge IS a character in
+    # SMILES, so `+` and `-` remain visible to a character counter however the atom is written.
+    # What it removes is the much larger confound of a bracket atom appearing in one member and
+    # not the other. The residual floor is reported by the `notation` arm rather than argued away.
+    def _both(idx, iso, states):
+        a, b = Chem.Mol(m), Chem.Mol(m)
+        for mol, nh, chg in zip((a, b), *[[x[k] for x in states] for k in (0, 1)]):
+            at = mol.GetAtomWithIdx(idx)
+            at.SetIsotope(iso)          # pins the DOMINANT isotope: forces brackets, no chemistry
+            at.SetNumExplicitHs(nh)
+            at.SetFormalCharge(chg)
+            at.SetNoImplicit(True)
+        return a, b
+
+    amine = Chem.MolFromSmarts("[NX3;H0;!$(N=*);!$(N-[!#6]);!$(N-C=O);!$(N-a);!+]")
+    hit = m.GetSubstructMatches(amine)
+    if hit:
+        return _both(hit[0][0], 14, [(0, 0), (1, 1)])       # [14N]  vs  [14NH+]
+    acid = Chem.MolFromSmarts("[CX3](=O)[OX2H1]")
+    hit = m.GetSubstructMatches(acid)
+    if hit:
+        return _both(hit[0][2], 16, [(1, 0), (0, -1)])      # [16OH] vs  [16O-]
     return None
 
 
@@ -423,13 +470,20 @@ def main() -> None:
                 e = fn(m)
                 if e is None:
                     continue
-                Chem.SanitizeMol(e)
-                a, b = Chem.MolToSmiles(m), Chem.MolToSmiles(e)
+                # An edit may return a single product -- A is then the untouched input -- or a
+                # (A, B) pair when it needs to control BOTH sides. `isotope_13c` and `protonate`
+                # need that: writing A in the same bracket notation as B is what stops the panel
+                # from being solvable by character counting alone.
+                ma, mb = e if isinstance(e, tuple) else (m, e)
+                Chem.SanitizeMol(mb)
+                if ma is not m:
+                    Chem.SanitizeMol(ma)
+                a, b = Chem.MolToSmiles(ma), Chem.MolToSmiles(mb)
             except Exception:
                 continue
             if a == b:                     # the edit was a no-op on this molecule
                 continue
-            if not _intact(m, e):
+            if not _intact(ma, mb):
                 shattered[name] += 1
                 continue
             # The PRODUCT can collide with the background even though the input cannot: the

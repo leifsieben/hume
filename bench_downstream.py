@@ -82,6 +82,7 @@ def f_rdkit_desc(smis):
 
 
 MORDRED_PY = os.environ.get("MORDRED_PY", "")
+MINIMOL_PY = os.environ.get("MINIMOL_PY", "")
 
 
 def f_mordred_desc(smis):
@@ -145,9 +146,53 @@ def _cat(*fs):
     return lambda smis: np.hstack([f(smis) for f in fs])
 
 
+def f_minimol(smis):
+    """MiniMol, in a SEPARATE INTERPRETER, for the same reason Mordred needs one.
+
+    minimol depends on graphium, whose pins move torch underneath everything else in the
+    environment. Installed alongside transformers it left `is_torch_available()` False, so
+    `AutoModel.from_pretrained` on the ChemBERTa weights died with
+    `ModuleNotFoundError: Could not import module 'RobertaModel'` -- an error that names Roberta
+    and says nothing about minimol, on a box where minimol was the only thing that had changed.
+    That killed a whole four-arm downstream run at preflight.
+
+    The local setup already had this right (there is a `.venv-minimol` beside `.venv-mordred`
+    for exactly this reason) and the cloud image did not, which is the kind of drift that only
+    shows up on the box.
+    """
+    if not MINIMOL_PY:
+        raise RuntimeError(
+            "MINIMOL_PY is not set. minimol pulls graphium, which moves torch and breaks "
+            "transformers in the same environment; point MINIMOL_PY at a python that has "
+            "minimol installed. Refusing to return NaN, which would be indistinguishable from "
+            "a real missing value.")
+    import subprocess, tempfile
+    with tempfile.TemporaryDirectory() as td:
+        smi_f, out_f = f"{td}/in.txt", f"{td}/out.npy"
+        open(smi_f, "w").write("\n".join(smis))
+        code = (
+            "import sys, numpy as np, torch\n"
+            "from minimol import Minimol\n"
+            "torch.set_grad_enabled(False)\n"
+            "smis = open(sys.argv[1]).read().split('\\n')\n"
+            "m = Minimol()\n"
+            "out, B = [], 256\n"
+            "for i in range(0, len(smis), B):\n"
+            "    out.extend(np.asarray(v, np.float32) for v in m(smis[i:i+B]))\n"
+            "np.save(sys.argv[2], np.vstack(out).astype(np.float32))\n")
+        r = subprocess.run([MINIMOL_PY, "-c", code, smi_f, out_f], capture_output=True)
+        if r.returncode != 0:
+            raise RuntimeError(f"minimol subprocess failed: {r.stderr.decode()[-400:]}")
+        return np.load(out_f)
+
+
 def f_learned(kind):
-    """ChemBERTa-2 / MiniMol / CheMeleon, whichever is asked for. Imported lazily: none of the
-    three shares a dependency set with the others and a missing one must not kill the run."""
+    """ChemBERTa-2 / CheMeleon / MolFormer, whichever is asked for. Imported lazily: none of
+    them shares a dependency set with the others and a missing one must not kill the run.
+
+    MiniMol is NOT routed through here -- see f_minimol.
+    """
+    assert kind != "minimol", "minimol needs its own interpreter; use f_minimol"
     def go(smis):
         import embed_pairs as EP
         return EP.ARMS[kind](smis)
@@ -204,7 +249,7 @@ ARMS = {
     "hume":            f_hume,
     "chemberta_mtr":   f_learned("chemberta_mtr"),
     "chemberta_mlm":   f_learned("chemberta_mlm"),
-    "minimol":         f_learned("minimol"),
+    "minimol":         f_minimol,
     "chemeleon":       f_learned("chemeleon"),
     "molformer":       f_learned("molformer"),
 }
@@ -227,7 +272,7 @@ FIGB_ADDS = ["chemeleon", "minimol", "chemberta_mtr", "molformer"]
 for _b, (_fn, _blk) in FIGB_BASES.items():
     for _a in FIGB_ADDS:
         _k = f"{_b}__{_a}"
-        ARMS[_k] = _cat(_fn, f_learned(_a))
+        ARMS[_k] = _cat(_fn, f_minimol if _a == "minimol" else f_learned(_a))
         # The added block is dense, so the base's own bit layout carries over unchanged: a
         # "head" block stays at the head and an all-bits base stops being all-bits.
         FP_BLOCK[_k] = ("head", 2048) if _blk in ("all", ("head", 2048)) else None

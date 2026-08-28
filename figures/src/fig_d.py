@@ -35,6 +35,7 @@ An arm that fails is listed in the caption as unextrapolated rather than silentl
 """
 from __future__ import annotations
 
+import csv
 import json
 import sys
 from pathlib import Path
@@ -44,8 +45,9 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from style import (BUILDDIR, FS, STYLE, LEGEND_BOX, check_font, install,  # noqa: E402
-                   mark_empty, save, title)
+from style import (BUILDDIR, FS, ROOT, STYLE, check_font, install,  # noqa: E402
+                   mark_empty, save)
+from matplotlib.patches import Patch  # noqa: E402
 import arms as A  # noqa: E402
 
 TARGET = 1e9
@@ -67,9 +69,19 @@ LABEL = {
     "chemeleon": "CheMeleon D-MPNN (2048x6)",
     "mordred":   "RDKit + Mordred",
 }
-ARMKEY = {"ecfp": "ecfp", "hume": "hume_core", "chemprop": "chemprop",
+# The palette key in arms.py, so this plate cannot drift from A, B and C. `mordred` here is
+# ECFP + RDKit-180 + mordred-685, which is the `ecfp_all_desc` arm elsewhere in the paper -- it
+# used to point at `ecfp_mordred_desc`, a DIFFERENT arm, and the same measurement was therefore
+# drawn in two colours across two figures.
+ARMKEY = {"ecfp": "ecfp", "hume": "hume", "chemprop": "chemprop",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
-          "mordred": "ecfp_mordred_desc"}
+          "mordred": "ecfp_all_desc"}
+
+# Bar order, matching arms.py's ARM_ORDER: cheapest classical first, then HUME, then graph, then
+# string. Every figure in the set puts the same arms in the same order; two orders read as two
+# different comparisons.
+ORDER = ["ecfp", "mordred", "hume", "chemeleon", "chemprop", "chemberta"]
+HATCH = "///"
 
 
 SHORT = {"ecfp": "ECFP", "hume": "HUME", "chemprop": "chemprop",
@@ -147,160 +159,156 @@ def by(runs, **kw):
 
 
 def is_flat(pts) -> bool:
-    """Does us/mol stay put across the measured decades? Panels B and C depend on this."""
+    """Does us/mol stay put across the measured decades?
+
+    EVERY BAR ON THIS PLATE IS AN EXTRAPOLATION from 1e6 to 1e9, and it is only licensed if cost
+    per molecule does not move with N. The check that used to be panel A is now a GATE rather
+    than a panel: an arm that fails it is dropped and named on the console, because a figure that
+    silently draws an unlicensed extrapolation is worse than one that draws fewer arms.
+    """
     if len(pts) < 2:
         return False
     v = [p["us_per_mol"] for p in sorted(pts, key=lambda p: p["n"])]
     return (max(v) - min(v)) / min(v) <= FLAT_TOL
 
 
-# ------------------------------------------------------------------------------------------
-def panel_a(ax, runs):
-    """us/mol vs N. Flat is the result; a bend is a finding and is drawn, not hidden."""
-    budgets = sorted({r["budget"] for r in runs})
-    any_data = False
-    for arm in LABEL:
-        for bud in budgets:
-            pts = sorted(by(runs, arm=arm, budget=bud), key=lambda p: p["n"])
-            if not pts:
-                continue
-            any_data = True
-            ls = "-" if bud == "cpu" else "--"
-            ax.plot([p["n"] for p in pts], [p["us_per_mol"] for p in pts],
-                    ls, marker="o", ms=3.5, lw=1.4, color=colour(arm),
-                    label=LABEL[arm] if bud == budgets[0] else None)
-    if not any_data:
-        return mark_empty(ax, "no scaling points yet -- run bench_scale_e2e.py on the instances")
-    ax.set_xscale("log")
-    ax.set_yscale("log")
-    ax.set_xlabel("molecules featurised (N)", fontsize=FS["label"])
-    ax.set_ylabel("cost per molecule (us), log", fontsize=FS["label"])
-    title(ax, "A  Is the extrapolation legitimate?", pad=22)
-
-
 def _hours_for_target(pt) -> float:
     return pt["us_per_mol"] * 1e-6 * TARGET / SECONDS_PER_HOUR
 
 
-def panel_b(ax, runs, skipped):
-    """Wall-clock hours for 1e9, grouped by budget, neural arms stacked prep vs forward."""
-    budgets = sorted({r["budget"] for r in runs})
-    groups, labels, drawn = [], [], False
-    for bud in budgets:
-        for arm in LABEL:
-            pts = sorted(by(runs, arm=arm, budget=bud), key=lambda p: p["n"])
-            if not pts:
-                continue
-            if not is_flat(pts):
-                skipped.append(f"{LABEL[arm]} on {pts[-1]['instance']}")
-                continue
-            groups.append((bud, arm, pts[-1]))
-            labels.append(SHORT[arm])
-    if not groups:
-        return mark_empty(ax, "nothing passed the flatness gate in panel A")
-    for i, (_bud, arm, pt) in enumerate(groups):
-        h = _hours_for_target(pt)
-        c = colour(arm)
-        ax.bar(i, h, color=c, width=0.72)
-        # NOT A STACKED BAR, AND DELIBERATELY SO. The y-axis is logarithmic because the arms span
-        # three decades, and on a log axis the SEGMENTS of a stack are not proportional to their
-        # values -- chemprop's forward pass is 3.8% of its total and drew as an invisible sliver
-        # while CheMeleon's 43% drew as a third of the bar, so a reader could not recover either
-        # ratio and would misread both. The split is therefore shown as a RULE at the
-        # preparation time (a position on the axis, which IS meaningful here) plus the share in
-        # words, which is readable and cannot be scaled wrong.
-        if pt.get("prep_s") and pt.get("fwd_s"):
-            hp = h * pt["prep_s"] / pt["wall_s"]
-            ax.plot([i - 0.36, i + 0.36], [hp, hp], color="white", lw=1.6, zorder=4)
-            ax.plot([i - 0.36, i + 0.36], [hp, hp], color=STYLE["ink"], lw=0.9, zorder=5)
-            ax.text(i, hp * 0.80, f"{pt['prep_s'] / pt['wall_s']:.0%}\nprep", ha="center",
-                    va="top", fontsize=FS["annot"] - 3.0, color="white", zorder=6)
-        ax.text(i, h * 1.08, f"{h:,.0f}h", ha="center", fontsize=FS["annot"])
-        drawn = True
-    if drawn:
-        ax.set_yscale("log")
-        ax.set_ylim(top=ax.get_ylim()[1] * 3.0)
-        ax.set_xticks(range(len(labels)))
-        # VERTICAL, NOT 45 DEGREES. At nine bars in a third of the text block the rotated
-        # labels overlapped -- "ChemBERTa-2" ran into "CheMeleon" -- and the roster is still
-        # growing, so an angle that fits today collides on the next arm.
-        ax.set_xticklabels(labels, fontsize=FS["annot"], rotation=90, ha="right",
-                           va="center", rotation_mode="anchor")
-        ax.set_ylabel("wall clock for 1e9 molecules (hours)", fontsize=FS["label"])
-        _group_header(ax, groups)
-        title(ax, "B  How long does it take?", pad=22)
+def best(runs, arm, budget):
+    """The arm's own best configuration on that hardware, at the largest N measured."""
+    pts = sorted(by(runs, arm=arm, budget=budget), key=lambda p: p["n"])
+    if not pts or not is_flat(pts):
+        return None
+    return pts[-1]
 
 
-def panel_c(ax, runs):
-    """USD for 1e9 at on-demand price, with the spot price as a lower band."""
-    rows = []
-    for bud in sorted({r["budget"] for r in runs}):
-        for arm in LABEL:
-            pts = sorted(by(runs, arm=arm, budget=bud), key=lambda p: p["n"])
-            if pts and is_flat(pts):
-                rows.append((arm, pts[-1]))
-    if not rows:
-        return mark_empty(ax, "no extrapolable arms to price")
-    for i, (arm, pt) in enumerate(rows):
-        h = _hours_for_target(pt)
-        od, sp = h * pt["usd_per_hour_ondemand"], h * (pt.get("usd_per_hour_spot") or 0.0)
-        ax.bar(i, od, color=colour(arm), width=0.72)
-        if sp:
-            ax.plot([i - 0.36, i + 0.36], [sp, sp], color=STYLE["ink"], lw=1.1)
-            ax.plot([i, i], [sp, od], color=STYLE["ink"], lw=0.7, alpha=0.5)
-        ax.text(i, od * 1.08, f"${od:,.0f}", ha="center", fontsize=FS["annot"])
+def cells(runs, budget):
+    """-> [(arm, point, copied_from_cpu)] in the paper's arm order.
+
+    ARMS WITH NO GPU IMPLEMENTATION CARRY THEIR CPU NUMBER INTO THE GPU PANELS (Leif: "for the
+    CPU only ones just copy the results"). ECFP, the descriptor block and HUME have no forward
+    pass to put on a device -- on a GPU box they run on that box's CPU, which is exactly what
+    the copied number represents. They are hatched and the legend says so, because a reader who
+    took them for measured GPU throughput would conclude the GPU does nothing for them, when in
+    fact there is nothing there to accelerate.
+    """
+    out = []
+    for arm in ORDER:
+        pt = best(runs, arm, budget)
+        copied = False
+        if pt is None and budget == "gpu":
+            pt = best(runs, arm, "cpu")
+            copied = pt is not None
+        if pt is not None:
+            out.append((arm, pt, copied))
+    return out
+
+
+def _bars(ax, rows, values, fmt):
+    x = np.arange(len(rows))
+    v = np.array(values, float)
+    ax.bar(x, v, width=0.72, color=[colour(a) for a, _p, _c in rows],
+           edgecolor=STYLE["ink"], linewidth=0.45, zorder=3,
+           hatch=[HATCH if c else None for _a, _p, c in rows])
     ax.set_yscale("log")
-    ax.set_ylim(top=ax.get_ylim()[1] * 3.0)
-    ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([SHORT[a] for a, _p in rows], fontsize=FS["annot"],
-                       rotation=90, ha="right", va="center", rotation_mode="anchor")
-    ax.set_ylabel("USD per 1e9 molecules", fontsize=FS["label"])
-    _group_header(ax, [(p["budget"], a, p) for a, p in rows])
-    title(ax, "C  What does it cost?", pad=22)
+    ax.set_ylim(top=ax.get_ylim()[1] * 3.2)
+    for xi, val in zip(x, v):
+        ax.text(xi, val * 1.14, fmt(val), ha="center", fontsize=FS["annot"], zorder=5)
+    ax.set_xticks(x)
+    # 45 degrees, not 90. Six short names per frame do not collide at 45, and vertical labels
+    # were reserving a full inch of an A4-width plate that the bars should be using.
+    ax.set_xticklabels([SHORT[a] for a, _p, _c in rows], fontsize=FS["tick"],
+                       rotation=45, ha="right", rotation_mode="anchor")
+    ax.grid(axis="y", ls=":", lw=0.6, color=STYLE["grid"])
+    ax.set_axisbelow(True)
+    for sp in ("top", "right"):
+        ax.spines[sp].set_visible(False)
+
+
+def _hours(v):
+    return f"{v:,.0f}h" if v >= 10 else f"{v:.1f}h"
+
+
+def _usd(v):
+    return f"${v:,.0f}" if v >= 10 else f"${v:.1f}"
 
 
 def main(paths):
-    install()
     check_font()
+    install()
     runs = load(paths) if paths else []
     check_known(runs)
-    # STYLE["col2"] is the page text block; every other figure in the set uses it, and
-    # save() warns loudly if the rendered PDF drifts more than 5% from it.
-    fig, axes = plt.subplots(1, 3, figsize=(STYLE["col2"], 3.9))
-    skipped: list[str] = []
-    panel_a(axes[0], runs)
-    panel_b(axes[1], runs, skipped)
-    panel_c(axes[2], runs)
-    h, l = axes[0].get_legend_handles_labels()
-    if h:
-        # THE LEGEND HAS TO CLEAR THE TICK LABELS, which are vertical and up to nine characters
-        # long. At -0.04 its opaque box was drawn straight over them and ate the first letter of
-        # the longest ones -- "ChemBERTa" rendered as "hemBERTa", which looks like a typo in the
-        # label rather than a layout collision, so it is the kind of defect that ships.
-        fig.legend(h, l, loc="lower center", ncol=3,
-                   fontsize=FS["annot"], bbox_to_anchor=(0.5, -0.135), **LEGEND_BOX)
-    if skipped:
-        fig.text(0.5, -0.20, "not extrapolated (cost per molecule not flat in N): "
-                 + "; ".join(skipped), ha="center", fontsize=FS["annot"])
-    fig.text(0.5, -0.152,
-             "A: horizontal = cost per molecule independent of N.   C: bar = on-demand, "
-             "tick = spot.\nB: rule inside a bar marks time spent in RDKit input preparation; "
-             "the remainder is the forward pass.",
-             ha="center", va="top", fontsize=FS["annot"])
-    if runs:
-        m = runs[0]
-        fig.text(0.5, -0.242,
-                 f"prices: AWS EC2 on-demand, {m['region']}, pulled {m['priced_on']}",
-                 ha="center", fontsize=FS["annot"])
+    if not runs:
+        raise SystemExit("fig_d: no measurements in results/scale/. Run bench_aws.py on the "
+                         "instances and collect with collect_scale.py.")
+    for bud in ("cpu", "gpu"):
+        dropped = [a for a in ORDER if by(runs, arm=a, budget=bud) and best(runs, a, bud) is None]
+        if dropped:
+            print(f"  not flat within {FLAT_TOL:.0%} on {bud}, so not extrapolated: {dropped}")
+
+    # FOUR FRAMES, ONE ROW, sized to the A4 text block: time then cost, CPU then GPU (Leif).
+    # The plate is WIDE AND SHORT on purpose -- it is the last figure in the set and the page
+    # budget is horizontal, not vertical.
+    fig, axes = plt.subplots(1, 4, figsize=(STYLE["col2"], 2.75))
+    # THE CPU AND GPU FRAMES OF EACH PAIR SHARE ONE Y-AXIS. The whole question the pair asks is
+    # "does the hardware help?", and two independently scaled log axes answer it wrong -- 803h
+    # and 291h drew at nearly the same height. Sharing also frees the width that a second set of
+    # tick labels and a second axis title were taking, which is what pushed the plate 6% past the
+    # A4 text block.
+    for a1, a2 in ((axes[0], axes[1]), (axes[2], axes[3])):
+        a2.sharey(a1)
+    spec = [("cpu", "hours", "a  Time, CPU"), ("gpu", "hours", "b  Time, GPU"),
+            ("cpu", "usd", "c  Cost, CPU"), ("gpu", "usd", "d  Cost, GPU")]
+    for i, (ax, (bud, kind, ttl)) in enumerate(zip(axes, spec)):
+        rows = cells(runs, bud)
+        if not rows:
+            mark_empty(ax, f"no {bud} measurements")
+            continue
+        hrs = [_hours_for_target(p) for _a, p, _c in rows]
+        vals = (hrs if kind == "hours" else
+                [h * p["usd_per_hour_ondemand"] for h, (_a, p, _c) in zip(hrs, rows)])
+        _bars(ax, rows, vals, _hours if kind == "hours" else _usd)
+        if i % 2 == 0:
+            ax.set_ylabel(("hours" if kind == "hours" else "USD") + " per 1e9 molecules",
+                          fontsize=FS["label"])
+        else:
+            ax.tick_params(axis="y", labelleft=False)
+        ax.set_title(ttl, fontsize=FS["title"], fontweight="bold", loc="left", pad=4)
+    for a1, a2 in ((axes[0], axes[1]), (axes[2], axes[3])):
+        top = max(a1.get_ylim()[1], a2.get_ylim()[1])
+        a1.set_ylim(top=top)
+
+    handles = [Patch(facecolor=colour(a), edgecolor=STYLE["ink"], lw=0.6, label=LABEL[a])
+               for a in ORDER if any(by(runs, arm=a))]
+    handles.append(Patch(facecolor="white", edgecolor=STYLE["ink"], lw=0.6, hatch=HATCH,
+                         label="no GPU path: CPU measurement"))
+    # ncol=3: at four columns the legend row was WIDER THAN THE PANELS and savefig("tight")
+    # grew the canvas to it, so the plate rendered 6% past the A4 text block and LaTeX would
+    # scale every font on it down to fit.
+    fig.legend(handles=handles, loc="lower center", ncol=3, frameon=False,
+               fontsize=FS["legend"], bbox_to_anchor=(0.5, -0.16), handletextpad=0.6,
+               columnspacing=1.4, labelspacing=0.35)
     fig.tight_layout()
     save(fig, "fig_d")
     BUILDDIR.mkdir(parents=True, exist_ok=True)
-    if runs:
-        (BUILDDIR / "fig_d_points.json").write_text(json.dumps(runs, indent=1))
+    (BUILDDIR / "fig_d_points.json").write_text(json.dumps(runs, indent=1))
+    with open(BUILDDIR / "fig_d.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["arm", "budget", "instance", "n", "us_per_mol", "hours_per_1e9",
+                    "usd_per_1e9_ondemand", "usd_per_hour", "copied_from_cpu", "priced_on"])
+        for bud in ("cpu", "gpu"):
+            for a, p, c in cells(runs, bud):
+                h = _hours_for_target(p)
+                w.writerow([a, bud, p["instance"], p["n"], f"{p['us_per_mol']:.2f}", f"{h:.2f}",
+                            f"{h * p['usd_per_hour_ondemand']:.2f}",
+                            p["usd_per_hour_ondemand"], int(c), p["priced_on"]])
+    print(f"  wrote  figures/build/fig_d.csv")
 
 
 if __name__ == "__main__":
     args = sys.argv[1:]
     if not args:
-        args = sorted(str(p) for p in Path("results/scale").glob("*.json"))
+        args = sorted(str(p) for p in (ROOT / "results" / "scale").glob("*.json"))
     main(args)
