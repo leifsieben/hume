@@ -56,9 +56,17 @@ Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), R
 `_GasteigerCharge + _GasteigerHCharge` computed on that graph. The tenth weight `Z` closed the
 last 52 columns; see the 2026-08-28 handoff at the bottom.
 
-**2. `infocontent` is now the pipeline.** 399.9 ± 2.52 µs/mol for 42 emitted columns, 33 of which
-are in the 865 — 63% of all compute, 2× the entire original 182-column block, and ~6× everything
-else wired put together. It also still has the open `Ipc` bug.
+**2. ~~`infocontent` is now the pipeline~~ — FIXED. 280.8 → 62.4 µs/mol.** Two independent
+causes, and the larger one was invisible until the profiler was fixed (it had been wall-clock,
+reporting the same phase at 74 µs and 601 µs on consecutive runs):
+  * **68% of the cost was the `Ipc` block, whose three columns are not wired.** `bindings.cpp`
+    called `compute()` for all 45 and copied only 42, so every molecule paid an O(n³)
+    exact-integer Faddeev recurrence and the result went on the floor. One line: `computeIC()`.
+  * The equivalence codes are now a **128-bit packed injection** (`PKey`), not a hash — the
+    packed value's numeric order IS the byte key's memcmp order, so class ordering is preserved
+    bit-for-bit and there are no collisions to bound. 2.20× on top of the gating. One depth-5
+    DFS now serves all six orders: 4,480 → 2,007 tree nodes per molecule.
+It still has the open `Ipc` bug, which is untouched and out of scope of that work.
 
 ## In flight
 
@@ -330,7 +338,7 @@ column is `tval`, SMARTS `v`.
   `infocontent`. Nothing has been optimised; `matchCount()` still allocates a vector of match
   vectors per pattern per molecule (74 patterns), which is the obvious first lever.
 
-**3. `infocontent` IS THE PIPELINE: 399.9 ± 2.52 µs/mol for 42 columns.** 63% of all compute,
+**3. ~~`infocontent` IS THE PIPELINE~~ — FIXED, 280.8 → 62.4 µs/mol. Was 63% of all compute,
 2× the entire 182-column block, ~6× everything else wired combined, for 33 columns of the 865.
 Profile per order before optimising. Its `Ipc`/`AvgIpc`/`Log2Ipc` are deliberately NOT wired —
 open bug, see the header.
@@ -393,7 +401,7 @@ whole table on a quiet machine rather than patching one row of it.
 
 Per family, paired and differenced *within* each repetition:
 
-    infocontent   291.3 ± 13.23    42 cols     <- still the pipeline
+    infocontent   291.3 ± 13.23    42 cols     <- SUPERSEDED: now 62.4 (see the Ipc-gating note)
     blocks_182    201.6 ±  4.97   182 cols
     autocorr       22.5 ±  5.33   486 cols     <- cheapest per column by a wide margin
     topocharge     14.8 ± 11.14    21 cols
