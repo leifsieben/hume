@@ -1032,3 +1032,66 @@ constant predictor is not a capacity gap, it is the input not carrying the infor
 
 So: **do not predict these.** The lever that works is the switch above, which costs nothing and
 has no failure mode.
+
+---
+
+# HANDOFF — 2026-08-28, parallel scaling across cores
+
+`bench_scaling.py`. 24,000 molecules of `cpp/hard.smi`, HUME defaults (`qed` off), processes not
+threads, arms rotated per repetition and speedup taken against the W = 1 arm OF THE SAME
+repetition. Wall clock, so contention counts against us rather than being hidden by
+`process_time`.
+
+|  W | µs/mol | mol/s | speedup | efficiency | imbalance |
+|---|---|---|---|---|---|
+|  1 | 932.9 ± 5.6 | 1,072 | 1.00× | 100% | 1.00× |
+|  2 | 471.6 ± 3.1 | 2,120 | 1.98× | 99% | 1.01× |
+|  3 | 318.4 ± 1.6 | 3,141 | 2.93× | 98% | 1.01× |
+|  4 | 247.1 ± 1.3 | 4,048 | 3.78× | 94% | 1.03× |
+|  6 | 172.8 ± 7.0 | 5,787 | 5.40× | 90% | 1.02× |
+|  8 | 148.1 ± 7.0 | 6,752 | 6.31× | 79% | 1.05× |
+| 10 | 134.6 ± 4.6 | 7,428 | 6.93× | 69% | 1.06× |
+| 12 | 133.3 ± 12.0 | 7,504 | 7.04× | 59% | 1.06× |
+
+**THE KNEE IS AT 8 AND THAT IS THE HARDWARE, NOT THE CODE.** This is an M4 Pro: 8 performance
+cores and 4 efficiency cores. Scaling is 94% efficient to 4 and 79% at 8; the four workers added
+between 8 and 12 buy 0.73× of speedup between them, so an E-core is worth about **0.18 of a
+P-core** on this workload. Do not read the 59% efficiency at W = 12 as a parallelism defect —
+the correct denominator is 8 P-cores plus 4 much slower ones, not 12 equal cores.
+
+**Load imbalance is not the limiter and this was checked rather than assumed.** Max worker time
+over mean worker time stays at 1.00–1.06× across every arm. That is what the round-robin shard
+assignment (`smis[i::w]`) is for: a contiguous split on a corpus whose cost distribution has
+median ~5 ms and max ~35 s can hand one worker twice the mean, and the wall clock then measures
+imbalance rather than scaling.
+
+**Two things this number is not.**
+* **The box was not quiet.** A foreign `scripts/audit_figure_consistency.py` held ~1 core for the
+  whole run and load1 ran 3.85 → 7.80. That inflates the W = 1 absolute (932.9 wall here against
+  the ~852 CPU-time figure implied by `bench_e2e.py` minus the measured `qed` saving) and it
+  penalises the HIGH-W arms specifically, since those are the ones already competing for cores.
+  **The speedups are paired within a repetition and survive it; the absolutes are pessimistic.**
+* **Returning the results is excluded.** Workers return a checksum, not their (n, 1266) matrix.
+  Pickling 243 MB back through a pipe would make this a benchmark of multiprocessing's IPC. A
+  caller that does that pays for it separately, and the fix is sharded output, not a different
+  pool.
+
+**A prediction of mine that was wrong, recorded because it was stated before it was measured.**
+I expected "70–100 µs/mol on 12 cores". It is **133.3**. The error was assuming 12 equal cores;
+the P/E split is the whole of the difference.
+
+## What it means against the neural baselines
+
+Measured the same day, same corpus (`fp32`, length-sorted batching for the transformers):
+
+| | mol/s | hardware |
+|---|---|---|
+| **HUME, 12 cores** | **7,504** | whole CPU |
+| GIN 5×300 forward, batch 256 | 12,431 | GPU (+ 159 µs/mol single-thread RDKit featurisation) |
+| ChemBERTa-2 MLM (3M), batch 256 sorted | 5,443 | GPU |
+| MolFormer (44M), batch 256 sorted | 271 | GPU |
+| RDKit + Mordred, 1 core | 31 | 1 core |
+
+So on the whole machine HUME computes all 864 descriptors **faster than a small chemical language
+model embeds on the GPU**, and 28× faster than MolFormer. Per billion molecules: **1.5
+machine-days.**
