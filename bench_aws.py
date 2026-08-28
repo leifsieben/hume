@@ -231,7 +231,13 @@ def _embed_chemeleon(shard, bs, dev="cpu", split=False):
         dset = cdata.MoleculeDataset(dps, _FEAT)
         batch = next(iter(cdata.build_dataloader(dset, batch_size=len(dps), shuffle=False)))
         t1 = time.perf_counter()
-        bmg = batch.bmg.to(dev)
+        # `BatchMolGraph.to()` MUTATES IN PLACE AND RETURNS None -- it is not torch's `.to()`.
+        # Writing `bmg = batch.bmg.to(dev)` binds None and the failure surfaces much later as
+        # "'NoneType' object has no attribute 'V'" from inside the message-passing forward,
+        # which reads like a malformed graph rather than a rebinding mistake. The chemeleon
+        # preflight missed it because it ran on CPU and never called `.to()` at all.
+        bmg = batch.bmg
+        bmg.to(dev)
         h = agg(mp_(bmg), bmg.batch)
         if dev == "cuda":
             torch.cuda.synchronize()

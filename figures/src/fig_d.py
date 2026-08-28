@@ -55,13 +55,43 @@ SECONDS_PER_HOUR = 3600.0
 # Display names and colours. `arms.py` owns the paper's palette; anything it does not know about
 # gets a neutral grey rather than a new colour invented here, so the plate cannot drift from the
 # other figures.
-LABEL = {"hume": "HUME (864 desc + ECFP)", "hume_naive": "HUME, non-streaming caller",
-         "gin": "GIN 5x300", "chemeleon": "CheMeleon (D-MPNN)",
-         "chemberta": "ChemBERTa-2 (3M)", "molformer": "MolFormer (44M)",
-         "mordred": "RDKit + Mordred"}
-ARMKEY = {"hume": "hume_core", "gin": "gnn", "chemeleon": "chemeleon",
-          "chemberta": "chemberta_mlm", "molformer": "molformer",
+# THE KEYS HERE ARE THE ARM NAMES bench_aws.py WRITES, and an arm missing from this dict is
+# silently invisible in every panel -- which is exactly what happened on the first render with
+# real data: `ecfp` produced three good points and drew nothing. Keep this in step with
+# bench_aws.py's ARMS, and note the ORDER is the plotting and bar order.
+LABEL = {
+    "ecfp":      "ECFP r3-2048 (the floor)",
+    "hume":      "HUME (864 desc + ECFP)",
+    "chemprop":  "chemprop D-MPNN (300x3)",
+    "chemberta": "ChemBERTa-2 (3M)",
+    "chemeleon": "CheMeleon D-MPNN (2048x6)",
+    "mordred":   "RDKit + Mordred",
+}
+ARMKEY = {"ecfp": "ecfp", "hume": "hume_core", "chemprop": "chemprop",
+          "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
           "mordred": "ecfp_mordred_desc"}
+
+
+SHORT = {"ecfp": "ECFP", "hume": "HUME", "chemprop": "chemprop",
+         "chemberta": "ChemBERTa-2", "chemeleon": "CheMeleon", "mordred": "Mordred"}
+BUDGET_LABEL = {"cpu": "16 vCPU, no GPU", "gpu": "1 GPU, 4 vCPU"}
+
+
+def _group_header(ax, groups):
+    """Name each hardware block once, above its bars, instead of on every tick."""
+    seen, start = None, 0
+    for i, g in enumerate(groups + [(None, None, None)]):
+        bud = g[0]
+        if bud != seen:
+            if seen is not None:
+                mid = (start + i - 1) / 2
+                inst = groups[start][2]["instance"]
+                ax.text(mid, 1.02, f"{inst}\n{BUDGET_LABEL.get(seen, seen)}",
+                        transform=ax.get_xaxis_transform(), ha="center", va="bottom",
+                        fontsize=FS["annot"], color=STYLE["mute"])
+                if i < len(groups):
+                    ax.axvline(i - 0.5, color=STYLE["faint"], lw=0.8, zorder=0)
+            seen, start = bud, i
 
 
 def colour(arm: str) -> str:
@@ -102,6 +132,16 @@ def load(paths):
     return runs
 
 
+def check_known(runs):
+    """Refuse to render if the data contains an arm this figure does not know how to draw."""
+    unknown = sorted({r["arm"] for r in runs} - set(LABEL))
+    if unknown:
+        raise SystemExit(
+            f"fig_d: the results contain arm(s) {unknown} that are not in LABEL, so they would "
+            f"be silently omitted from every panel. Add them to LABEL/ARMKEY (and pick a colour "
+            f"in arms.py) rather than letting the figure quietly under-report.")
+
+
 def by(runs, **kw):
     return [r for r in runs if all(r.get(k) == v for k, v in kw.items())]
 
@@ -132,11 +172,10 @@ def panel_a(ax, runs):
     if not any_data:
         return mark_empty(ax, "no scaling points yet -- run bench_scale_e2e.py on the instances")
     ax.set_xscale("log")
-    ax.set_xlabel("molecules featurised (N)", fontsize=FS["ax"])
-    ax.set_ylabel("cost per molecule (us)", fontsize=FS["ax"])
-    title(ax, "A  Is the extrapolation legitimate?")
-    ax.text(0.02, 0.96, f"flat within {FLAT_TOL:.0%} -> may be multiplied out to 1e9",
-            transform=ax.transAxes, va="top", fontsize=FS["annot"], color=STYLE["ink"])
+    ax.set_yscale("log")
+    ax.set_xlabel("molecules featurised (N)", fontsize=FS["label"])
+    ax.set_ylabel("cost per molecule (us), log", fontsize=FS["label"])
+    title(ax, "A  Is the extrapolation legitimate?", pad=22)
 
 
 def _hours_for_target(pt) -> float:
@@ -156,7 +195,7 @@ def panel_b(ax, runs, skipped):
                 skipped.append(f"{LABEL[arm]} on {pts[-1]['instance']}")
                 continue
             groups.append((bud, arm, pts[-1]))
-            labels.append(f"{LABEL[arm]}\n{pts[-1]['instance']}")
+            labels.append(SHORT[arm])
     if not groups:
         return mark_empty(ax, "nothing passed the flatness gate in panel A")
     for i, (_bud, arm, pt) in enumerate(groups):
@@ -173,12 +212,12 @@ def panel_b(ax, runs, skipped):
         drawn = True
     if drawn:
         ax.set_yscale("log")
+        ax.set_ylim(top=ax.get_ylim()[1] * 3.0)
         ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, fontsize=FS["annot"], rotation=30, ha="right")
-        ax.set_ylabel("wall clock for 1e9 molecules (hours)", fontsize=FS["ax"])
-        title(ax, "B  How long does it take?")
-        ax.text(0.02, 0.96, "solid = input preparation (RDKit)   hatched = forward pass",
-                transform=ax.transAxes, va="top", fontsize=FS["annot"])
+        ax.set_xticklabels(labels, fontsize=FS["annot"], rotation=45, ha="right")
+        ax.set_ylabel("wall clock for 1e9 molecules (hours)", fontsize=FS["label"])
+        _group_header(ax, groups)
+        title(ax, "B  How long does it take?", pad=22)
 
 
 def panel_c(ax, runs):
@@ -200,19 +239,19 @@ def panel_c(ax, runs):
             ax.plot([i, i], [sp, od], color=STYLE["ink"], lw=0.7, alpha=0.5)
         ax.text(i, od * 1.08, f"${od:,.0f}", ha="center", fontsize=FS["annot"])
     ax.set_yscale("log")
+    ax.set_ylim(top=ax.get_ylim()[1] * 3.0)
     ax.set_xticks(range(len(rows)))
-    ax.set_xticklabels([f"{LABEL[a]}\n{p['instance']}" for a, p in rows],
-                       fontsize=FS["annot"], rotation=30, ha="right")
-    ax.set_ylabel("USD per 1e9 molecules", fontsize=FS["ax"])
-    title(ax, "C  What does it cost?")
-    ax.text(0.02, 0.96, "bar = on-demand   tick = spot", transform=ax.transAxes,
-            va="top", fontsize=FS["annot"])
+    ax.set_xticklabels([SHORT[a] for a, _p in rows], fontsize=FS["annot"], rotation=45, ha="right")
+    ax.set_ylabel("USD per 1e9 molecules", fontsize=FS["label"])
+    _group_header(ax, [(p["budget"], a, p) for a, p in rows])
+    title(ax, "C  What does it cost?", pad=22)
 
 
 def main(paths):
     install()
     check_font()
     runs = load(paths) if paths else []
+    check_known(runs)
     # STYLE["col2"] is the page text block; every other figure in the set uses it, and
     # save() warns loudly if the rendered PDF drifts more than 5% from it.
     fig, axes = plt.subplots(1, 3, figsize=(STYLE["col2"], 3.9))
@@ -222,11 +261,16 @@ def main(paths):
     panel_c(axes[2], runs)
     h, l = axes[0].get_legend_handles_labels()
     if h:
-        fig.legend(h, l, loc="lower center", ncol=A.__dict__.get("_", None) or len(l),
+        fig.legend(h, l, loc="lower center", ncol=3,
                    fontsize=FS["annot"], bbox_to_anchor=(0.5, -0.04), **LEGEND_BOX)
     if skipped:
         fig.text(0.5, -0.10, "not extrapolated (cost per molecule not flat in N): "
                  + "; ".join(skipped), ha="center", fontsize=FS["annot"])
+    fig.text(0.5, -0.055,
+             "A: horizontal = cost per molecule independent of N.  "
+             "B: solid = input preparation (RDKit), hatched = forward pass.  "
+             "C: bar = on-demand, tick = spot.",
+             ha="center", fontsize=FS["annot"])
     if runs:
         m = runs[0]
         fig.text(0.5, -0.145,
