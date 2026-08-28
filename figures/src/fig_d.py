@@ -201,13 +201,20 @@ def panel_b(ax, runs, skipped):
     for i, (_bud, arm, pt) in enumerate(groups):
         h = _hours_for_target(pt)
         c = colour(arm)
+        ax.bar(i, h, color=c, width=0.72)
+        # NOT A STACKED BAR, AND DELIBERATELY SO. The y-axis is logarithmic because the arms span
+        # three decades, and on a log axis the SEGMENTS of a stack are not proportional to their
+        # values -- chemprop's forward pass is 3.8% of its total and drew as an invisible sliver
+        # while CheMeleon's 43% drew as a third of the bar, so a reader could not recover either
+        # ratio and would misread both. The split is therefore shown as a RULE at the
+        # preparation time (a position on the axis, which IS meaningful here) plus the share in
+        # words, which is readable and cannot be scaled wrong.
         if pt.get("prep_s") and pt.get("fwd_s"):
-            frac = pt["prep_s"] / pt["wall_s"]
-            ax.bar(i, h * frac, color=c, width=0.72, label=None)
-            ax.bar(i, h * (1 - frac), bottom=h * frac, color=c, width=0.72,
-                   alpha=0.42, hatch="//", edgecolor="white", linewidth=0.0)
-        else:
-            ax.bar(i, h, color=c, width=0.72)
+            hp = h * pt["prep_s"] / pt["wall_s"]
+            ax.plot([i - 0.36, i + 0.36], [hp, hp], color="white", lw=1.6, zorder=4)
+            ax.plot([i - 0.36, i + 0.36], [hp, hp], color=STYLE["ink"], lw=0.9, zorder=5)
+            ax.text(i, hp * 0.80, f"{pt['prep_s'] / pt['wall_s']:.0%}\nprep", ha="center",
+                    va="top", fontsize=FS["annot"] - 3.0, color="white", zorder=6)
         ax.text(i, h * 1.08, f"{h:,.0f}h", ha="center", fontsize=FS["annot"])
         drawn = True
     if drawn:
@@ -267,10 +274,10 @@ def main(paths):
         fig.text(0.5, -0.10, "not extrapolated (cost per molecule not flat in N): "
                  + "; ".join(skipped), ha="center", fontsize=FS["annot"])
     fig.text(0.5, -0.055,
-             "A: horizontal = cost per molecule independent of N.  "
-             "B: solid = input preparation (RDKit), hatched = forward pass.  "
-             "C: bar = on-demand, tick = spot.",
-             ha="center", fontsize=FS["annot"])
+             "A: horizontal = cost per molecule independent of N.   C: bar = on-demand, "
+             "tick = spot.\nB: rule inside a bar marks time spent in RDKit input preparation; "
+             "the remainder is the forward pass.",
+             ha="center", va="top", fontsize=FS["annot"])
     if runs:
         m = runs[0]
         fig.text(0.5, -0.145,
