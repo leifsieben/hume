@@ -107,6 +107,8 @@ def _init_mordred():
     """RDKit's surviving 180 + mordred's surviving 685. Restricted to the survivors on purpose:
     mordred's full 1,613 would flatter us."""
     _quiet()
+    import warnings
+    warnings.filterwarnings('ignore')
     global _CALC, _RDK
     sys.path.insert(0, os.getcwd())
     import blocks
@@ -126,22 +128,33 @@ def _init_mordred():
 
 
 def _run_mordred(job):
-    shard, _bs = job
+    """CHUNKED, because the un-chunked version was OOM-killed at N = 1e6.
+
+    Materialising the whole shard's RDKit molecules means 16 workers each holding 62,500 of them
+    at once on a 32 GiB box; the kernel killed a worker and the pool surfaced it as
+    `BrokenProcessPool: A process in the process pool was terminated abruptly` -- which names no
+    memory and reads like an unrelated crash. Chunking caps each worker at `bs` molecules and
+    changes no arithmetic: mordred's Calculator is stateless across calls and the timing is the
+    same work in the same order.
+    """
+    shard, bs = job
     from rdkit import Chem
     from rdkit.Chem import rdFingerprintGenerator as rfg
     gen = rfg.GetMorganGenerator(radius=3, fpSize=2048, includeChirality=True)
     tot = 0.0
-    mols = [Chem.MolFromSmiles(s) for s in shard]
-    mols = [m for m in mols if m is not None]
-    for m in mols:
-        for _n, f in _RDK:
-            try:
-                tot += float(f(m) or 0.0)
-            except Exception:
-                pass
-        tot += float(gen.GetFingerprintAsNumPy(m)[::256].sum())
-    for _row in _CALC.map(mols, nproc=1, quiet=True):
-        pass
+    for lo in range(0, len(shard), bs):
+        mols = [Chem.MolFromSmiles(s) for s in shard[lo:lo + bs]]
+        mols = [m for m in mols if m is not None]
+        for m in mols:
+            for _n, f in _RDK:
+                try:
+                    tot += float(f(m) or 0.0)
+                except Exception:
+                    pass
+            tot += float(gen.GetFingerprintAsNumPy(m)[::256].sum())
+        for _row in _CALC.map(mols, nproc=1, quiet=True):
+            pass
+        del mols
     return tot
 
 

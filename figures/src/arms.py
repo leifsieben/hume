@@ -143,6 +143,10 @@ ARMS = {
     # ---- classical featurisations (amber) ---------------------------------------------------
     "ecfp": dict(label="ECFP4", family="anchor", color=SHADES["anchor"][0]),
     "r3cfp": dict(label="Morgan r=3", family="anchor", color=SHADES["anchor"][1]),
+    # r=4 extends the radius series. It sits between r=2 and r=3 in the amber family rather than
+    # taking a new colour: the three are one variable, and Figure A puts them adjacent in every
+    # panel, so they must read as a series and not as three unrelated arms.
+    "r4cfp": dict(label="Morgan r=4", family="anchor", color=SHADES["anchor"][5]),
     "ecfp_all_desc": dict(label="ECFP4 + descriptors", family="anchor",
                           color=SHADES["anchor"][2]),
     "ecfp_rdkit_desc": dict(label="ECFP4 + RDKit", family="anchor", color=SHADES["anchor"][3]),
@@ -279,7 +283,7 @@ ARMS = {
 # cannot put the same arms in two different orders -- which reads as two different comparisons.
 # Grouped classical -> HUME -> external, i.e. cheapest to most expensive at inference, which is
 # the axis the whole paper is about.
-ARM_ORDER = ["ecfp", "r3cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
+ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",

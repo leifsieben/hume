@@ -159,13 +159,38 @@ def compute():
         sd[~np.isfinite(sd) | (sd == 0)] = np.inf       # dead dims contribute nothing
         Xp = np.nan_to_num(X[:n_pair])
 
-        raw = {}
+        # HOW MANY COORDINATES ACTUALLY MOVED, alongside how far the vector moved.
+        #
+        # DISCRETE AND CONTINUOUS ARMS ARE COUNTED DIFFERENTLY AND THE TWO NUMBERS ARE NOT THE
+        # SAME QUANTITY. For an integer count fingerprint a coordinate either changed or it did
+        # not, so the count is exact and needs no threshold. A continuous embedding has no such
+        # notion -- every coordinate changes a little -- so one has to say what "changed" means,
+        # and the answer is threshold-critical exactly where the CLM arms sit (see the header).
+        #
+        # Rather than invent a sigma multiple, "moved" is defined against THE SAME REFERENCE THE
+        # AXIS USES: a dimension counts as moved if |dx_j|/sd_j exceeds the median per-dimension
+        # |dx|/sd that THIS arm shows under the matched-MW edit -- i.e. more than a completely
+        # different compound typically moves that coordinate. No new free constant enters the
+        # figure, and the annotation is on the same footing as the bar it sits above.
+        is_discrete = bool(np.all(np.equal(np.mod(Xp[np.isfinite(Xp)], 1), 0)))
+
+        raw, moved, dmat = {}, {}, {}
         for p in pairs:
             ia, ib = pos.get(p["a"]), pos.get(p["b"])
             if ia is None or ib is None:
                 continue
             d = (Xp[ia] - Xp[ib]) / sd
             raw.setdefault(p["edit"], []).append(float(np.sqrt(np.mean(d * d))))
+            dmat.setdefault(p["edit"], []).append(np.abs(d))
+
+        if is_discrete:
+            thr = 0.0                                   # any change at all is a change
+        else:
+            ref_abs = dmat.get("matched_mw")
+            thr = float(np.median(np.concatenate(ref_abs))) if ref_abs else np.inf
+        for m, arrs in dmat.items():
+            moved[m] = float(np.median([float((a > thr).sum()) for a in arrs]))
+        del dmat
 
         ref = float(np.median(raw.get("matched_mw", [np.nan])))
         assert np.isfinite(ref) and ref > 0, (
@@ -174,7 +199,9 @@ def compute():
             f"on an unnormalised one.")
         refs[f.stem] = ref
         out[f.stem] = {m: (float(np.median(v)) / ref, float(np.percentile(v, 25)) / ref,
-                           float(np.percentile(v, 75)) / ref, len(v))
+                           float(np.percentile(v, 75)) / ref, len(v),
+                           moved.get(m, float("nan")), moved.get("matched_mw", float("nan")),
+                           is_discrete)
                        for m, v in raw.items() if len(v)}
 
     assert out, "no embeddings yet -- run embed_pairs.py first"
@@ -220,6 +247,24 @@ def _panel(ax, armlist, cells, mode, klass, title, ymax):
         if np.isfinite(v) and v < ZERO_TOL:
             ax.text(xi, ymax * 0.022, "0", ha="center", va="bottom",
                     fontsize=FS["annot"] - 2.5, color=INK, zorder=5)
+
+    # HOW MANY COORDINATES MOVED, over each bar, as `n/n_ref` rather than a bare count.
+    #
+    # A BARE COUNT WOULD UNDO THE AXIS. This plate's whole unit exists so a 2048-bit fingerprint
+    # and a 768-d transformer can share one scale; printing "12" over one and "410" over the
+    # other invites exactly the cross-model reading the ratio was built to prevent, because the
+    # difference is mostly DENSITY -- ECFP4 moves ~1.4% of its bits for a completely different
+    # compound where a CLM moves ~82% of its coordinates. The denominator is that same
+    # matched-MW reference, so `12/29` reads "twelve of the twenty-nine positions that a
+    # different compound would move", which is comparable across arms and still shows the count.
+    for xi, a in zip(x, armlist):
+        c = cells[a].get(mode)
+        if not c or len(c) < 7 or not np.isfinite(c[4]) or not np.isfinite(c[5]) or c[5] <= 0:
+            continue
+        top = med[xi] + (q3[xi] - med[xi] if np.isfinite(q3[xi]) else 0.0)
+        y = min(max(top, 0) + ymax * 0.035, ymax * 0.93)
+        ax.text(xi, y, f"{round(c[4]):d}/{round(c[5]):d}", ha="center", va="bottom",
+                fontsize=FS["annot"] - 3.0, color=STYLE["mute"], zorder=6, rotation=90)
 
     ax.set_ylim(0, ymax)
     ticks = np.arange(0, ymax + 1e-9, 0.5)
@@ -293,13 +338,15 @@ def main():
     with open(ROOT / "figures" / "build" / "fig_a.csv", "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["arm", "label", "mode", "klass", "relative_response", "q1", "q3", "n",
-                    "matched_mw_reference_raw"])
+                    "matched_mw_reference_raw", "coords_moved", "coords_moved_reference",
+                    "count_is_exact"])
         for a in armlist:
             for mode, klass, _ in MODES:
                 if mode in cells[a]:
-                    m, lo, hi, n = cells[a][mode]
+                    m, lo, hi, n, mv, mvref, disc = cells[a][mode]
                     w.writerow([a, A.label(a), mode, klass, f"{m:.6f}", f"{lo:.6f}",
-                                f"{hi:.6f}", n, f"{refs[a]:.6f}"])
+                                f"{hi:.6f}", n, f"{refs[a]:.6f}", f"{mv:.1f}", f"{mvref:.1f}",
+                                int(disc)])
     print(f"  wrote  figures/fig_a.csv")
 
     print("\n   " + "mode".ljust(18) + "".join(f"{A.label(a)[:19]:>21s}" for a in armlist))

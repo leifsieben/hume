@@ -68,6 +68,19 @@ def arm_r3cfp(smiles):
     return arm_ecfp(smiles, radius=3)
 
 
+def arm_r4cfp(smiles):
+    """Morgan r=4 (ECFP8). Added 2026-08-28 to extend the radius series past r=3.
+
+    PREDICTION, RECORDED BEFORE THE NUMBER EXISTS so it reads as a result rather than a story
+    fitted afterwards: r=4 should RESOLVE better than r=3 on the substitution edits and score no
+    better -- probably worse -- downstream. r=3 already beats r=2 on stereo (0.559 vs 0.494),
+    added methyl (0.607 vs 0.518) and ring fusion (0.863 vs 0.693) while losing to it on 20 of 28
+    DEV datasets. If r=4 continues both trends, the dissociation between resolution and
+    downstream value is a trend across three radii rather than a two-point coincidence.
+    """
+    return arm_ecfp(smiles, radius=4)
+
+
 def arm_desc(smiles):
     from mordred import Calculator, descriptors as mdesc
     from rdkit import Chem, RDLogger
@@ -261,7 +274,7 @@ def arm_chemprop(smiles):
     return _chemprop_embed(smiles, pretrained=False)
 
 
-ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "desc": arm_desc,
+ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "r4cfp": arm_r4cfp, "desc": arm_desc,
         "chemberta_mlm": arm_chemberta_mlm, "chemberta_mtr": arm_chemberta_mtr,
         "molformer": arm_molformer,
         "selfies_ted": arm_selfies_ted, "minimol": arm_minimol,

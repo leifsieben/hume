@@ -301,3 +301,41 @@ Rules, adopted from CLIMB's `figure_data_manifest.json` convention:
    especially -- and must not need recomputing.
 6. **Negative and null results are stored and plotted.** The Kulik fingerprint is expected to
    be flat given our resistance result; that expectation is not a licence to omit it.
+
+### Figure A addendum — 2026-08-28: coordinate counts on the bars, and Morgan r=4
+
+**`n/n_ref` over every bar: how many coordinates moved, out of how many move for a completely
+different compound.** Requested as a bare count; it is drawn as a ratio, and the reason is the
+same one that kept this metric off the axis in the first place. ECFP4 moves ~1.4% of its bits for
+a different compound where a CLM moves ~82% of its coordinates, so "9" over one bar and "410"
+over another would read as a 45× sensitivity difference when it is mostly **density**. With the
+arm's own reference as the denominator, `9/66` reads "nine of the sixty-six positions a different
+compound would move" and is comparable across arms while still showing the count.
+
+**The two counts are NOT the same quantity and the caption must say so.** For an integer count
+fingerprint a coordinate either changed or it did not — exact, no threshold. A continuous
+embedding has no such notion, so "moved" is defined as `|dx_j|/sd_j` exceeding **the median
+per-dimension `|dx|/sd` that arm shows under the matched-MW edit**. That ties the threshold to
+the same reference the axis uses instead of introducing a sigma multiple, which matters because
+the header already records that a threshold count is threshold-critical exactly where the CLM
+arms sit.
+
+**What the counts add that the ratio does not.** CheMeleon moves **542 of its 1,054 reference
+coordinates** for an inverted stereocentre — half of them — while its ratio is **0.013**. Many
+coordinates moving by amounts far too small to matter is exactly the failure the ratio compresses
+into one small number, and the annotation makes it visible. The same shape appears for
+RDKit+Mordred on stereo: **0 of 968**, a hard zero rather than a small number, because the
+descriptor block carries no stereo term at all.
+
+**Morgan r=4 added.** The prediction was recorded in `embed_pairs.py:arm_r4cfp` before the
+number existed, and it holds on every substitution edit: r=4 > r=3 > r=2 on stereo
+(0.615 / 0.554 / 0.507), E/Z (0.705 / 0.656 / 0.692), N-methylation (0.747 / 0.683 / 0.686),
+scaffold hop (0.654 / 0.606 / 0.520), ring contraction (0.604 / 0.516 / 0.336) and regioisomer
+(0.685 / 0.628 / 0.521). Isotope stays exactly **0.000 at every radius** — Morgan invariants do
+not carry isotope for a same-element substitution, and no amount of radius fixes that.
+
+**The open question this sharpens rather than settles.** r=3 already beat r=2 on resolution while
+losing to it on 20 of 28 DEV datasets. If r=4 continues both trends, the dissociation between
+resolution and downstream value is a trend across three radii, not a two-point coincidence — and
+Figure A can no longer be read as "more resolution is better". The downstream half of that claim
+is NOT measured yet for r=4; until it is, the radius series is a resolution result only.
