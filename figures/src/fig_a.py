@@ -36,6 +36,21 @@ it is not.
   3. THE QUESTION IS ILL-POSED. In the two notation controls the "edit" is not a chemical change
      at all, so "is this the A or the B of its pair" has no answer that transfers. 0.5 is the
      CORRECT result there and a HIGH bar is the failure. Tinted, for that reason.
+*** TWO PANELS ARE FREE TO A MODEL THAT READS THE STRING, AND THE CAPTION MUST SAY WHICH. ***
+`isotope_13c` scores 1.000 for the `notation` control -- a character n-gram counter with no
+chemistry at all -- because an isotope IS a token in SMILES and no rewriting removes it. [12C]
+against [13C] was measured, and so was moving the 13C between an aromatic and an sp3 carbon;
+both still read 1.000. That panel is therefore a test OF THE GRAPH AND DESCRIPTOR ARMS, which
+cannot see a character: Morgan is degenerate on every pair, HUME reads 0.62 through exact mass,
+and a CLM's high score there is evidence of tokenisation, not of chemistry.
+
+`protonate` had the same defect and was FIXED rather than caveated, by applying the same
+move-don't-create rule: both members are now cations of the same formula differing only in which
+basic nitrogen carries the proton. 969 of 1,000 pairs have an identical character multiset and
+the notation floor falls from 1.000 to 0.918. Every arm used to score exactly 1.000 there, which
+is the mirror of the "nobody clears chance" failure -- a panel where everybody saturates ranks
+nothing.
+
 Measured on our own set, the same holds for a matched-mass substitution: the molecules are as
 different as two molecules get (mean Tanimoto ~0.1) and every arm still scores ~0.50, because
 which of two unrelated compounds is called "A" is arbitrary. That is reported in the printed
@@ -96,7 +111,7 @@ MODES = [
     ("stereo_flip",    "A", "Inverted\nstereocentre"),
     ("ez_flip",        "A", "Flipped E/Z\ndouble bond"),
     ("isotope_13c",    "A", "$^{12}$C→$^{13}$C,\ngraph unchanged"),
-    ("protonate",      "A", "Protonation\nstate changed"),
+    ("protonate",      "A", "Proton moved to\nanother amine"),
     ("halogen_swap",   "A", "Halogen\nswapped"),
     ("saturate",       "A", "C=C reduced\nto C–C"),
     ("null_enumerate", "B", "Re-written\nSMILES"),
@@ -195,8 +210,11 @@ def main():
     armlist, cells = load()
     print(f"arms: {armlist}")
 
-    fig = plt.figure(figsize=(STYLE["col2"], 3.30))
-    gs = fig.add_gridspec(NROW, NCOL, left=0.062, right=0.995, top=0.885, bottom=0.215,
+    # A4 WIDTH IS THE BUDGET. Fourteen panels on 2x7 across the text block, and the height is
+    # whatever the panels plus a two-row legend actually need -- the first version reserved a
+    # fifth of the plate for a legend band that used a third of it.
+    fig = plt.figure(figsize=(STYLE["col2"], 3.15))
+    gs = fig.add_gridspec(NROW, NCOL, left=0.062, right=0.995, top=0.885, bottom=0.175,
                           wspace=0.42, hspace=0.72)
     assert len(MODES) == NROW * NCOL, (
         f"fig_a: {len(MODES)} panels on a {NROW}x{NCOL} grid. The plate is designed to fill "
@@ -211,7 +229,7 @@ def main():
         if i % NCOL == 0:
             ax.set_ylabel("held-out AUC:\nA vs A′", fontsize=FS["annot"])
 
-    lax = fig.add_axes([0.062, 0.008, 0.933, 0.172])
+    lax = fig.add_axes([0.062, 0.005, 0.933, 0.135])
     lax.axis("off")
     mark_empty(lax, "holds the legend")
     handles = [Patch(facecolor=A.color(a), edgecolor=INK, lw=0.6, hatch=A.hatch(a),

@@ -44,3 +44,33 @@ r4cfp,Morgan r=4,ring_contract,A,0.9786,0.0060,0.9682,0.9834,1000,5,0,0.000
 r4cfp,Morgan r=4,regioisomer,A,0.7482,0.0154,0.7325,0.7744,1000,5,0,0.000
 r4cfp,Morgan r=4,null_kekulize,B,0.5000,0.0000,0.5000,0.5000,1000,5,1000,1.000
 r4cfp,Morgan r=4,matched_mw,NULL,0.5121,0.0152,0.4856,0.5326,1000,5,0,0.000
+hume,HUME,stereo_flip,A,0.7938,0.0141,0.7817,0.8201,1000,5,56,0.056
+hume,HUME,ez_flip,A,0.9647,0.0036,0.9616,0.9717,1000,5,0,0.000
+hume,HUME,isotope_13c,A,0.6152,0.0037,0.6091,0.6188,1000,5,0,0.000
+hume,HUME,protonate,A,1.0000,0.0000,1.0000,1.0000,1000,5,0,0.000
+hume,HUME,halogen_swap,A,0.8784,0.0151,0.8527,0.8961,1000,5,0,0.000
+hume,HUME,saturate,A,0.9892,0.0027,0.9847,0.9925,1000,5,0,0.000
+hume,HUME,null_enumerate,B,0.5001,0.0003,0.4996,0.5004,1000,5,975,0.975
+hume,HUME,h_to_methyl,A,0.9510,0.0065,0.9402,0.9591,1000,5,0,0.000
+hume,HUME,n_methylation,A,0.9969,0.0016,0.9949,0.9993,1000,5,0,0.000
+hume,HUME,ch2_homolog,A,0.7659,0.0161,0.7489,0.7847,1000,5,0,0.000
+hume,HUME,scaffold_hop,A,0.9688,0.0024,0.9659,0.9724,1000,5,0,0.000
+hume,HUME,ring_contract,A,0.9986,0.0017,0.9954,1.0000,1000,5,0,0.000
+hume,HUME,regioisomer,A,0.7297,0.0310,0.6805,0.7681,1000,5,0,0.000
+hume,HUME,null_kekulize,B,0.5000,0.0000,0.5000,0.5000,1000,5,997,0.997
+hume,HUME,matched_mw,NULL,0.5133,0.0229,0.4839,0.5450,1000,5,0,0.000
+notation,notation,stereo_flip,A,0.7276,0.0289,0.6915,0.7799,1000,5,0,0.000
+notation,notation,ez_flip,A,0.9494,0.0054,0.9439,0.9581,1000,5,0,0.000
+notation,notation,isotope_13c,A,1.0000,0.0000,1.0000,1.0000,1000,5,0,0.000
+notation,notation,protonate,A,1.0000,0.0000,1.0000,1.0000,1000,5,0,0.000
+notation,notation,halogen_swap,A,0.8594,0.0208,0.8330,0.8863,1000,5,0,0.000
+notation,notation,saturate,A,0.9732,0.0013,0.9716,0.9748,1000,5,0,0.000
+notation,notation,null_enumerate,B,0.9639,0.0076,0.9515,0.9737,1000,5,6,0.006
+notation,notation,h_to_methyl,A,0.8622,0.0111,0.8521,0.8774,1000,5,0,0.000
+notation,notation,n_methylation,A,0.9904,0.0014,0.9884,0.9926,1000,5,0,0.000
+notation,notation,ch2_homolog,A,0.6922,0.0130,0.6716,0.7083,1000,5,0,0.000
+notation,notation,scaffold_hop,A,0.9148,0.0052,0.9086,0.9220,1000,5,0,0.000
+notation,notation,ring_contract,A,0.8137,0.0136,0.8026,0.8355,1000,5,0,0.000
+notation,notation,regioisomer,A,0.6145,0.0248,0.5809,0.6557,1000,5,403,0.403
+notation,notation,null_kekulize,B,0.9997,0.0003,0.9991,0.9999,1000,5,20,0.020
+notation,notation,matched_mw,NULL,0.5196,0.0285,0.4982,0.5742,1000,5,6,0.006
