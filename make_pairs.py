@@ -286,11 +286,47 @@ def saturate(m):
     return e.GetMol()
 
 
+def ch2_homolog(m):
+    """Insert one CH2 into an acyclic single bond -- chain homologation, R-X -> R-CH2-X.
+
+    Replaces `matched_mw` as a PANEL (Leif 2026-08-28). Under the AUC axis that reference is no
+    longer the unit: with two unrelated molecules the A/A' label is arbitrary, so every arm reads
+    ~0.5 and the panel says nothing. Homologation is a real, minimal, ubiquitous medicinal-
+    chemistry change and it earns the slot.
+
+    DIRECTIONAL BY CONSTRUCTION, which the AUC metric requires: A is always the shorter
+    homologue and A' the longer, so "which side of the pair" is a fact about chemistry rather
+    than about which molecule the generator happened to write first. An edit whose two members
+    are interchangeable -- swap two identical substituents, say -- reads 0.5 for every
+    representation and measures nothing at all.
+
+    The bond must be acyclic (inserting into a ring changes ring size, which is a different edit
+    and `ring_contract` already owns it) and both ends heavy. An aromatic ring carbon is allowed
+    at one end: c-CH3 -> c-CH2-CH3 is homologation, and the BOND is single even though the atom
+    is aromatic.
+    """
+    cand = [b for b in m.GetBonds()
+            if b.GetBondType() == Chem.BondType.SINGLE and not b.IsInRing()
+            and b.GetBeginAtom().GetAtomicNum() > 1 and b.GetEndAtom().GetAtomicNum() > 1
+            and 6 in (b.GetBeginAtom().GetAtomicNum(), b.GetEndAtom().GetAtomicNum())]
+    if not cand:
+        return None
+    b = random.choice(cand)
+    i, j = b.GetBeginAtomIdx(), b.GetEndAtomIdx()
+    e = Chem.RWMol(m)
+    e.RemoveBond(i, j)
+    c = e.AddAtom(Chem.Atom(6))
+    e.AddBond(i, c, Chem.BondType.SINGLE)
+    e.AddBond(c, j, Chem.BondType.SINGLE)
+    return e.GetMol()
+
+
 EDITS = {"stereo_flip": stereo_flip, "ez_flip": ez_flip, "halogen_swap": halogen_swap,
          "saturate": saturate,
          "h_to_methyl": h_to_methyl, "n_methylation": n_methylation, "isotope_13c": isotope_13c,
          "scaffold_hop": scaffold_hop, "ring_contract": ring_contract,
-         "protonate": protonate, "regioisomer": regioisomer}
+         "protonate": protonate, "regioisomer": regioisomer,
+         "ch2_homolog": ch2_homolog}
 
 
 # --- controls -----------------------------------------------------------------------------

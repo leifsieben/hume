@@ -13,6 +13,7 @@ each edit inflate its own denominator and pull every model toward the same score
 
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import time
@@ -79,6 +80,37 @@ def arm_r4cfp(smiles):
     downstream value is a trend across three radii rather than a two-point coincidence.
     """
     return arm_ecfp(smiles, radius=4)
+
+
+def arm_hume(smiles):
+    """HUME's own 864 descriptors + ECFP, which is the arm this paper is about.
+
+    IT WAS MISSING FROM FIGURE A ENTIRELY (noticed 2026-08-28). The plate carried
+    RDKit+Mordred as `desc` and every learned encoder, but not the method the paper proposes --
+    so the one figure that asks "does the representation resolve chemical change?" had no row
+    for our representation.
+
+    The stereo block is the reason this matters most. `desc` scores 0.505 on a stereocentre
+    inversion, i.e. chance: mordred and RDKit's descriptor sets carry no signed stereo term at
+    all. HUME's 182-block does -- `stereo()` in hume_blocks.h sums SIGNED CIP parity (R = +1,
+    S = -1) over the molecule, which is directional and therefore something a tree can learn to
+    read the same way on a scaffold it has never seen.
+
+    `optional` names both expensive columns: this is a resolution measurement, not a throughput
+    one, so the full 864 is what belongs here.
+    """
+    import hume
+    from rdkit import Chem, RDLogger
+    RDLogger.DisableLog("rdApp.*")
+    mols, keep = [], []
+    for i, sm in enumerate(smiles):
+        m = Chem.MolFromSmiles(sm)
+        if m is not None:
+            mols.append(m); keep.append(i)
+    fp, X, _ = hume.featurize_all_from_mols(mols, optional=("qed", "AvgIpc"))
+    out = np.full((len(smiles), X.shape[1] + fp.shape[1]), np.nan, np.float32)
+    out[keep] = np.hstack([X, fp]).astype(np.float32)
+    return out
 
 
 def arm_desc(smiles):
@@ -274,7 +306,7 @@ def arm_chemprop(smiles):
     return _chemprop_embed(smiles, pretrained=False)
 
 
-ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "r4cfp": arm_r4cfp, "desc": arm_desc,
+ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "r4cfp": arm_r4cfp, "desc": arm_desc, "hume": arm_hume,
         "chemberta_mlm": arm_chemberta_mlm, "chemberta_mtr": arm_chemberta_mtr,
         "molformer": arm_molformer,
         "selfies_ted": arm_selfies_ted, "minimol": arm_minimol,
@@ -289,14 +321,30 @@ def main() -> None:
     print(f"{len(pairs):,} pairs | {len(order):,} unique pair molecules | "
           f"{len(bg):,} background")
     json.dump({"order": order, "background": bg}, open(FIGA / "smiles_index.json", "w"))
+    # CACHE ON THE CONTENT OF THE PAIR SET, NOT ON THE FILE EXISTING.
+    #
+    # This was `if f.exists(): cached`, which is wrong the moment an edit is added or a seed
+    # changes: `smiles_index.json` is rewritten just above, so the index would describe 19,757
+    # molecules while a stale .npz held 18,757 rows, and every consumer indexes the array BY
+    # POSITION. That does not raise -- it silently pairs new molecules against old vectors, and
+    # the figure it produces looks entirely normal. Found when `ch2_homolog` was added and all
+    # four fast arms reported "cached" against a pair set that had grown by 1,000 pairs.
+    idx_sha = hashlib.sha256(json.dumps({"order": order, "background": bg},
+                                        sort_keys=True).encode()).hexdigest()
     for name in want:
         f = EMB / f"{name}.npz"
         if f.exists():
-            print(f"  {name}: cached")
-            continue
+            try:
+                prev = str(np.load(f)["index_sha"])
+            except Exception:
+                prev = ""
+            if prev == idx_sha:
+                print(f"  {name}: cached (index matches)")
+                continue
+            print(f"  {name}: STALE -- built for a different pair set, recomputing")
         t0 = time.time()
         X = ARMS[name](allsmi)
-        np.savez_compressed(f, X=X, n_pair=len(order))
+        np.savez_compressed(f, X=X, n_pair=len(order), index_sha=idx_sha)
         print(f"  {name}: {X.shape} in {time.time()-t0:.0f}s -> {f.name}", flush=True)
 
 
