@@ -32,8 +32,11 @@ nowhere: 54 graded, at most 52 ever claimed as coverage.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import multiprocessing as mp
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -111,6 +114,82 @@ def read_values(path: Path, n_cols: int, n_rows: int) -> np.ndarray:
     return out
 
 
+# --------------------------------------------------------------------------------------------
+# The mordred reference: ON DISK, INCREMENTALLY, RESUMABLE.
+#
+# THIS REPLACED `np.vstack(pool.map(...))`, WHICH LOST A THREE-HOUR RUN AT THE FINISH LINE.
+# `pool.map` returns only when every chunk is done, so the parent then held, all at once: the
+# 98,905 x 540 `got` matrix (427 MB), the list of 80 chunk arrays (427 MB), and the vstack
+# destination (427 MB). The parent died with no Python traceback -- an abrupt kill, at the one
+# moment the run needed a 1.3 GB peak, on a box that was under heavy memory pressure from other
+# work. Three hours of ten cores produced nothing at all.
+#
+# Two defects, and the second is the one that actually cost the time:
+#   1. Peak memory scaled with the corpus. `imap` streams results in order instead, so the parent
+#      holds one chunk (~5 MB) rather than the whole reference twice over.
+#   2. NOTHING WAS PERSISTED UNTIL THE END. That is what turns any failure -- memory, a stray
+#      kill, a laptop lid -- into total loss. The reference now lands in a memmap as it is
+#      computed and a progress counter is fsynced beside it, so a second attempt resumes from the
+#      last completed chunk instead of from zero.
+#
+# THE CACHE IS KEYED ON ITS INPUTS, not just on its shape. A stale reference silently graded
+# against a regenerated values_ac.txt would be worse than no cache at all, so the header carries
+# the SMILES digest and the oracle versions, and any mismatch discards the cache rather than
+# resuming onto it.
+# --------------------------------------------------------------------------------------------
+
+def _cache_key(smis: list[str], n_cols: int) -> dict:
+    import mordred
+    return {"n_rows": len(smis), "n_cols": n_cols,
+            "smi_sha": hashlib.sha256("\n".join(smis).encode()).hexdigest(),
+            "mordred": mordred.__version__, "rdkit": rdkit.__version__}
+
+
+def build_ref(smis: list[str], chunks: list[list[str]], nproc: int, cache: Path) -> np.ndarray:
+    """-> the (n_mols, 540) mordred reference, resuming a partial run if one is on disk."""
+    key = _cache_key(smis, len(NAMES))
+    meta, npy = cache.with_suffix(".json"), cache.with_suffix(".npy")
+    done = 0
+    if meta.exists() and npy.exists():
+        old = json.loads(meta.read_text())
+        if {k: old.get(k) for k in key} == key:
+            done = int(old.get("rows_done", 0))
+            print(f"  resuming: {done:,} / {len(smis):,} reference rows already on disk")
+        else:
+            print("  cache discarded: inputs or oracle versions differ from the stored run")
+    mode = "r+" if done and npy.exists() else "w+"
+    ref = np.lib.format.open_memmap(npy, mode=mode, dtype=np.float64,
+                                    shape=(len(smis), len(NAMES)))
+    if done >= len(smis):
+        return ref
+
+    starts, off, todo = [], 0, []
+    for c in chunks:
+        starts.append(off)
+        if off >= done:
+            todo.append((off, c))
+        off += len(c)
+    if todo and todo[0][0] != done:
+        # Chunk boundaries must line up with the counter or the resume would write rows into the
+        # wrong place. Only whole chunks are ever counted, so this cannot happen -- assert anyway.
+        raise SystemExit(f"resume misaligned: counter {done}, first pending chunk {todo[0][0]}")
+
+    t0 = time.time()
+    with mp.Pool(nproc, initializer=_init) as pool:
+        for k, arr in enumerate(pool.imap(_rows, [c for _, c in todo])):
+            start = todo[k][0]
+            ref[start:start + len(arr)] = arr
+            ref.flush()
+            rows = start + len(arr)
+            meta.write_text(json.dumps({**key, "rows_done": rows}))
+            el = time.time() - t0
+            frac = (rows - done) / max(1, len(smis) - done)
+            print(f"    {rows:,} / {len(smis):,} rows  ({100*rows/len(smis):5.1f}%)  "
+                  f"elapsed {el/60:.0f} min, eta {el/max(frac,1e-9)*(1-frac)/60:.0f} min",
+                  flush=True)
+    return ref
+
+
 def main() -> None:
     import mordred
 
@@ -136,16 +215,19 @@ def main() -> None:
     names = NAMES
     got = read_values(HERE / "values_ac.txt", len(names), len(smis))
 
-    # ACROSS PROCESSES, because mordred is ~78 ms/mol here and the corpus is 98,905 molecules --
-    # over two hours on one core, and the whole point of re-running it is that nobody skips it.
-    # Chunks are contiguous slices so the output order is the input order by construction.
+    # ACROSS PROCESSES, because the corpus is 98,905 molecules and mordred's Autocorrelation on
+    # it is measured in core-HOURS. Chunks are contiguous slices and `imap` preserves order, so
+    # row k of the reference is molecule k by construction rather than by reassembly.
+    #
+    # SMALLER CHUNKS THAN THE OBVIOUS ONE, on purpose: the progress counter advances only on a
+    # completed chunk, so the chunk size is also the maximum amount of work a crash can discard.
+    # 400 chunks over 98,905 molecules caps that at about a quarter of one percent.
     nproc = max(1, min(mp.cpu_count() - 2, 10))
-    step = max(1, (len(smis) + nproc * 8 - 1) // (nproc * 8))
+    step = max(1, (len(smis) + 399) // 400)
     chunks = [smis[i:i + step] for i in range(0, len(smis), step)]
     print(f"  mordred reference: {len(smis):,} molecules over {nproc} processes, "
-          f"{len(chunks)} chunks")
-    with mp.Pool(nproc, initializer=_init) as pool:
-        ref = np.vstack(pool.map(_rows, chunks))
+          f"{len(chunks)} chunks of {step}", flush=True)
+    ref = build_ref(smis, chunks, nproc, HERE / ".ac_ref_cache")
     assert ref.shape == got.shape, f"{ref.shape} vs {got.shape}"
 
     bad_val = np.zeros(len(names), int)
