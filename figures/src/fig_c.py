@@ -120,12 +120,18 @@ def main() -> None:
     tasks, arm_keys = d["tasks"], A.order(d["arms"])
     rec = {(r["task"], r["arm"]): r for r in d["records"]}
 
-    nrow, ncol = 2, 2
-    if len(tasks) > nrow * ncol:
+    # ONE ROW up to four tasks. A4 width is the budget, not A4 length (Leif 2026-08-28), and
+    # 2x2 spent 5.4in of height on what fits in 3.0.
+    if len(tasks) <= 4:
+        nrow, ncol, h = 1, len(tasks), 3.05
+        gsk = dict(hspace=0.0, wspace=0.42, left=0.075, right=0.99, top=0.87, bottom=0.30)
+    else:
+        nrow = 2
         ncol = int(np.ceil(len(tasks) / nrow))
-    fig = plt.figure(figsize=(STYLE["col2"], 5.4))
-    gs = fig.add_gridspec(nrow, ncol, hspace=0.38, wspace=0.26,
-                          left=0.085, right=0.985, top=0.93, bottom=0.175)
+        h = 5.4
+        gsk = dict(hspace=0.38, wspace=0.26, left=0.085, right=0.985, top=0.93, bottom=0.175)
+    fig = plt.figure(figsize=(STYLE["col2"], h))
+    gs = fig.add_gridspec(nrow, ncol, **gsk)
 
     tags = "abcdefgh"
     odd_heads = set()
@@ -154,13 +160,6 @@ def main() -> None:
         front = pareto(xs, oriented)
         ax.plot([xs[i] for i in front], [ys[i] for i in front], ls="--",
                 lw=STYLE["lw_thin"], color=STYLE["grid"], zorder=1)
-        if t_i == 0 and front:
-            fi = front[len(front) // 2]
-            ax.annotate("Pareto frontier", (xs[fi], ys[fi]),
-                        xytext=(8, -14), textcoords="offset points",
-                        fontsize=FS["annot"] - 1, color=STYLE["grid"],
-                        arrowprops=dict(arrowstyle="-", color=STYLE["grid"],
-                                        lw=STYLE["lw_thin"]))
 
         for x, y, e, a in zip(xs, ys, es, ks):
             kw = A.bar_kw(a)
@@ -175,8 +174,14 @@ def main() -> None:
         ax.set_xscale("log")
         if lo_better:
             ax.invert_yaxis()                          # up is better, in every panel, always
-        ax.set_xlabel("featurisation cost (µs / molecule, log)", fontsize=FS["label"])
-        ax.set_ylabel(f"{t['metric']}  ({'lower' if lo_better else 'higher'} is better)",
+        # ONE shared x-label for the row. Four copies of a long label overprinted each other
+        # into "featurisation cost (µs / molecule, lfeg)aturisation cost ...".
+        if nrow > 1 or t_i == 0:
+            ax.set_xlabel("" if nrow == 1 else "featurisation cost (µs / molecule, log)",
+                          fontsize=FS["label"])
+        # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
+        # y-label was drawn on top of panel a's data.
+        ax.set_ylabel(f"{t['metric']} ({'↓' if lo_better else '↑'} better)",
                       fontsize=FS["label"])
         ax.grid(axis="both")
         title(ax, t["label"])
@@ -196,22 +201,27 @@ def main() -> None:
     #
     # Order follows arms.ARM_ORDER -- classical, then HUME, then graph models, then string
     # models -- so the key reads in the same left-to-right order as every other figure.
+    if nrow == 1:
+        fig.supxlabel("featurisation cost (µs / molecule, log)", fontsize=FS["label"], y=0.175)
     from matplotlib.lines import Line2D
     handles = []
     for a in arm_keys:
         kw = A.bar_kw(a)
-        star = " *" if A.desc_pretrained(a) else ""
+        star = " (desc-pretrained)" if A.desc_pretrained(a) else ""
         handles.append(Line2D([], [], marker="o", ls="", ms=STYLE["marker_size"],
                               color=kw["color"], label=A.label(a) + star,
                               markeredgecolor=STYLE["ink"], markeredgewidth=0.7))
-    lax = fig.add_axes([0.005, 0.005, 0.99, 0.055])
+    if nrow == 1:
+        fig.supxlabel("featurisation cost (µs / molecule, log)", fontsize=FS["label"], y=0.175)
+    from matplotlib.lines import Line2D
+    handles.append(Line2D([0], [0], ls="--", lw=STYLE["lw_thin"], color=STYLE["grid"],
+                          label="Pareto frontier"))
+    lax = fig.add_axes([0.005, 0.005, 0.99, 0.135 if nrow == 1 else 0.055])
     lax.axis("off")
     mark_empty(lax, "legend strip -- holds no data by design")
-    lax.legend(handles=handles, loc="center", ncol=row_ncol(handles), frameon=False,
+    lax.legend(handles=handles, loc="center", ncol=row_ncol(handles, rows=2), frameon=False,
                fontsize=FS["legend"], handlelength=0.8, columnspacing=0.8,
                handletextpad=0.4)
-    if any(A.desc_pretrained(a) for a in arm_keys):
-
     save(fig, "fig_c")
     plt.close(fig)
 
