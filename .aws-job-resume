@@ -1,0 +1,8 @@
+PROJECT=hume-bench
+BUCKET=hume-bench-use1-075120018132
+REGION=us-east-1
+LAUNCHED=2026-08-28T16:28:25Z
+COST_PER_HOUR=1.5188   # c7i.4xlarge 0.7140 + g6.xlarge 0.8048, us-east-1 on-demand
+BACKSTOP=shutdown -h +240 armed in user-data; InstanceInitiatedShutdownBehavior=terminate
+GPU_INSTANCE=i-0172a4cab9777e6ee
+CPU_INSTANCE=i-0990f4993c5a25215

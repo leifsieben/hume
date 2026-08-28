@@ -159,3 +159,91 @@ HUME either omits them or calls Mordred, and the second option makes the speed c
 
 This is a larger body of work than milestone 1 and should be scoped only once the bridge exists
 and its overhead is measured.
+
+---
+
+## What running on Linux taught us — 2026-08-28
+
+Five boot attempts on EC2 (`c7i.4xlarge`, Ubuntu 24.04 x86_64) to run the Figure D benchmark.
+Four failed. Every failure is a packaging fact, so they are recorded here rather than in a
+benchmark log.
+
+### The portable build works, and this is the first evidence rather than a claim
+
+`hume` compiled and ran on **x86_64 Linux** for the first time:
+
+    envA rdkit 2025.09.2 numpy 2.4.6 torch 2.13.0+cpu
+    hume columns 1266
+    hume smoke ok, finite cells 1265
+
+That is the whole point of the Accelerate removal recorded above under **Portability** — the
+header-only `cpp/eigen_small.h` and `cpp/lu_small.h` replaced the two `$NEWLAPACK` call sites and
+the build no longer refuses to configure off macOS. It had never actually been compiled anywhere
+else. Now it has, on a different compiler, a different libc and a different ISA.
+
+### 1. The source build needs Python development headers, and says so unhelpfully
+
+On a stock Ubuntu 24.04 image the build dies in pybind11's CMake with:
+
+    Could NOT find Python (missing: Development.Module) (found suitable version "3.12.3")
+    Reason given by package: Development: Cannot find the directory "/usr/include/python3.12"
+
+Nothing in that message mentions `python3-dev`, which is what is missing. **Anyone who
+`pip install`s from an sdist on a clean Linux box will hit this.**
+
+**Consequence for packaging: ship wheels.** This is the single highest-value action left, and it
+is worth more than any further optimisation — a user who gets a wheel never has a compiler, a
+CMake, or this error message. Until then, README must say `apt install python3-dev` (or
+`python3-devel`) in the same breath as `pip install`.
+
+### 2. `[tool.uv] constraint-dependencies` leaks into every install run from the repo
+
+    [tool.uv]
+    constraint-dependencies = ["rdkit==2025.9.2", "numpy==2.4.6"]
+
+This is the pin that stopped the development venv being clobbered three times, and it is correct
+for this project. But uv applies it to **any** install invoked from this directory. Building a
+second environment for mordred 1.2.0 (which requires numpy 1.x) inside a checkout is therefore
+unsatisfiable, and the error blames numpy rather than the config:
+
+    Because you require numpy==1.26.4 and numpy==2.4.6, we can conclude that
+    your requirements are unsatisfiable.
+
+`uv pip install --no-config` is the escape hatch. This affects any *user* who clones the repo and
+builds an unrelated environment while inside it, so it belongs in the README, not only here.
+
+### 3. HUME has no runtime system libraries, and that is worth saying out loud
+
+The same fleet lost a boot to `ImportError: libXrender.so.1` — chemprop imports
+`cuik_molmaker`, whose native extension links X11, absent from every headless server image.
+That is not our dependency. But it is the failure mode a compiled Python package usually has, and
+**HUME does not have it**: no BLAS, no LAPACK, no X11, no graphics stack, nothing to `apt install`
+at run time. Only rdkit and numpy. State that in the README — for anyone deploying into a slim
+container it is a real feature, and it is only true because of the Accelerate removal.
+
+### Blockers before `pip install` can work at all
+
+1. **There is no LICENSE file.** Without one the code is all-rights-reserved by default and
+   nobody may legally use it — the same objection this project raised against mordred-x in
+   `COMPARISON_mordred_x.md`, and it applies here unchanged. Owner's decision; BSD-3-Clause
+   matches both RDKit and mordred, which HUME is verified against and distributes tables derived
+   from.
+2. **`hume` is taken on PyPI** (Hume AI's SDK, which also imports as `hume`). A distribution
+   rename is unavoidable, and renaming the *import* module too is the honest choice rather than
+   colliding in anyone's site-packages. Free as of 2026-08-28: `hume-descriptors`, `hume-mol`,
+   `hume-chem`, `humedesc`, `molhume`.
+3. **No CI and no wheel build.** `cibuildwheel` over manylinux x86_64/aarch64 and macOS
+   arm64/x86_64, with a smoke test per wheel that imports and featurises one molecule — the same
+   assertion the EC2 preflight now makes, for the same reason: importing proves linkage, not
+   that a single descriptor is right.
+
+Roughly a day's work, most of it waiting on CI. The two blockers above are decisions, not
+engineering.
+
+### Releases are not immutable in the way that matters
+
+PyPI will not let a version be overwritten, but that does not freeze the project: publish
+`0.1.1`, `0.2.0`, and users get them with `pip install -U`. A bad release can be **yanked** —
+hidden from new resolves while staying available to anything that pinned it. So shipping early
+costs little. What is genuinely expensive to change later is the **distribution name** and the
+**public API surface**, which is exactly why both are on the blocker list rather than deferred.
