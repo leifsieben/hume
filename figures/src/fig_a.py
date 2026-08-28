@@ -70,7 +70,7 @@ from matplotlib.patches import Patch                                        # no
 
 import arms as A                                                            # noqa: E402
 from style import (FS, STYLE, TINT_CONTROL, check_font,                      # noqa: E402
-                   LEGEND_BOX, mark_empty, row_ncol, save)
+                   mark_empty, row_ncol, save)
 
 check_font()
 ROOT = Path(__file__).resolve().parents[2]
@@ -216,10 +216,12 @@ def main():
     mark_empty(lax, "holds the legend")
     handles = [Patch(facecolor=A.color(a), edgecolor=INK, lw=0.6, hatch=A.hatch(a),
                      label=A.label(a)) for a in armlist]
+    # frameon=False, matching fig_b, fig_c, fig_d and the CLIMB house style. A boxed legend
+    # below the axes is a second rectangle competing with fourteen panel frames.
     lax.legend(handles=handles, loc="center",
                ncol=row_ncol(handles, rows=1 if len(handles) <= 6 else 2),
                fontsize=FS["legend"], handletextpad=0.5, columnspacing=1.1,
-               labelspacing=0.35, borderpad=0.45, **LEGEND_BOX)
+               labelspacing=0.35, borderpad=0.45, frameon=False)
 
     save(fig, "fig_a")
     plt.close(fig)

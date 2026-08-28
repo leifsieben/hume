@@ -76,6 +76,11 @@ ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "results" / "figures" / "figB" / "results.json"
 BASE_KEY = "classical_base"        # the block-alone bar's arm key (one colour in every group)
 
+#: Tick labels for the base groups. Deliberately SHORTER than arms.py's labels: three of them
+#: share a quarter-width panel, where the full names overprint each other.
+BASE_SHORT = {"ecfp": "ECFP4", "desc": "descriptors", "ecfp_all_desc": "ECFP4 + desc",
+              "ecfp_rdkit_desc": "ECFP4 + RDKit", "ecfp_mordred_desc": "ECFP4 + Mordred"}
+
 
 def load():
     # A path argument exists so the LAYOUT can be checked against a fixture without writing
@@ -129,10 +134,16 @@ def main() -> None:
 
     # bar slots: the block alone, then the block plus each embedding
     slots = [None] + list(adds)
-    nrow, ncol = 2, int(np.ceil(len(tasks) / 2))
-    fig = plt.figure(figsize=(STYLE["col2"], 4.9))
-    gs = fig.add_gridspec(nrow, ncol, hspace=0.34, wspace=0.20,
-                          left=0.075, right=0.99, top=0.92, bottom=0.16)
+    # ONE ROW UP TO FOUR TASKS. The page budget is horizontal -- A4 width, not A4 length
+    # (Leif 2026-08-28) -- and a 2x2 grid spent 4.9in of height to draw what fits in 2.9.
+    if len(tasks) <= 4:
+        nrow, ncol, h = 1, len(tasks), 2.95
+        gsk = dict(hspace=0.0, wspace=0.30, left=0.075, right=0.99, top=0.80, bottom=0.30)
+    else:
+        nrow, ncol, h = 2, int(np.ceil(len(tasks) / 2)), 4.9
+        gsk = dict(hspace=0.34, wspace=0.20, left=0.075, right=0.99, top=0.92, bottom=0.16)
+    fig = plt.figure(figsize=(STYLE["col2"], h))
+    gs = fig.add_gridspec(nrow, ncol, **gsk)
 
     bw = 0.80 / len(slots)
     centres = np.arange(len(bases), dtype=float)
@@ -199,31 +210,31 @@ def main() -> None:
                         lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=5, solid_capstyle="butt")
         ax.axhline(100.0, ls=(0, (2, 2)), lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=1)
         ax.set_xticks(centres)
-        ax.set_xticklabels([A.label(b) for b in bases], fontsize=FS["annot"] - 1)
+        ax.set_xticklabels([BASE_SHORT.get(b, A.label(b)) for b in bases],
+                           fontsize=FS["annot"] - 1, rotation=20, ha="right",
+                           rotation_mode="anchor")
         ax.tick_params(axis="x", length=0)
         ax.set_xlim(-0.5, len(bases) - 0.5)
         if t_i % ncol == 0:
             ax.set_ylabel("% of ECFP4 + descriptors", fontsize=FS["label"])
         ax.grid(axis="y")
-        title(ax, f"{t['label']}  ({t['metric']})")
-        ax.text(-0.13, 1.05, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],
-                fontweight="bold", va="bottom", ha="right")
+        title(ax, f"{t['label']}\n({t['metric']})", pad=4)
+        ax.text(-0.22, 1.16, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],
+                fontweight="bold", va="bottom", ha="left")
 
     # ---- legend: ONE ROW, built from what was actually drawn --------------------------------
     from matplotlib.patches import Patch
     handles = [Patch(facecolor=A.color(BASE_KEY), edgecolor=STYLE["ink"], lw=0.7,
                      label=A.label(BASE_KEY))]
     for e in adds:
-        star = " *" if A.desc_pretrained(e) else ""
+        star = " (desc-pretrained)" if A.desc_pretrained(e) else ""
         handles.append(Patch(facecolor=A.color(e), edgecolor=STYLE["ink"], lw=0.7,
                              label=A.label(e) + star))
-    lax = fig.add_axes([0.02, 0.005, 0.96, 0.055])
+    lax = fig.add_axes([0.02, 0.005, 0.96, 0.115 if nrow == 1 else 0.055])
     lax.axis("off")
     mark_empty(lax, "legend strip -- holds no data by design")
     lax.legend(handles=handles, loc="center", ncol=row_ncol(handles), frameon=False,
                fontsize=FS["legend"], handlelength=1.2, columnspacing=1.4)
-    fig.text(0.5, 0.062, "* pretrained to predict molecular descriptors",
-             ha="center", va="bottom", fontsize=FS["annot"] - 1, color=STYLE["ink"])
 
     save(fig, "fig_b")
     plt.close(fig)

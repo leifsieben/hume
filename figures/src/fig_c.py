@@ -211,8 +211,6 @@ def main() -> None:
                fontsize=FS["legend"], handlelength=0.8, columnspacing=0.8,
                handletextpad=0.4)
     if any(A.desc_pretrained(a) for a in arm_keys):
-        fig.text(0.5, 0.062, "* pretrained to predict molecular descriptors",
-                 ha="center", va="bottom", fontsize=FS["annot"] - 1, color=STYLE["ink"])
 
     save(fig, "fig_c")
     plt.close(fig)

@@ -1,0 +1,218 @@
+"""Pull the downstream grid off S3 and build the Figure B and Figure C contracts.
+
+    python3 collect_downstream.py            # fetch, aggregate, write both results.json
+
+WHAT IT READS. Every `downstream/<iid>.json` (a completed box) and `downstream/<iid>.partial.json`
+(a box still running, or one that hit its wall-clock cap) in the bench bucket. Partials are used
+DELIBERATELY: each box rewrites its grid after every dataset and ships it within 30 s, so a box
+killed at hour 19 of 20 still contributes every dataset it finished. A completed file always wins
+over a partial from the same instance.
+
+HOW DATASETS COMBINE INTO A TASK. A task is a group of datasets sharing an endpoint type and a
+metric. Their raw units are not comparable -- RMSE on logS is not RMSE on a microsomal clearance
+-- so nothing is ever averaged in raw units. Each dataset is first divided by the ANCHOR arm's
+score on that same dataset, and the per-dataset RATIOS are what get averaged. The anchor is then
+1.000 by construction, which is exactly the unit both figures draw.
+
+The spread is the SEM ACROSS DATASETS, not across folds. Fold-to-fold spread on one dataset
+understates the thing a reader needs, which is whether the effect holds across endpoints; a
+5-fold SEM on a single dataset would draw whiskers a third the size and imply a reproducibility
+this grid has not demonstrated.
+"""
+from __future__ import annotations
+
+import json
+import subprocess
+from collections import defaultdict
+from pathlib import Path
+
+import numpy as np
+
+ROOT = Path(__file__).resolve().parent
+BUCKET = "hume-bench-use1-075120018132"
+OUT_B = ROOT / "results" / "figures" / "figB" / "results.json"
+OUT_C = ROOT / "results" / "figures" / "figC" / "results.json"
+CACHE = ROOT / "results" / "figures" / "downstream_raw.json"
+
+#: Dataset -> task. Grouped by endpoint AND metric: a task whose members are scored in two
+#: different units cannot share a panel, and the assertion below refuses to build one.
+TASKS = {
+    "physchem": ("Physicochemical", ["aqsoldb", "esol", "lipophilicity", "pb_logd",
+                                     "pb_water_sol", "photoswitch"]),
+    "adme":     ("ADME (regression)", ["pb_hum_mic_cl", "pb_mou_mic_cl", "pb_rat_mic_cl",
+                                       "pb_ppb", "vdss_lombardo", "ld50_zhu"]),
+    "bioact":   ("Bioactivity & tox", ["ames", "pb_ames", "cyp2d6_inh", "pb_cyp2c9",
+                                       "pb_cyp2d6", "pb_cyp3a4", "bioavail", "hia",
+                                       "cycpept_pampa", "pb_bbb"]),
+    "quantum":  ("Quantum", ["qm8", "qm9", "qm9_gap", "qmugs_gap"]),
+}
+# fartdb and rascore are deliberately not in a task: neither shares an endpoint type with the
+# four groups, and a fifth panel holding two unrelated datasets communicates less than leaving
+# them in the CSV. They stay in the raw cache.
+
+FIGB_BASES = ["ecfp", "desc", "ecfp_all_desc"]
+FIGB_ANCHOR = "ecfp_all_desc"
+FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
+FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "hume",
+             "minimol", "chemeleon", "chemberta_mtr"]
+#: The three arms Figure C plots that are not measured end-to-end by bench_aws.py under the same
+#: name. Cost is ADDITIVE here because the arm literally runs both blocks: `ecfp_rdkit_desc` is
+#: the ECFP call plus the RDKit-180 call, one after the other, on the same molecule.
+COST_SUM = {"ecfp_rdkit_desc": ["ecfp", "rdkit_desc"],
+            "ecfp_mordred_desc": ["ecfp", "mordred_desc"],
+            "ecfp_all_desc": ["mordred"]}
+COST_KEY = {"ecfp": "ecfp", "hume": "hume", "chemeleon": "chemeleon",
+            "chemberta_mtr": "chemberta", "minimol": "minimol"}
+
+
+def fetch():
+    """-> [record]. Completed files win over partials from the same instance."""
+    ls = subprocess.run(["aws", "s3", "ls", f"s3://{BUCKET}/downstream/"],
+                        capture_output=True, text=True)
+    keys = [l.split()[-1] for l in ls.stdout.splitlines() if l.strip().endswith(".json")]
+    done = {k.split(".")[0] for k in keys if not k.endswith(".partial.json")}
+    use = [k for k in keys if not (k.endswith(".partial.json") and k.split(".")[0] in done)]
+    recs, seen = [], []
+    for k in sorted(use):
+        r = subprocess.run(["aws", "s3", "cp", f"s3://{BUCKET}/downstream/{k}", "-"],
+                           capture_output=True)
+        if r.returncode != 0:
+            print(f"  ! could not read {k}")
+            continue
+        rows = json.loads(r.stdout)
+        recs.extend(rows)
+        seen.append((k, len(rows)))
+    for k, n in seen:
+        print(f"  {k:<44s} {n:6,d} records")
+    return recs
+
+
+def aggregate(recs):
+    """-> {(task, arm): (mean_ratio, sem, n_folds)} plus the per-dataset table."""
+    fold = defaultdict(list)                       # (dataset, arm) -> [value]
+    metric = {}
+    for r in recs:
+        fold[(r["dataset"], r["arm"])].append(float(r["value"]))
+        metric[r["dataset"]] = r["metric"]
+    per_ds = {k: float(np.mean(v)) for k, v in fold.items()}
+
+    out, table = {}, []
+    for tkey, (_lab, dss) in TASKS.items():
+        mets = {metric[d] for d in dss if d in metric}
+        assert len(mets) <= 1, (
+            f"task {tkey!r} mixes metrics {sorted(mets)}. A panel shows ONE unit; regroup the "
+            f"datasets rather than averaging an AUROC with an RMSE.")
+        arms = {a for (d, a) in per_ds if d in dss}
+        for arm in arms:
+            ratios = []
+            for d in dss:
+                v, ref = per_ds.get((d, arm)), per_ds.get((d, FIGB_ANCHOR))
+                if v is None or ref in (None, 0):
+                    continue
+                ratios.append(v / ref)
+                table.append({"task": tkey, "dataset": d, "arm": arm, "value": v,
+                              "anchor": ref, "ratio": v / ref, "metric": metric[d]})
+            if not ratios:
+                continue
+            out[(tkey, arm)] = (float(np.mean(ratios)),
+                                float(np.std(ratios, ddof=1) / np.sqrt(len(ratios)))
+                                if len(ratios) > 1 else 0.0,
+                                sum(len(fold[(d, arm)]) for d in dss if (d, arm) in fold))
+    return out, table, metric
+
+
+def task_specs(metric):
+    specs = []
+    for tkey, (lab, dss) in TASKS.items():
+        m = next((metric[d] for d in dss if d in metric), None)
+        if m is None:
+            continue
+        specs.append({"key": tkey, "label": lab, "metric": m,
+                      "lower_is_better": m == "rmse"})
+    return specs
+
+
+def costs():
+    """us/mol per Figure C arm, from results/scale/. Missing arms are reported, not invented."""
+    pts = defaultdict(dict)
+    for f in (ROOT / "results" / "scale").glob("*_cpu.json"):
+        d = json.loads(f.read_text())
+        for p in d["points"]:
+            pts[p["arm"]][p["n"]] = p["wall_s"] / p["n"] * 1e6
+    best = {a: v[max(v)] for a, v in pts.items() if v}
+    out, missing = {}, []
+    for arm in FIGC_ARMS:
+        if arm in COST_SUM:
+            parts = COST_SUM[arm]
+            if any(p not in best for p in parts):
+                missing.append((arm, [p for p in parts if p not in best]))
+                continue
+            out[arm] = {"us_per_mol": sum(best[p] for p in parts),
+                        "measured_on": "c7i.4xlarge, 16 vCPU",
+                        "breakdown": {p: best[p] for p in parts}}
+        else:
+            k = COST_KEY.get(arm)
+            if k not in best:
+                missing.append((arm, [k]))
+                continue
+            out[arm] = {"us_per_mol": best[k], "measured_on": "c7i.4xlarge, 16 vCPU",
+                        "breakdown": {k: best[k]}}
+    for arm, parts in missing:
+        print(f"  ! no measured cost for {arm} (needs {parts}) -- it cannot be placed on "
+              f"figure C's x-axis and is dropped")
+    return out
+
+
+def main():
+    recs = fetch()
+    if not recs:
+        raise SystemExit("no downstream results in S3 yet")
+    CACHE.parent.mkdir(parents=True, exist_ok=True)
+    CACHE.write_text(json.dumps(recs))
+    agg, table, metric = aggregate(recs)
+    specs = task_specs(metric)
+    have = sorted({a for _t, a in agg})
+    print(f"\n  {len(recs):,} records | {len(specs)} tasks | {len(have)} arms: {have}")
+
+    # ---- figure B ----------------------------------------------------------------------
+    brecs = []
+    for t in specs:
+        for base in FIGB_BASES:
+            for add in [None] + FIGB_ADDS:
+                arm = base if add is None else f"{base}__{add}"
+                cell = agg.get((t["key"], arm))
+                if cell is None:
+                    continue
+                brecs.append({"task": t["key"], "base": base, "add": add,
+                              "mean": cell[0], "sem": cell[1], "n_folds": cell[2]})
+    OUT_B.parent.mkdir(parents=True, exist_ok=True)
+    OUT_B.write_text(json.dumps(
+        {"meta": {"source": "bench_downstream.py on c7i.4xlarge", "n_records": len(recs),
+                  "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"},
+         "tasks": specs, "bases": FIGB_BASES, "anchor": FIGB_ANCHOR, "adds": FIGB_ADDS,
+         "records": brecs}, indent=1))
+    print(f"  -> {OUT_B.relative_to(ROOT)}  {len(brecs)} cells")
+
+    # ---- figure C ----------------------------------------------------------------------
+    cost = costs()
+    arms = [a for a in FIGC_ARMS if a in cost and any((t["key"], a) in agg for t in specs)]
+    crecs = [{"task": t["key"], "arm": a, "head": "xgboost",
+              "mean": agg[(t["key"], a)][0], "sem": agg[(t["key"], a)][1],
+              "n_folds": agg[(t["key"], a)][2]}
+             for t in specs for a in arms if (t["key"], a) in agg]
+    OUT_C.parent.mkdir(parents=True, exist_ok=True)
+    OUT_C.write_text(json.dumps(
+        {"meta": {"source": "bench_downstream.py + results/scale", "n_records": len(recs),
+                  "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"},
+         "tasks": specs, "arms": arms, "cost": cost, "records": crecs}, indent=1))
+    print(f"  -> {OUT_C.relative_to(ROOT)}  {len(crecs)} cells, {len(arms)} arms")
+
+    with open(ROOT / "figures" / "build" / "downstream_by_dataset.csv", "w") as fh:
+        fh.write("task,dataset,arm,metric,value,anchor,ratio\n")
+        for r in table:
+            fh.write(f"{r['task']},{r['dataset']},{r['arm']},{r['metric']},"
+                     f"{r['value']:.6f},{r['anchor']:.6f},{r['ratio']:.6f}\n")
+
+
+if __name__ == "__main__":
+    main()
