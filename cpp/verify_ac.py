@@ -117,20 +117,32 @@ def read_values(path: Path, n_cols: int, n_rows: int) -> np.ndarray:
 # --------------------------------------------------------------------------------------------
 # The mordred reference: ON DISK, INCREMENTALLY, RESUMABLE.
 #
-# THIS REPLACED `np.vstack(pool.map(...))`, WHICH LOST A THREE-HOUR RUN AT THE FINISH LINE.
-# `pool.map` returns only when every chunk is done, so the parent then held, all at once: the
-# 98,905 x 540 `got` matrix (427 MB), the list of 80 chunk arrays (427 MB), and the vstack
-# destination (427 MB). The parent died with no Python traceback -- an abrupt kill, at the one
-# moment the run needed a 1.3 GB peak, on a box that was under heavy memory pressure from other
-# work. Three hours of ten cores produced nothing at all.
+# THIS REPLACED `np.vstack(pool.map(...))`. A three-hour full-corpus run did produce nothing, but
+# NOT because of this code -- an operator killed it deliberately, and the post-mortem written here
+# first (memory exhaustion at the vstack peak) was a guess that fitted the symptoms and was wrong.
+# It is recorded as a wrong guess because the symptoms are worth recognising: a parent that dies
+# with NO Python traceback while its workers report `BrokenPipeError` writing into the result
+# queue is what an EXTERNAL KILL looks like from the inside. It is not what MemoryError looks
+# like. Do not diagnose from a broken pipe alone.
 #
-# Two defects, and the second is the one that actually cost the time:
-#   1. Peak memory scaled with the corpus. `imap` streams results in order instead, so the parent
-#      holds one chunk (~5 MB) rather than the whole reference twice over.
-#   2. NOTHING WAS PERSISTED UNTIL THE END. That is what turns any failure -- memory, a stray
-#      kill, a laptop lid -- into total loss. The reference now lands in a memmap as it is
-#      computed and a progress counter is fsynced beside it, so a second attempt resumes from the
-#      last completed chunk instead of from zero.
+# The two changes stand on their own merits regardless:
+#   1. Peak memory scaled with the corpus. `pool.map` returns only when every chunk is done, so
+#      the parent held the `got` matrix, the list of chunk arrays and the vstack destination at
+#      once -- three 427 MB copies at 98,905 x 540. `imap` streams results in order instead, so
+#      the parent holds one chunk (~5 MB). On a 24 GB box shared with other jobs that headroom
+#      matters even though it is not what ended the run.
+#   2. NOTHING WAS PERSISTED UNTIL THE END, and this is the valuable half. It is what turns ANY
+#      interruption -- an operator, a laptop lid, a scheduler -- into total loss, and an oracle
+#      that costs tens of core-hours must not be all-or-nothing. The reference now lands in a
+#      memmap as it is computed with a progress counter written beside it, so the next attempt
+#      resumes from the last completed chunk instead of from zero.
+#
+# AND: KILLING THE PARENT DOES NOT KILL THE POOL. When that run was terminated, seven of its ten
+# workers reparented to PID 1 and kept running at 150-180% CPU EACH for another three and a half
+# hours -- about eleven cores of a twelve-core box, long after anything was reading their output.
+# Load average only fell from 156 to 92 when they were hunted down by hand. Anyone stopping this
+# script must kill the process GROUP, not the parent: `pkill -f verify_ac.py` leaves the workers,
+# whose command line is `python -c from multiprocessing...` and matches nothing obvious.
 #
 # THE CACHE IS KEYED ON ITS INPUTS, not just on its shape. A stale reference silently graded
 # against a regenerated values_ac.txt would be worse than no cache at all, so the header carries

@@ -161,3 +161,6 @@ cpp/constit_in.txt
 cpp/constit_ref.txt
 cpp/constit_cpp.txt
 cpp/constit_meta.json
+
+# cpp/verify_ac.py resumable mordred reference cache (427 MB memmap + its key)
+cpp/.ac_ref_cache.*
