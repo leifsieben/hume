@@ -470,10 +470,20 @@ def report() -> None:
     if worst > 0.10:
         print("  INDICATIVE ONLY -- shared steps agree to worse than 10%.")
     print(f"end-to-end: HUME {ta:.1f} us/mol vs baseline {tb:.1f} us/mol -> {tb / ta:.1f}x")
-    if a["columns_descriptors"] != b["columns_descriptors"]:
-        print(f"  CAVEAT: HUME covers {a['columns_descriptors']} descriptor columns, the "
-              f"baseline {b['columns_descriptors']}. The ratio is NOT like-for-like until the "
-              f"port is complete.")
+    # 865 SURVIVOR ROWS, 864 UNIQUE NAMES. `data/dedupe.json` carries one name that is defined by
+    # BOTH rdkit and mordred and survives under both sources, so the baseline computes 865 entries
+    # while there are only 864 distinct columns to cover. Comparing the two counts naively made a
+    # COMPLETE port print "NOT like-for-like" forever, which is a worse error than the one the
+    # caveat exists to prevent -- it would have understated a finished result indefinitely.
+    N_UNIQUE = 864
+    if a["columns_descriptors"] < N_UNIQUE:
+        print(f"  CAVEAT: HUME covers {a['columns_descriptors']} of the {N_UNIQUE} unique "
+              f"descriptor names; the baseline computes all of them. The ratio is NOT "
+              f"like-for-like until the port is complete.")
+    else:
+        print(f"  LIKE FOR LIKE: both arms cover all {N_UNIQUE} unique descriptor names "
+              f"(the baseline's {b['columns_descriptors']} counts one name twice, defined by "
+              f"both rdkit and mordred).")
 
 
 def sweep(arm: str, sizes, n_reps: int) -> None:
