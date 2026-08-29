@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 1745,
+  "n_records": 1805,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -197,6 +197,38 @@
   },
   {
    "task": "classif",
+   "base": "ecfp",
+   "add": "chemeleon",
+   "mean": 0.9972051722063794,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "ecfp",
+   "add": "chemberta_mtr",
+   "mean": 0.9917452009020816,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "ecfp",
+   "add": "minimol",
+   "mean": 0.9960195715877922,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "ecfp",
+   "add": "molformer",
+   "mean": 0.9792188366997938,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
    "base": "desc",
    "add": null,
    "mean": 1.0004648173233102,
@@ -205,11 +237,75 @@
   },
   {
    "task": "classif",
+   "base": "desc",
+   "add": "chemeleon",
+   "mean": 1.0023732403410897,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "desc",
+   "add": "chemberta_mtr",
+   "mean": 1.0021266876508965,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "desc",
+   "add": "minimol",
+   "mean": 1.0010481355218228,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "desc",
+   "add": "molformer",
+   "mean": 0.9950066210996626,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
    "base": "ecfp_all_desc",
    "add": null,
    "mean": 1.0,
    "sem": 0.0,
    "n_folds": 25
+  },
+  {
+   "task": "classif",
+   "base": "ecfp_all_desc",
+   "add": "chemeleon",
+   "mean": 1.0048997718578474,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "ecfp_all_desc",
+   "add": "chemberta_mtr",
+   "mean": 1.002224512175407,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "ecfp_all_desc",
+   "add": "minimol",
+   "mean": 1.002926636020332,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "base": "ecfp_all_desc",
+   "add": "molformer",
+   "mean": 0.9971873844901209,
+   "sem": 0.0,
+   "n_folds": 5
   }
  ]
 }
