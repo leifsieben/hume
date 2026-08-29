@@ -224,7 +224,7 @@ def main() -> None:
         ax.tick_params(axis="x", length=0)
         ax.set_xlim(-0.5, len(bases) - 0.5)
         if t_i % ncol == 0:
-            ax.set_ylabel("% of ECFP4 + descriptors", fontsize=FS["label"])
+            ax.set_ylabel("% of ECFP4 + descriptors (\u2191 better)", fontsize=FS["label"])
         ax.grid(axis="y")
         title(ax, f"{t['label']}\n({t['metric']})", pad=4)
         ax.text(-0.22, 1.16, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],

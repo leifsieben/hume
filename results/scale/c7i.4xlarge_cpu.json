@@ -1,17 +1,17 @@
 {
  "meta": {
   "instance": "c7i.4xlarge",
-  "instance_id": "i-0202e1d35cc53868b",
+  "instance_id": "i-0186a59476512eec5",
   "region": "us-east-1",
   "vcpu": 16,
   "budget": "cpu",
-  "host": "ip-172-31-66-85",
+  "host": "ip-172-31-64-66",
   "python": "3.12.14",
   "usd_per_hour_ondemand": 0.714,
   "usd_per_hour_spot": 0.3079,
   "priced_on": "2026-08-29",
   "corpus": "/opt/bench/data/corpus1m/selected.txt",
-  "started": "2026-08-28T16:44:49Z"
+  "started": "2026-08-29T11:43:17Z"
  },
  "points": [
   {
@@ -155,6 +155,30 @@
    "n": 1000000,
    "batch": 1024,
    "wall_s": 124.10220537800001,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "minimol",
+   "n": 10000,
+   "batch": 128,
+   "wall_s": 32.43876505299977,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "minimol",
+   "n": 100000,
+   "batch": 128,
+   "wall_s": 173.08168219299978,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "minimol",
+   "n": 1000000,
+   "batch": 128,
+   "wall_s": 1544.659867544,
    "prep_s": null,
    "fwd_s": null
   },

@@ -1,9 +1,15 @@
 \subsection{Downstream datasets}
 
-We evaluate on 26 datasets from the ChemPFN benchmark lake, grouped into four families that are
-reported separately because they are scored in different units: physicochemical regression
-(6 sets, RMSE), ADME and toxicity regression (10 sets, RMSE), binary classification (6 sets,
-AUROC) and quantum energies (4 sets, RMSE). Each dataset is split into five scaffold folds
+We evaluate on 26 datasets, grouped into four families that are reported separately because they
+are scored in different units. \textbf{Physicochemical regression} (RMSE): AqSolDB, ESOL,
+Lipophilicity, and the PharmaBench LogD and water-solubility sets, plus the Photoswitch dataset.
+\textbf{ADME and toxicity regression} (RMSE): the PharmaBench CYP2C9, CYP2D6, CYP3A4, human,
+mouse and rat microsomal clearance, and plasma-protein-binding sets, together with CycPeptMPDB
+PAMPA permeability, LD$_{50}$ (Zhu), and the Lombardo volume-of-distribution set.
+\textbf{Binary classification} (AUROC): Ames mutagenicity and the PharmaBench Ames and
+blood--brain-barrier sets, CYP2D6 inhibition, oral bioavailability, and human intestinal
+absorption. \textbf{Quantum energies} (RMSE): QM8, QM9 (two targets: atomisation energy and
+HOMO--LUMO gap), and QMugs HOMO--LUMO gap. Each dataset is split into five scaffold folds
 (seed 0), so performance reflects information that transfers to an unseen scaffold, and sets
 larger than 50{,}000 molecules are subsampled to that size. Every embedding is fitted with the
 same deliberately untuned XGBoost head, so that differences are attributable to the

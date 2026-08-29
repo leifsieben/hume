@@ -197,7 +197,12 @@ def main() -> None:
         ax.set_ylabel(f"{t['metric']} ({'↓' if lo_better else '↑'} better)",
                       fontsize=FS["label"])
         ax.grid(axis="both")
-        title(ax, t["label"])
+        # THE DIRECTION GOES IN THE TITLE, not only on the y-label. These panels invert the
+        # axis for error metrics so that "up" is always better, and a reader who does not notice
+        # reads the best arm as the worst -- which happened: HUME sits second-best on Quantum
+        # energy at 0.999 and was read as the worst point on the plate.
+        arrow = "\u2193 better" if lo_better else "\u2191 better"
+        title(ax, f"{t['label']}\n({t['metric']}, {arrow})", pad=4)
         ax.text(-0.16, 1.06, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],
                 fontweight="bold", va="bottom", ha="right")
 

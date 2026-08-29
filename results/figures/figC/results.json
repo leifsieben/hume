@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 2520,
+  "n_records": 2640,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -36,6 +36,7 @@
   "ecfp_mordred_desc",
   "ecfp_all_desc",
   "hume",
+  "minimol",
   "chemeleon",
   "chemberta_mtr"
  ],
@@ -73,6 +74,13 @@
    "measured_on": "c7i.4xlarge, 16 vCPU",
    "breakdown": {
     "hume": 124.10220537800002
+   }
+  },
+  "minimol": {
+   "us_per_mol": 1544.659867544,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "minimol": 1544.659867544
    }
   },
   "chemeleon": {
@@ -133,6 +141,14 @@
   },
   {
    "task": "physchem",
+   "arm": "minimol",
+   "head": "xgboost",
+   "mean": 1.0736830687611159,
+   "sem": 0.04930943551658515,
+   "n_folds": 25
+  },
+  {
+   "task": "physchem",
    "arm": "chemeleon",
    "head": "xgboost",
    "mean": 1.0749775599766536,
@@ -186,6 +202,14 @@
    "mean": 1.0077761252016433,
    "sem": 0.013063872611386548,
    "n_folds": 60
+  },
+  {
+   "task": "adme",
+   "arm": "minimol",
+   "head": "xgboost",
+   "mean": 1.050090187941902,
+   "sem": 0.01711145169673035,
+   "n_folds": 50
   },
   {
    "task": "adme",
@@ -245,6 +269,14 @@
   },
   {
    "task": "classif",
+   "arm": "minimol",
+   "head": "xgboost",
+   "mean": 0.9958818649876695,
+   "sem": 0.00835427625936375,
+   "n_folds": 30
+  },
+  {
+   "task": "classif",
    "arm": "chemeleon",
    "head": "xgboost",
    "mean": 1.0099622764746932,
@@ -298,6 +330,14 @@
    "mean": 0.9987475796263428,
    "sem": 0.03164439443167755,
    "n_folds": 15
+  },
+  {
+   "task": "quantum",
+   "arm": "minimol",
+   "head": "xgboost",
+   "mean": 0.9591407689668254,
+   "sem": 0.05709247958462532,
+   "n_folds": 20
   },
   {
    "task": "quantum",
