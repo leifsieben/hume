@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 2070,
+  "n_records": 2520,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -95,25 +95,25 @@
    "task": "physchem",
    "arm": "ecfp",
    "head": "xgboost",
-   "mean": 1.1282610358794813,
-   "sem": 0.07147748758712945,
-   "n_folds": 40
+   "mean": 1.1430580961757288,
+   "sem": 0.057309438423977996,
+   "n_folds": 45
   },
   {
    "task": "physchem",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": 0.9831887762688009,
-   "sem": 0.013011743403358075,
-   "n_folds": 30
+   "mean": 0.9921286628275519,
+   "sem": 0.013472373640908038,
+   "n_folds": 35
   },
   {
    "task": "physchem",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": 1.0081005178260525,
-   "sem": 0.009586252725457944,
-   "n_folds": 40
+   "mean": 1.0066116414777313,
+   "sem": 0.007573275220827501,
+   "n_folds": 45
   },
   {
    "task": "physchem",
@@ -121,30 +121,30 @@
    "head": "xgboost",
    "mean": 1.0,
    "sem": 0.0,
-   "n_folds": 30
+   "n_folds": 35
   },
   {
    "task": "physchem",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 1.0110293788929916,
-   "sem": 0.010906546575924056,
-   "n_folds": 35
+   "mean": 1.008293909495954,
+   "sem": 0.008880002688615003,
+   "n_folds": 40
   },
   {
    "task": "physchem",
    "arm": "chemeleon",
    "head": "xgboost",
-   "mean": 1.0741107949834818,
-   "sem": 0.03348775830491336,
+   "mean": 1.0749775599766536,
+   "sem": 0.02595398341924346,
    "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 1.2923158933192744,
-   "sem": 0.06411439154102921,
+   "mean": 1.286506844681527,
+   "sem": 0.05000138165772573,
    "n_folds": 30
   },
   {
@@ -193,7 +193,7 @@
    "head": "xgboost",
    "mean": 1.0525842598345598,
    "sem": 0.014898587929034686,
-   "n_folds": 45
+   "n_folds": 50
   },
   {
    "task": "adme",
@@ -201,7 +201,7 @@
    "head": "xgboost",
    "mean": 1.1228966233635225,
    "sem": 0.03254000258072676,
-   "n_folds": 45
+   "n_folds": 50
   },
   {
    "task": "classif",

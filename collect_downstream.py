@@ -156,7 +156,23 @@ def costs():
         d = json.loads(f.read_text())
         for p in d["points"]:
             pts[p["arm"]][p["n"]] = p["wall_s"] / p["n"] * 1e6
-    best = {a: v[max(v)] for a, v in pts.items() if v}
+    # THE LARGEST N MEASURED, and the spread across decades is REPORTED. Figure C's x-axis is a
+    # per-molecule cost, which presumes that cost does not depend on N -- true for every
+    # descriptor and fingerprint arm here (all flat inside 3%) but NOT for minimol, which reads
+    # 3243.9 us/mol at 1e4 and 1730.8 at 1e5 as its fixed model-loading cost amortises. Taking the
+    # largest N is the right choice for a figure that extrapolates to a billion molecules, but an
+    # arm whose cost is still moving is a caveat, not a number, and it says so out loud.
+    best, drift = {}, {}
+    for a, v in pts.items():
+        if not v:
+            continue
+        best[a] = v[max(v)]
+        lo, hi = min(v.values()), max(v.values())
+        if lo > 0 and (hi - lo) / lo > 0.10:
+            drift[a] = (sorted(v), [round(v[n], 1) for n in sorted(v)])
+    for a, (ns, vs) in drift.items():
+        print(f"  ! {a}: us/mol is NOT flat across N -- {vs} at N={ns}. The largest N is used; "
+              f"the per-molecule axis is an asymptote for this arm, not a constant.")
     out, missing = {}, []
     for arm in FIGC_ARMS:
         if arm in COST_SUM:
