@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 1805,
+  "n_records": 1990,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -79,33 +79,33 @@
    "task": "adme",
    "base": "ecfp",
    "add": "chemeleon",
-   "mean": 1.0001078655201263,
-   "sem": 0.027785307997495512,
-   "n_folds": 10
+   "mean": 1.0050683502174234,
+   "sem": 0.01634674384901848,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "ecfp",
    "add": "chemberta_mtr",
-   "mean": 1.0080019516289218,
-   "sem": 0.005030120933715131,
-   "n_folds": 10
+   "mean": 1.0044394672117254,
+   "sem": 0.004551246024781109,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "ecfp",
    "add": "minimol",
-   "mean": 1.0191998476896167,
-   "sem": 0.03700662879801214,
-   "n_folds": 10
+   "mean": 1.0119328848377882,
+   "sem": 0.01574557711779271,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "ecfp",
    "add": "molformer",
-   "mean": 1.025055590530208,
-   "sem": 0.03346739176283331,
-   "n_folds": 10
+   "mean": 1.0175773282202787,
+   "sem": 0.014487930569899152,
+   "n_folds": 20
   },
   {
    "task": "adme",
@@ -119,33 +119,33 @@
    "task": "adme",
    "base": "desc",
    "add": "chemeleon",
-   "mean": 1.008500698275735,
-   "sem": 0.027472163076650624,
-   "n_folds": 10
+   "mean": 0.999486412766563,
+   "sem": 0.019388636053836106,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "desc",
    "add": "chemberta_mtr",
-   "mean": 1.0097251917656918,
-   "sem": 0.02152795585874839,
-   "n_folds": 10
+   "mean": 1.0084585801956867,
+   "sem": 0.0089854390018224,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "desc",
    "add": "minimol",
-   "mean": 1.020726834095853,
-   "sem": 0.03462437792515188,
-   "n_folds": 10
+   "mean": 1.012706999295289,
+   "sem": 0.015017411970939719,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "desc",
    "add": "molformer",
-   "mean": 1.0247572673430838,
-   "sem": 0.021204547421320163,
-   "n_folds": 10
+   "mean": 1.0172120020072737,
+   "sem": 0.01436960386276298,
+   "n_folds": 20
   },
   {
    "task": "adme",
@@ -159,33 +159,33 @@
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "chemeleon",
-   "mean": 0.9926948228749306,
-   "sem": 0.029900306953394237,
-   "n_folds": 10
+   "mean": 0.9904760784139279,
+   "sem": 0.018136440535492175,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "chemberta_mtr",
-   "mean": 1.0090173694280589,
-   "sem": 0.04437416130625154,
-   "n_folds": 10
+   "mean": 0.996394392550328,
+   "sem": 0.019910838593630596,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "minimol",
-   "mean": 1.0075366942498576,
-   "sem": 0.02731557185683042,
-   "n_folds": 10
+   "mean": 0.9984637726073242,
+   "sem": 0.012864515722423394,
+   "n_folds": 20
   },
   {
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "molformer",
-   "mean": 0.9959932385754942,
-   "sem": 0.015177725326943612,
-   "n_folds": 10
+   "mean": 0.9932961473571755,
+   "sem": 0.011021253721314739,
+   "n_folds": 20
   },
   {
    "task": "classif",
@@ -304,6 +304,30 @@
    "base": "ecfp_all_desc",
    "add": "molformer",
    "mean": 0.9971873844901209,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "base": "ecfp",
+   "add": null,
+   "mean": 1.4383913793701617,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "base": "desc",
+   "add": null,
+   "mean": 0.9877248918612882,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "base": "ecfp_all_desc",
+   "add": null,
+   "mean": 1.0,
    "sem": 0.0,
    "n_folds": 5
   }

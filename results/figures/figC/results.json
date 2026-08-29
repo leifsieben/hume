@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 1805,
+  "n_records": 1990,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -31,7 +31,6 @@
   }
  ],
  "arms": [
-  "ecfp",
   "ecfp_rdkit_desc",
   "ecfp_mordred_desc",
   "ecfp_all_desc",
@@ -40,26 +39,17 @@
   "chemberta_mtr"
  ],
  "cost": {
-  "ecfp": {
-   "us_per_mol": 18.93470710700001,
-   "measured_on": "c7i.4xlarge, 16 vCPU",
-   "breakdown": {
-    "ecfp": 18.93470710700001
-   }
-  },
   "ecfp_rdkit_desc": {
-   "us_per_mol": 463.272013,
+   "us_per_mol": 444.337305893,
    "measured_on": "c7i.4xlarge, 16 vCPU",
    "breakdown": {
-    "ecfp": 18.93470710700001,
     "rdkit_desc": 444.337305893
    }
   },
   "ecfp_mordred_desc": {
-   "us_per_mol": 4701.651277776999,
+   "us_per_mol": 4682.71657067,
    "measured_on": "c7i.4xlarge, 16 vCPU",
    "breakdown": {
-    "ecfp": 18.93470710700001,
     "mordred_desc": 4682.71657067
    }
   },
@@ -93,14 +83,6 @@
   }
  },
  "records": [
-  {
-   "task": "physchem",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 1.1282610358794813,
-   "sem": 0.07147748758712945,
-   "n_folds": 40
-  },
   {
    "task": "physchem",
    "arm": "ecfp_rdkit_desc",
@@ -148,14 +130,6 @@
    "mean": 1.2923158933192744,
    "sem": 0.06411439154102921,
    "n_folds": 30
-  },
-  {
-   "task": "adme",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 1.0293510137117705,
-   "sem": 0.014936232491054533,
-   "n_folds": 60
   },
   {
    "task": "adme",
@@ -207,14 +181,6 @@
   },
   {
    "task": "classif",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 0.9877244381439416,
-   "sem": 0.007631779637813094,
-   "n_folds": 30
-  },
-  {
-   "task": "classif",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
    "mean": 1.001372055645506,
@@ -260,6 +226,54 @@
    "mean": 0.9811664300167131,
    "sem": 0.013517147606335472,
    "n_folds": 30
+  },
+  {
+   "task": "quantum",
+   "arm": "ecfp_rdkit_desc",
+   "head": "xgboost",
+   "mean": 1.0348705986939195,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "arm": "ecfp_mordred_desc",
+   "head": "xgboost",
+   "mean": 1.007957694722267,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "arm": "ecfp_all_desc",
+   "head": "xgboost",
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "arm": "hume",
+   "head": "xgboost",
+   "mean": 0.9671031851946653,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "quantum",
+   "arm": "chemeleon",
+   "head": "xgboost",
+   "mean": 1.2417818173217896,
+   "sem": 0.0,
+   "n_folds": 20
+  },
+  {
+   "task": "quantum",
+   "arm": "chemberta_mtr",
+   "head": "xgboost",
+   "mean": 1.7227248356322602,
+   "sem": 0.0,
+   "n_folds": 20
   }
  ]
 }
