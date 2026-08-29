@@ -226,6 +226,14 @@ W_GRID = (1.0, 5.0, 10.0, 100.0)
 #: Inner-CV settings for the `w` search. K folds rather than one split, and a floor on the
 #: inner-validation size below which we use API.md section 7's documented default instead of
 #: tuning -- a tuner given 90 molecules returns noise, and noise costs only the arms that tune.
+#: Harness protocol version, STAMPED INTO EVERY RECORD. Runs of different vintages coexist in
+#: the same S3 prefix and a collector cannot otherwise tell them apart -- "newest file wins" is
+#: wrong the moment a long-running box keeps re-uploading its partial, which is exactly what
+#: happened: dsA had been running for 20 hours, so its old-protocol records carried a fresher
+#: timestamp than a re-run that superseded them and silently won every merge.
+#: 1 = single 80/20 inner split for w.  2 = 3-fold inner CV with a MIN_INNER_VAL floor.
+PROTO = 2
+
 W_INNER_K = 3
 MIN_INNER_VAL = 200
 W_UNTUNED = 10.0
@@ -474,7 +482,7 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
                 except Exception as e:
                     print(f"  {ds}/{a}/fold{i}: {type(e).__name__}: {e}", flush=True)
                     continue
-                records.append({"dataset": ds, "fold": i, "arm": a,
+                records.append({"proto": PROTO, "dataset": ds, "fold": i, "arm": a,
                                 "metric": {"binary": "auroc", "multiclass": "acc"}.get(
                                     task, "rmse"),
                                 "value": float(v), "task": task, "n": len(smis),

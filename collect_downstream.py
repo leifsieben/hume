@@ -101,6 +101,14 @@ def fetch():
         parts = line.split()
         if len(parts) >= 4 and parts[-1].endswith(".json"):
             order[parts[-1]] = parts[0] + " " + parts[1]
+    # PROTOCOL BEATS TIMESTAMP. A record produced by a newer harness supersedes an older one
+    # however recently the older file was written -- see PROTO in bench_downstream.py. Records
+    # from before the stamp existed are treated as protocol 1.
+    #
+    # The six wfix instances ran the fixed harness before the stamp was added, so they are named
+    # here explicitly rather than inferred; everything after this carries `proto` in the record.
+    PROTO2_RUNS = {"i-084fac77c3e522334", "i-04496c0164e234040", "i-0617d9b2aeb8cf3dc",
+                   "i-0fb9c9e172c079b65", "i-09645f62c2f264088", "i-04080faa787d8dd8f"}
     merged, seen = {}, []
     for k in sorted(use, key=lambda k: order.get(k, "")):
         r = subprocess.run(["aws", "s3", "cp", f"s3://{BUCKET}/downstream/{k}", "-"],
@@ -109,8 +117,13 @@ def fetch():
             print(f"  ! could not read {k}")
             continue
         rows = json.loads(r.stdout)
+        iid = k.split(".")[0]
         for x in rows:
-            merged[(x["dataset"], x["arm"], x["fold"])] = x
+            x.setdefault("proto", 2 if iid in PROTO2_RUNS else 1)
+            key = (x["dataset"], x["arm"], x["fold"])
+            prev = merged.get(key)
+            if prev is None or x["proto"] >= prev["proto"]:
+                merged[key] = x
         seen.append((k, len(rows), order.get(k, "?")))
     for k, n, when in seen:
         print(f"  {k:<44s} {n:6,d} records   {when}")
