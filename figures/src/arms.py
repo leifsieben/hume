@@ -277,7 +277,7 @@ ARMS = {
     # descriptors on the QM panel, and the figure should show that rather than hide it.
     "unimol": dict(label="Uni-Mol (3D)", family="graph", color=SHADES["graph"][2],
                    desc_pretrained=False),
-    "chemprop": dict(label="Chemprop, untrained", family="graph", color=SHADES["graph"][1],
+    "chemprop": dict(label="Chemprop", family="graph", color=SHADES["graph"][1],
                      desc_pretrained=False),
 
     # ---- the descriptor proxy ladder (blue) -- figures C/D ----------------------------------

@@ -93,6 +93,12 @@ FIGA = ROOT / "results" / "figures" / "figA"
 RES = FIGA / "resolution.json"
 INK = STYLE["ink"]
 
+#: Scored but NOT DRAWN (Leif 2026-08-29). Every one is still measured, still in
+#: resolution.json and still in figures/build/fig_a.csv -- they are dropped from the PLATE only.
+#:   notation       a difficulty floor, not a representation; it belongs in the audit table
+#:   chemberta_mlm  the MLM/MTR pair is a pretraining ablation for the text, not for this plate
+NOT_DRAWN = {"notation", "chemberta_mlm"}
+
 NULL = 0.5                  # chance. The floor of the axis and the null of the test.
 YMAX = 1.0
 DEGEN_MARK = 0.50           # >=50% identical vectors -> the cell is degenerate, not weak
@@ -155,7 +161,7 @@ def load():
                     f"fig_a: {arm}/{m} was scored on {c['n_seeds']} split seed(s). The error bars "
                     f"on this plate ARE the seed spread, and one seed cannot produce one. "
                     f"Re-run figa_resolution.py (N_SEEDS is 5).")
-    return A.order(list(raw)), raw
+    return A.order([a for a in raw if a not in NOT_DRAWN]), raw
 
 
 def _panel(ax, armlist, cells, mode, klass, title):
@@ -230,7 +236,7 @@ def main():
     lax.axis("off")
     mark_empty(lax, "holds the legend")
     handles = [Patch(facecolor=A.color(a), edgecolor=INK, lw=0.6, hatch=A.hatch(a),
-                     label=A.label(a)) for a in armlist]
+                     label=A.short_label(a)) for a in armlist]
     # frameon=False, matching fig_b, fig_c, fig_d and the CLIMB house style. A boxed legend
     # below the axes is a second rectangle competing with fourteen panel frames.
     lax.legend(handles=handles, loc="center",
