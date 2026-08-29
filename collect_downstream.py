@@ -121,10 +121,31 @@ def aggregate(recs):
     # AUROC and accuracy are converted to 1 - x. RMSE is already an error. The ratio to the
     # anchor is then an error ratio: below 1.0 is better than ECFP4+descriptors, above is worse,
     # in one direction, with no inversion anywhere.
-    ERROR_OF = {"auroc": lambda v: 1.0 - v, "acc": lambda v: 1.0 - v, "rmse": lambda v: v}
+    # ABSOLUTE DIFFERENCE FROM THE ANCHOR, not a ratio (Leif 2026-08-29).
+    #
+    # The ratio was unsafe near ceiling and it decided a panel on one small dataset. `hia` has
+    # n=578 and the anchor already scores AUROC 0.9718, so the anchor's error is 0.0282; dividing
+    # by that turned a 2.3-POINT AUROC difference into a 2.5x error ratio, and that single
+    # dataset moved CheMeleon's classification mean from 0.977 to 0.890 and HUME's from 1.026 to
+    # 1.111. The models were tied on the three datasets with 7k-13k molecules.
+    #
+    # A difference has no denominator to explode. To make differences comparable ACROSS datasets
+    # in a family, each regression error is first divided by the STANDARD DEVIATION OF THE TARGET
+    # on its own dataset -- a property of the data, not of any model's skill -- so RMSE on log
+    # solubility and RMSE on a clearance are on one scale. Classification is already unitless.
+    #
+    # The anchor is therefore 0.000 by construction, negative beats it, and lower is better.
+    SD = json.loads((ROOT / "results" / "figures" / "target_sd.json").read_text())
+    def _err(d, a, v):
+        if metric[d] in ("auroc", "acc"):
+            return 1.0 - v
+        if d not in SD or not SD[d]:
+            raise KeyError(f"{d}: no target standard deviation; regression errors cannot be put "
+                           f"on a common scale without it. Re-run the sd extraction.")
+        return v / SD[d]
     per_ds = {}
     for (d, a), v in fold.items():
-        per_ds[(d, a)] = float(ERROR_OF[metric[d]](np.mean(v)))
+        per_ds[(d, a)] = float(_err(d, a, float(np.mean(v))))
 
     out, table = {}, []
     for tkey, (_lab, dss) in TASKS.items():
@@ -137,11 +158,11 @@ def aggregate(recs):
             ratios = []
             for d in dss:
                 v, ref = per_ds.get((d, arm)), per_ds.get((d, FIGB_ANCHOR))
-                if v is None or ref in (None, 0):
+                if v is None or ref is None:
                     continue
-                ratios.append(v / ref)
+                ratios.append(v - ref)
                 table.append({"task": tkey, "dataset": d, "arm": arm, "value": v,
-                              "anchor": ref, "ratio": v / ref, "metric": metric[d]})
+                              "anchor": ref, "ratio": v - ref, "metric": metric[d]})
             if not ratios:
                 continue
             out[(tkey, arm)] = (float(np.mean(ratios)),
@@ -160,7 +181,7 @@ def task_specs(metric):
         # Every task is now scored as an ERROR ratio, so lower is better without exception; the
         # label records what the error was derived from.
         specs.append({"key": tkey, "label": lab,
-                      "metric": {"auroc": "1 - auroc", "acc": "1 - acc"}.get(m, m),
+                      "metric": {"auroc": "1 - auroc", "acc": "1 - acc"}.get(m, "rmse / sd(y)"),
                       "lower_is_better": True})
     return specs
 
@@ -237,8 +258,9 @@ def main():
     OUT_B.parent.mkdir(parents=True, exist_ok=True)
     OUT_B.write_text(json.dumps(
         {"meta": {"source": "bench_downstream.py on c7i.4xlarge", "n_records": len(recs),
-                  "unit": "mean over datasets of (arm error / ecfp_all_desc error) on the same "
-                          "dataset; rmse as-is, auroc and acc as 1 - x. Lower is better."},
+                  "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same "
+                          "dataset; regression error = rmse / sd(y), classification = 1 - auroc. "
+                          "Anchor is 0 by construction; lower is better."},
          "tasks": specs, "bases": FIGB_BASES, "anchor": FIGB_ANCHOR, "adds": FIGB_ADDS,
          "records": brecs}, indent=1))
     print(f"  -> {OUT_B.relative_to(ROOT)}  {len(brecs)} cells")
@@ -253,8 +275,9 @@ def main():
     OUT_C.parent.mkdir(parents=True, exist_ok=True)
     OUT_C.write_text(json.dumps(
         {"meta": {"source": "bench_downstream.py + results/scale", "n_records": len(recs),
-                  "unit": "mean over datasets of (arm error / ecfp_all_desc error) on the same "
-                          "dataset; rmse as-is, auroc and acc as 1 - x. Lower is better."},
+                  "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same "
+                          "dataset; regression error = rmse / sd(y), classification = 1 - auroc. "
+                          "Anchor is 0 by construction; lower is better."},
          "tasks": specs, "arms": arms, "cost": cost, "records": crecs}, indent=1))
     print(f"  -> {OUT_C.relative_to(ROOT)}  {len(crecs)} cells, {len(arms)} arms")
 

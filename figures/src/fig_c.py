@@ -196,14 +196,16 @@ def main() -> None:
                           fontsize=FS["label"])
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.
-        ax.set_ylabel(f"{t['metric']}, rel. to ECFP4+desc (\u2193 better)",
-                      fontsize=FS["label"])
+        if nrow > 1 or t_i == 0:
+            ax.set_ylabel("\u0394 error vs ECFP4 + descriptors  (\u2193 better)",
+                          fontsize=FS["label"])
         ax.grid(axis="both")
         # THE DIRECTION GOES IN THE TITLE, not only on the y-label. These panels invert the
         # axis for error metrics so that "up" is always better, and a reader who does not notice
         # reads the best arm as the worst -- which happened: HUME sits second-best on Quantum
         # energy at 0.999 and was read as the worst point on the plate.
         title(ax, f"{t['label']}\n({t['metric']}, \u2193 better)", pad=4)
+        ax.axhline(0.0, ls=(0, (2, 2)), lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=1)
         ax.text(-0.16, 1.06, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],
                 fontweight="bold", va="bottom", ha="right")
 

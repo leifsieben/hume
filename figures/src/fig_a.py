@@ -197,9 +197,6 @@ def _panel(ax, armlist, cells, mode, klass, title):
     for xi, m_, d_ in zip(x, mu, dg):
         if not np.isfinite(m_):
             continue
-        if np.isfinite(d_) and d_ >= DEGEN_MARK:
-            ax.text(xi, NULL + (YMAX - NULL) * 0.02, "≡", ha="center", va="bottom",
-                    fontsize=FS["annot"] - 1.0, color=INK, zorder=5)
 
     ax.set_ylim(NULL, YTOP)
     ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
@@ -274,8 +271,9 @@ def main():
             row += (f"{c['mean']:>11.3f}±{c['sd']:.3f}" if c else f"{'—':>17}")
         print(row + ("   <- the METRIC's null, not a panel" if klass == "NULL" else ""))
     print("\n   Held-out ROC-AUC over 5 component splits, mean ± sd. 0.500 = chance.")
-    print("   ≡ on the plate: the two vectors are IDENTICAL in >=50% of pairs, so the cell is")
-    print("   degenerate by construction and cannot be resolved by anything.")
+    print("   A bar at the floor means the arm did not resolve the edit. Whether that is because")
+    print("   the two vectors are BITWISE IDENTICAL or because the change has no consistent")
+    print("   direction is in fig_a.csv as degenerate_pairs, not on the plate.")
     print("   null_enumerate and null_kekulize are the SAME molecule written two ways: there a")
     print("   HIGH number is a failure, and 0.500 is the correct answer.")
 

@@ -182,15 +182,14 @@ def main() -> None:
                 if r is None:
                     ys.append(np.nan); es.append(np.nan); ok.append(False)
                 else:
-                    ys.append(as_pct(float(r["mean"]), ref, lo_better))
-                    es.append(pct_err(float(r["mean"]), float(r.get("sem", np.nan)),
-                                      ref, lo_better))
+                    ys.append(float(r["mean"]))
+                    es.append(float(r.get("sem", np.nan)))
                     ok.append(True)
 
         span = [v for v, e in zip(ys, es) if np.isfinite(v)]
         span += [v + (e if np.isfinite(e) else 0) for v, e in zip(ys, es) if np.isfinite(v)]
         span += [v - (e if np.isfinite(e) else 0) for v, e in zip(ys, es) if np.isfinite(v)]
-        span.append(100.0)
+        span.append(0.0)
         lo, hi = min(span), max(span)
         pad = 0.22 * max(hi - lo, 1e-9)
         y0, y1 = lo - pad, hi + pad
@@ -216,7 +215,7 @@ def main() -> None:
         # comparison, and without this the reader has to judge it by eye against a grey bar
         # several bars away. The global 100% line answers a different question (does it beat the
         # best classical featurisation we have), and both are worth having.
-        ax.axhline(100.0, ls=(0, (2, 2)), lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=1)
+        ax.axhline(0.0, ls=(0, (2, 2)), lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=1)
         ax.set_xticks(centres)
         ax.set_xticklabels([A.short_label(b) for b in bases],
                            fontsize=FS["annot"] - 1, rotation=20, ha="right",
@@ -224,9 +223,10 @@ def main() -> None:
         ax.tick_params(axis="x", length=0)
         ax.set_xlim(-0.5, len(bases) - 0.5)
         if t_i % ncol == 0:
-            ax.set_ylabel("% of ECFP4 + descriptors (\u2191 better)", fontsize=FS["label"])
+            ax.set_ylabel("\u0394 error vs ECFP4 + descriptors\n(\u2193 better)",
+                          fontsize=FS["label"])
         ax.grid(axis="y")
-        title(ax, f"{t['label']}\n({t['metric']})", pad=4)
+        title(ax, f"{t['label']}\n({t['metric']}, \u2193 better)", pad=4)
         ax.text(-0.22, 1.16, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],
                 fontweight="bold", va="bottom", ha="left")
 
