@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 2765,
+  "n_records": 2825,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -9,25 +9,38 @@
    "key": "physchem",
    "label": "Physicochemical",
    "metric": "rmse / sd(y)",
-   "lower_is_better": true
+   "lower_is_better": true,
+   "proto": [
+    1
+   ]
   },
   {
    "key": "adme",
    "label": "ADME & tox",
    "metric": "rmse / sd(y)",
-   "lower_is_better": true
+   "lower_is_better": true,
+   "proto": [
+    1
+   ]
   },
   {
    "key": "classif",
    "label": "Classification",
    "metric": "1 - auroc",
-   "lower_is_better": true
+   "lower_is_better": true,
+   "proto": [
+    1,
+    2
+   ]
   },
   {
    "key": "quantum",
    "label": "Quantum energy",
    "metric": "rmse / sd(y)",
-   "lower_is_better": true
+   "lower_is_better": true,
+   "proto": [
+    1
+   ]
   }
  ],
  "arms": [

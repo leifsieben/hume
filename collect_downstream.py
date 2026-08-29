@@ -201,7 +201,8 @@ def aggregate(recs):
     return out, table, metric
 
 
-def task_specs(metric):
+def task_specs(metric, recs=None):
+    """Task display specs, carrying which harness protocol produced each family's numbers."""
     specs = []
     for tkey, (lab, dss) in TASKS.items():
         m = next((metric[d] for d in dss if d in metric), None)
@@ -269,7 +270,14 @@ def main():
     CACHE.parent.mkdir(parents=True, exist_ok=True)
     CACHE.write_text(json.dumps(recs))
     agg, table, metric = aggregate(recs)
+    protos_by_task = defaultdict(set)
+    for x in recs:
+        for tkey, (_l, dss) in TASKS.items():
+            if x["dataset"] in dss:
+                protos_by_task[tkey].add(x.get("proto", 1))
     specs = task_specs(metric)
+    for sp in specs:
+        sp["proto"] = sorted(protos_by_task.get(sp["key"], {1}))
     have = sorted({a for _t, a in agg})
     print(f"\n  {len(recs):,} records | {len(specs)} tasks | {len(have)} arms: {have}")
 

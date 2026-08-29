@@ -130,6 +130,40 @@ its place beside it: homologation inserts CH2 into a chain and creates nothing.
 
 ---
 
+## Dropping in the remaining data
+
+    ./refresh_figures.sh
+
+One command. It pulls the cost points and the downstream grid from S3, merges them, re-renders
+Figures B, C and D, and prints exactly what is still outstanding. Safe to run at any time and as
+often as you like -- it reads S3 and rewrites the plates, nothing else. Figure A is not in it:
+that figure is complete and its inputs are local.
+
+**Two merge rules make this safe to run against a fleet that is still working.**
+
+* *Protocol beats timestamp.* Every record carries the harness version that produced it
+  (`PROTO` in `bench_downstream.py`) and a newer protocol wins however recently the older file
+  was written. Newest-file-wins alone was WRONG here and silently so: dsA had been running for
+  twenty hours, so its old-protocol records carried a fresher timestamp than the re-run that
+  superseded them and won every merge -- the re-run looked like it had changed nothing.
+* *Newest wins within a protocol*, per (dataset, arm, fold). A re-run lands under a new instance
+  id rather than replacing the file it supersedes, so plain concatenation would give a cell ten
+  fold-values instead of five and average two protocols together.
+
+**Mixed protocol, on purpose and on the record** (Leif 2026-08-29): the CLASSIFICATION family is
+re-run under protocol 2 (3-fold inner CV for `feature_weights`, with the documented `w=10` used
+below 200 inner-validation molecules); the other three families stay on protocol 1 (a single
+80/20 inner split). `results.json` records which protocol produced each family under
+`tasks[].proto`, so the figure cannot misrepresent its own provenance.
+
+The reason protocol 2 exists: the single inner split was fitting noise at EVERY dataset size --
+the tuned arms picked 3 or 4 distinct `w` values across five folds even at n=9,139 -- and
+`feature_weights` is a no-op for an arm with no fingerprint/descriptor boundary, so every dense
+embedding skipped the loop and paid no variance for it. That is a systematic bias in favour of
+the dense arms, and it is what made CheMeleon appear to beat HUME on classification.
+
+---
+
 ## Figure B — does each block earn its place downstream?
 
 Two panels with a changing reference block: (1) do descriptors carry information ECFP lacks;
