@@ -238,9 +238,15 @@ def _bars(ax, rows, values, fmt):
            edgecolor=STYLE["ink"], linewidth=0.45, zorder=3,
            hatch=[HATCH if c else None for _a, _p, c in rows])
     ax.set_yscale("log")
-    ax.set_ylim(top=ax.get_ylim()[1] * 3.2)
+    # VERTICAL VALUE LABELS. Horizontally they collided with each other once the descriptor
+    # blocks were split out -- "1,301h" ran into "1,722h" on adjacent bars -- and the roster is
+    # still growing, so a spacing that fits today collides on the next arm. Rotated, the label
+    # occupies one bar's width however long the number is. The extra headroom is for the taller
+    # rotated text, not for the bars.
+    ax.set_ylim(top=ax.get_ylim()[1] * 5.0)
     for xi, val in zip(x, v):
-        ax.text(xi, val * 1.14, fmt(val), ha="center", fontsize=FS["annot"], zorder=5)
+        ax.text(xi, val * 1.25, fmt(val), ha="center", va="bottom", rotation=90,
+                fontsize=FS["annot"], zorder=5)
     ax.set_xticks(x)
     # 45 degrees, not 90. Six short names per frame do not collide at 45, and vertical labels
     # were reserving a full inch of an A4-width plate that the bars should be using.
