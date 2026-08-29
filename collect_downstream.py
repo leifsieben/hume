@@ -64,10 +64,21 @@ FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "h
 #: The three arms Figure C plots that are not measured end-to-end by bench_aws.py under the same
 #: name. Cost is ADDITIVE here because the arm literally runs both blocks: `ecfp_rdkit_desc` is
 #: the ECFP call plus the RDKit-180 call, one after the other, on the same molecule.
-COST_SUM = {"ecfp_rdkit_desc": ["ecfp", "rdkit_desc"],
-            "ecfp_mordred_desc": ["ecfp", "mordred_desc"],
+# NO SUMMING. `rdkit_desc` and `mordred_desc` in bench_aws ALREADY include the Morgan call --
+# they are the concatenated arm, not the descriptor block alone -- so adding `ecfp` on top
+# double-counted the fingerprint. Small (~4% on ecfp_rdkit_desc, under 1% on the others) but
+# wrong, and the kind of wrong that survives review because the number still looks plausible.
+COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
+            "ecfp_mordred_desc": ["mordred_desc"],
             "ecfp_all_desc": ["mordred"]}
-COST_KEY = {"ecfp": "ecfp", "hume": "hume", "chemeleon": "chemeleon",
+#: THE ECFP BASELINE IS r=2 HERE, matching the `ecfp` arm the downstream grid actually ran.
+#: bench_aws's `ecfp` arm is r=3, which is the radius HUME carries internally -- the two were
+#: being paired as if they were the same arm. `ecfp_r2` is measured separately for this.
+#:
+#: The ECFP embedded inside the descriptor arms above is still r=3; it is under 1% of their
+#: cost, and re-measuring a 1.7-hour Mordred sweep to change a number by 0.3% is not a good
+#: trade. Stated rather than hidden.
+COST_KEY = {"ecfp": "ecfp_r2", "hume": "hume", "chemeleon": "chemeleon",
             "chemberta_mtr": "chemberta", "minimol": "minimol"}
 
 

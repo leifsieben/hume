@@ -103,6 +103,13 @@ def _run_hume(job):
     return tot
 
 
+def _init_ecfp_r2():
+    _quiet()
+    global _GEN
+    from rdkit.Chem import rdFingerprintGenerator as rfg
+    _GEN = rfg.GetMorganGenerator(radius=2, fpSize=2048, includeChirality=True)
+
+
 def _init_mordred():
     """RDKit's surviving 180 + mordred's surviving 685. Restricted to the survivors on purpose:
     mordred's full 1,613 would flatter us."""
@@ -331,6 +338,10 @@ _run_chemprop = _run_chemeleon      # identical code path; only the weights and 
 
 ARMS = {
     "ecfp":      (_init_ecfp,      _run_ecfp,      [4096]),
+    # ECFP4 (r=2), matching the `ecfp` arm Figures A, B and C are built on. The `ecfp` arm above
+    # is r=3, which is what HUME carries INTERNALLY -- two different baselines that were being
+    # used interchangeably. Both are measured so each figure can cite the one it actually ran.
+    "ecfp_r2":   (_init_ecfp_r2,   _run_ecfp,      [4096]),
     "hume":      (_init_hume,      _run_hume,      [1024, 4096, 16384]),
     "mordred":   (_init_mordred,   _run_mordred,   [4096]),
     "chemberta": (_init_chemberta, _run_chemberta, [1, 32, 128, 512]),
