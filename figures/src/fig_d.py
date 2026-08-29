@@ -61,9 +61,19 @@ SECONDS_PER_HOUR = 3600.0
 # silently invisible in every panel -- which is exactly what happened on the first render with
 # real data: `ecfp` produced three good points and drew nothing. Keep this in step with
 # bench_aws.py's ARMS, and note the ORDER is the plotting and bar order.
+# THE DESCRIPTOR COUNT IS READ FROM THE PACKAGE, NOT TYPED. It was hard-coded as 864 -- the
+# census figure from an earlier build -- and the block has since grown to 1,266, so the legend
+# had been understating HUME's width by a third on a plate whose whole argument is what that
+# width costs. Falls back to the last measured value only if hume is not importable, and says so.
+try:
+    import hume as _hume
+    _HUME_NDESC = len(_hume.ALL_COLUMNS)
+except Exception:
+    _HUME_NDESC = "1266?"
+
 LABEL = {
     "ecfp":      "ECFP r3-2048 (the floor)",
-    "hume":      "HUME (864 desc + ECFP)",
+    "hume":      f"HUME ({_HUME_NDESC} desc + ECFP)",
     "chemprop":  "chemprop D-MPNN (300x3)",
     "chemberta": "ChemBERTa-2 (3M)",
     "chemeleon": "CheMeleon D-MPNN (2048x6)",
