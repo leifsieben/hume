@@ -1,0 +1,29 @@
+\subsection{Downstream datasets}
+
+We evaluate on 28 datasets drawn from the ChemPFN benchmark lake, spanning four endpoint
+families that we report separately because they are scored in different units: physicochemical
+regression (6 sets, RMSE; $n=392$--$13{,}068$: \textsc{aqsoldb}, \textsc{esol},
+\textsc{lipophilicity}, \textsc{pb\_logd}, \textsc{pb\_water\_sol}, \textsc{photoswitch}), ADME
+and toxicity regression (10 sets, RMSE; $n=999$--$7{,}385$, including microsomal clearance in
+three species, plasma protein binding, CYP inhibition, volume of distribution and acute
+toxicity), binary classification (6 sets, AUROC; $n=578$--$13{,}130$: \textsc{ames},
+\textsc{pb\_ames}, \textsc{cyp2d6\_inh}, \textsc{bioavail}, \textsc{hia}, \textsc{pb\_bbb}), and
+quantum energies (4 sets, RMSE; $n=21{,}786$--$50{,}000$: \textsc{qm8}, \textsc{qm9},
+\textsc{qm9\_gap}, \textsc{qmugs\_gap}). Two further sets (\textsc{fartdb},
+\textsc{rascore}) are measured and reported per-dataset but are not shown in the figure panels,
+as neither shares both a metric and an endpoint type with any family. Every dataset is split
+into five scaffold folds (seed 0), so that reported performance reflects information that
+transfers to an unseen scaffold rather than memorised series; datasets larger than 50{,}000
+molecules are randomly subsampled to that size at the same seed. All downstream evaluation uses a
+deliberately untuned XGBoost head, so that differences in performance are attributable to the
+embedding rather than to the head. The single exception is XGBoost's \texttt{feature\_weights},
+which sets how strongly column sampling favours fingerprint bits over descriptors: we tune it in
+an inner cross-validation loop on the training folds only, since the best value differs between
+potency and physicochemical endpoints, and we set \texttt{colsample\_bynode}~$=0.3$ because
+\texttt{feature\_weights} has no effect at XGBoost's default of 1.0. Because RMSE on aqueous
+solubility and RMSE on microsomal clearance are not commensurable, we never average raw scores
+across datasets: each dataset is first expressed as a ratio to the ECFP4$+$descriptors anchor
+evaluated on that same dataset and split, and the per-dataset ratios are then averaged within a
+family. The anchor is therefore $1.000$ by construction, and the reported spread is the standard
+error across datasets, which measures whether an effect holds across endpoints rather than across
+folds of one of them.
