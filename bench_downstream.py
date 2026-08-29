@@ -142,6 +142,21 @@ def f_hume(smis):
     return out
 
 
+#: Per-dataset memo for feature BLOCKS. Cleared at the top of every dataset, so it never holds
+#: one dataset's features while another is being scored.
+_BLOCK_CACHE: dict = {}
+
+
+def _block(name, fn):
+    """Compute a feature block at most once per dataset, however many arms ask for it."""
+    def go(smis):
+        if name not in _BLOCK_CACHE:
+            _BLOCK_CACHE[name] = fn(smis)
+        return _BLOCK_CACHE[name]
+    go.__name__ = f"block:{name}"
+    return go
+
+
 def _cat(*fs):
     return lambda smis: np.hstack([f(smis) for f in fs])
 
@@ -253,20 +268,26 @@ def fp_weights(arm, n_cols, w):
     return v
 
 
+B_ECFP = _block("ecfp", f_ecfp)
+B_RDKIT = _block("rdkit_desc", f_rdkit_desc)
+B_MORD = _block("mordred_desc", f_mordred_desc)
+B_LEARNED = {k: _block(k, f_minimol if k == "minimol" else f_learned(k))
+             for k in ("chemeleon", "minimol", "chemberta_mtr", "chemberta_mlm", "molformer")}
+
 ARMS = {
-    "ecfp":            f_ecfp,
+    "ecfp":            B_ECFP,
     "r3cfp":           f_r3cfp,
     "r4cfp":           f_r4cfp,
-    "ecfp_rdkit_desc": _cat(f_ecfp, f_rdkit_desc),
-    "ecfp_mordred_desc": _cat(f_ecfp, f_mordred_desc),
-    "ecfp_all_desc":   _cat(f_ecfp, f_rdkit_desc, f_mordred_desc),
-    "desc":            _cat(f_rdkit_desc, f_mordred_desc),
+    "ecfp_rdkit_desc": _cat(B_ECFP, B_RDKIT),
+    "ecfp_mordred_desc": _cat(B_ECFP, B_MORD),
+    "ecfp_all_desc":   _cat(B_ECFP, B_RDKIT, B_MORD),
+    "desc":            _cat(B_RDKIT, B_MORD),
     "hume":            f_hume,
-    "chemberta_mtr":   f_learned("chemberta_mtr"),
-    "chemberta_mlm":   f_learned("chemberta_mlm"),
-    "minimol":         f_minimol,
-    "chemeleon":       f_learned("chemeleon"),
-    "molformer":       f_learned("molformer"),
+    "chemberta_mtr":   B_LEARNED["chemberta_mtr"],
+    "chemberta_mlm":   B_LEARNED["chemberta_mlm"],
+    "minimol":         B_LEARNED["minimol"],
+    "chemeleon":       B_LEARNED["chemeleon"],
+    "molformer":       B_LEARNED["molformer"],
 }
 
 # ---- FIGURE B PANEL 2: base (x) add ---------------------------------------------------------
@@ -280,14 +301,14 @@ ARMS = {
 # THE FINGERPRINT BLOCK STAYS AT THE HEAD in every generated arm, because `_cat` concatenates in
 # the order given and the base is always first. `desc` has no bits at all, so those four arms
 # have no fingerprint/descriptor split and correctly skip the `w` tuning.
-FIGB_BASES = {"ecfp": (f_ecfp, "all"),
-              "desc": (_cat(f_rdkit_desc, f_mordred_desc), None),
-              "ecfp_all_desc": (_cat(f_ecfp, f_rdkit_desc, f_mordred_desc), ("head", 2048))}
+FIGB_BASES = {"ecfp": (B_ECFP, "all"),
+              "desc": (_cat(B_RDKIT, B_MORD), None),
+              "ecfp_all_desc": (_cat(B_ECFP, B_RDKIT, B_MORD), ("head", 2048))}
 FIGB_ADDS = ["chemeleon", "minimol", "chemberta_mtr", "molformer"]
 for _b, (_fn, _blk) in FIGB_BASES.items():
     for _a in FIGB_ADDS:
         _k = f"{_b}__{_a}"
-        ARMS[_k] = _cat(_fn, f_minimol if _a == "minimol" else f_learned(_a))
+        ARMS[_k] = _cat(_fn, B_LEARNED[_a])
         # The added block is dense, so the base's own bit layout carries over unchanged: a
         # "head" block stays at the head and an all-bits base stops being all-bits.
         FP_BLOCK[_k] = ("head", 2048) if _blk in ("all", ("head", 2048)) else None
@@ -391,6 +412,7 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
             smis = [smis[i] for i in take]; y = y[take]
         folds = scaffold_folds(smis, k=folds_k, seed=seed)
         task = d["task"]
+        _BLOCK_CACHE.clear()
         feats = {}
         for a in arm_names:
             try:
@@ -490,6 +512,8 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
             got = [r["value"] for r in records if r["dataset"] == ds and r["arm"] == a]
             print(f"  {ds:<16s} {a:<20s} {np.mean(got):6.3f} over {len(got)} folds "
                   f"({time.time()-t0:6.0f}s)", flush=True)
+            with open(out_path, "w") as fh:     # after every ARM, not every dataset
+                json.dump(records, fh)
         with open(out_path, "w") as fh:
             json.dump(records, fh)
     print(f"  -> {out_path}  {len(records)} records in {time.time()-t0:.0f}s", flush=True)
