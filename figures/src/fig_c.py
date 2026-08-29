@@ -185,8 +185,10 @@ def main() -> None:
                         markeredgecolor=STYLE["ink"], markeredgewidth=0.7)
         label_sets.append(list(zip(xs, ys, ks)))
         ax.set_xscale("log")
-        if lo_better:
-            ax.invert_yaxis()                          # up is better, in every panel, always
+        # NO INVERSION. Every panel now plots an ERROR RATIO, so down is better everywhere and
+        # the axis means what its label says. Inverting an axis to make "up" universally good,
+        # while labelling it with the metric's own name, was the source of a misreading of our
+        # own plate.
         # ONE shared x-label for the row. Four copies of a long label overprinted each other
         # into "featurisation cost (µs / molecule, lfeg)aturisation cost ...".
         if nrow > 1 or t_i == 0:
@@ -194,15 +196,14 @@ def main() -> None:
                           fontsize=FS["label"])
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.
-        ax.set_ylabel(f"{t['metric']} ({'↓' if lo_better else '↑'} better)",
+        ax.set_ylabel(f"{t['metric']}, rel. to ECFP4+desc (\u2193 better)",
                       fontsize=FS["label"])
         ax.grid(axis="both")
         # THE DIRECTION GOES IN THE TITLE, not only on the y-label. These panels invert the
         # axis for error metrics so that "up" is always better, and a reader who does not notice
         # reads the best arm as the worst -- which happened: HUME sits second-best on Quantum
         # energy at 0.999 and was read as the worst point on the plate.
-        arrow = "\u2193 better" if lo_better else "\u2191 better"
-        title(ax, f"{t['label']}\n({t['metric']}, {arrow})", pad=4)
+        title(ax, f"{t['label']}\n({t['metric']}, \u2193 better)", pad=4)
         ax.text(-0.16, 1.06, tags[t_i], transform=ax.transAxes, fontsize=FS["panel_tag"],
                 fontweight="bold", va="bottom", ha="right")
 

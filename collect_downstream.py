@@ -111,7 +111,20 @@ def aggregate(recs):
     for r in recs:
         fold[(r["dataset"], r["arm"])].append(float(r["value"]))
         metric[r["dataset"]] = r["metric"]
-    per_ds = {k: float(np.mean(v)) for k, v in fold.items()}
+    # EVERYTHING BECOMES AN ERROR, so that lower is better on every panel of every figure.
+    #
+    # The plates used to carry the field's own units and INVERT the axis for error metrics, so
+    # "up" meant better everywhere while the y-label still said "rmse". That is two things at
+    # once and it misled a reader of our own figure: HUME sits second-best on Quantum energy and
+    # was read off the inverted axis as the worst point on the plate (Leif 2026-08-29).
+    #
+    # AUROC and accuracy are converted to 1 - x. RMSE is already an error. The ratio to the
+    # anchor is then an error ratio: below 1.0 is better than ECFP4+descriptors, above is worse,
+    # in one direction, with no inversion anywhere.
+    ERROR_OF = {"auroc": lambda v: 1.0 - v, "acc": lambda v: 1.0 - v, "rmse": lambda v: v}
+    per_ds = {}
+    for (d, a), v in fold.items():
+        per_ds[(d, a)] = float(ERROR_OF[metric[d]](np.mean(v)))
 
     out, table = {}, []
     for tkey, (_lab, dss) in TASKS.items():
@@ -144,8 +157,11 @@ def task_specs(metric):
         m = next((metric[d] for d in dss if d in metric), None)
         if m is None:
             continue
-        specs.append({"key": tkey, "label": lab, "metric": m,
-                      "lower_is_better": m == "rmse"})
+        # Every task is now scored as an ERROR ratio, so lower is better without exception; the
+        # label records what the error was derived from.
+        specs.append({"key": tkey, "label": lab,
+                      "metric": {"auroc": "1 - auroc", "acc": "1 - acc"}.get(m, m),
+                      "lower_is_better": True})
     return specs
 
 
@@ -221,7 +237,8 @@ def main():
     OUT_B.parent.mkdir(parents=True, exist_ok=True)
     OUT_B.write_text(json.dumps(
         {"meta": {"source": "bench_downstream.py on c7i.4xlarge", "n_records": len(recs),
-                  "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"},
+                  "unit": "mean over datasets of (arm error / ecfp_all_desc error) on the same "
+                          "dataset; rmse as-is, auroc and acc as 1 - x. Lower is better."},
          "tasks": specs, "bases": FIGB_BASES, "anchor": FIGB_ANCHOR, "adds": FIGB_ADDS,
          "records": brecs}, indent=1))
     print(f"  -> {OUT_B.relative_to(ROOT)}  {len(brecs)} cells")
@@ -236,7 +253,8 @@ def main():
     OUT_C.parent.mkdir(parents=True, exist_ok=True)
     OUT_C.write_text(json.dumps(
         {"meta": {"source": "bench_downstream.py + results/scale", "n_records": len(recs),
-                  "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"},
+                  "unit": "mean over datasets of (arm error / ecfp_all_desc error) on the same "
+                          "dataset; rmse as-is, auroc and acc as 1 - x. Lower is better."},
          "tasks": specs, "arms": arms, "cost": cost, "records": crecs}, indent=1))
     print(f"  -> {OUT_C.relative_to(ROOT)}  {len(crecs)} cells, {len(arms)} arms")
 

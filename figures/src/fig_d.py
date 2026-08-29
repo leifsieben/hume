@@ -77,7 +77,9 @@ LABEL = {
     "chemprop":  "chemprop D-MPNN (300x3)",
     "chemberta": "ChemBERTa-2 (3M)",
     "chemeleon": "CheMeleon D-MPNN (2048x6)",
-    "mordred":   "RDKit + Mordred",
+    "rdkit_desc":   "ECFP4 + RDKit-180",
+    "mordred_desc": "ECFP4 + Mordred-685",
+    "mordred":   "ECFP4 + all descriptors",
 }
 # The palette key in arms.py, so this plate cannot drift from A, B and C. `mordred` here is
 # ECFP + RDKit-180 + mordred-685, which is the `ecfp_all_desc` arm elsewhere in the paper -- it
@@ -85,12 +87,14 @@ LABEL = {
 # drawn in two colours across two figures.
 ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
-          "mordred": "ecfp_all_desc"}
+          "mordred": "ecfp_all_desc",
+          "rdkit_desc": "ecfp_rdkit_desc", "mordred_desc": "ecfp_mordred_desc"}
 
 # Bar order, matching arms.py's ARM_ORDER: cheapest classical first, then HUME, then graph, then
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
-ORDER = ["ecfp_r2", "mordred", "hume", "chemeleon", "chemprop", "chemberta"]
+ORDER = ["ecfp_r2", "rdkit_desc", "mordred_desc", "mordred", "hume",
+         "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
 #: this plate does. check_known() refuses to render an arm it does not know -- that guard caught a
@@ -100,12 +104,13 @@ ORDER = ["ecfp_r2", "mordred", "hume", "chemeleon", "chemprop", "chemberta"]
 #: `ecfp` is the r=3 variant. This plate now draws `ecfp_r2` instead, because ECFP4 (r=2) is the
 #: baseline Figures A, B and C actually run; r=3 is the radius HUME carries INTERNALLY and the two
 #: were being used interchangeably. Both stay measured, and the legend says which is drawn.
-COST_ONLY = {"ecfp", "rdkit_desc", "mordred_desc", "minimol"}
+COST_ONLY = {"ecfp", "minimol"}
 HATCH = "///"
 
 
 SHORT = {"ecfp_r2": "ECFP4", "hume": "HUME", "chemprop": "chemprop",
-         "chemberta": "ChemBERTa", "chemeleon": "CheMeleon", "mordred": "Mordred"}
+         "chemberta": "ChemBERTa", "chemeleon": "CheMeleon",
+         "rdkit_desc": "+RDKit", "mordred_desc": "+Mordred", "mordred": "+all desc"}
 BUDGET_LABEL = {"cpu": "16 vCPU", "gpu": "1 GPU + 4 vCPU"}
 
 
