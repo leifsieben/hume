@@ -44,7 +44,7 @@ TASKS = {
                                 "pb_cyp2c9", "pb_cyp2d6", "pb_cyp3a4"]),
     "classif":  ("Classification", ["ames", "pb_ames", "cyp2d6_inh", "bioavail", "hia",
                                     "pb_bbb"]),
-    "quantum":  ("Quantum", ["qm8", "qm9", "qm9_gap", "qmugs_gap"]),
+    "quantum":  ("Quantum energy", ["qm8", "qm9", "qm9_gap", "qmugs_gap"]),
 }
 # GROUPED BY METRIC FIRST, endpoint second, and the assertion below enforces it. The obvious
 # chemistry grouping does not survive contact with the lake: `cycpept_pampa` is a permeability

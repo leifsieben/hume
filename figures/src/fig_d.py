@@ -72,7 +72,7 @@ except Exception:
     _HUME_NDESC = "1266?"
 
 LABEL = {
-    "ecfp":      "ECFP r3-2048 (the floor)",
+    "ecfp_r2":   "ECFP4 r2-2048 (the floor)",
     "hume":      f"HUME ({_HUME_NDESC} desc + ECFP)",
     "chemprop":  "chemprop D-MPNN (300x3)",
     "chemberta": "ChemBERTa-2 (3M)",
@@ -83,18 +83,28 @@ LABEL = {
 # ECFP + RDKit-180 + mordred-685, which is the `ecfp_all_desc` arm elsewhere in the paper -- it
 # used to point at `ecfp_mordred_desc`, a DIFFERENT arm, and the same measurement was therefore
 # drawn in two colours across two figures.
-ARMKEY = {"ecfp": "ecfp", "hume": "hume", "chemprop": "chemprop",
+ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
           "mordred": "ecfp_all_desc"}
 
 # Bar order, matching arms.py's ARM_ORDER: cheapest classical first, then HUME, then graph, then
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
-ORDER = ["ecfp", "mordred", "hume", "chemeleon", "chemprop", "chemberta"]
+ORDER = ["ecfp_r2", "mordred", "hume", "chemeleon", "chemprop", "chemberta"]
+
+#: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
+#: this plate does. check_known() refuses to render an arm it does not know -- that guard caught a
+#: silent omission once already -- so arms that are deliberately absent have to be declared rather
+#: than left to fall through it.
+#:
+#: `ecfp` is the r=3 variant. This plate now draws `ecfp_r2` instead, because ECFP4 (r=2) is the
+#: baseline Figures A, B and C actually run; r=3 is the radius HUME carries INTERNALLY and the two
+#: were being used interchangeably. Both stay measured, and the legend says which is drawn.
+COST_ONLY = {"ecfp", "rdkit_desc", "mordred_desc", "minimol"}
 HATCH = "///"
 
 
-SHORT = {"ecfp": "ECFP", "hume": "HUME", "chemprop": "chemprop",
+SHORT = {"ecfp_r2": "ECFP4", "hume": "HUME", "chemprop": "chemprop",
          "chemberta": "ChemBERTa", "chemeleon": "CheMeleon", "mordred": "Mordred"}
 BUDGET_LABEL = {"cpu": "16 vCPU", "gpu": "1 GPU + 4 vCPU"}
 
@@ -156,7 +166,7 @@ def load(paths):
 
 def check_known(runs):
     """Refuse to render if the data contains an arm this figure does not know how to draw."""
-    unknown = sorted({r["arm"] for r in runs} - set(LABEL))
+    unknown = sorted({r["arm"] for r in runs} - set(LABEL) - COST_ONLY)
     if unknown:
         raise SystemExit(
             f"fig_d: the results contain arm(s) {unknown} that are not in LABEL, so they would "

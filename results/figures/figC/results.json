@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 1990,
+  "n_records": 2070,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -25,12 +25,13 @@
   },
   {
    "key": "quantum",
-   "label": "Quantum",
+   "label": "Quantum energy",
    "metric": "rmse",
    "lower_is_better": true
   }
  ],
  "arms": [
+  "ecfp",
   "ecfp_rdkit_desc",
   "ecfp_mordred_desc",
   "ecfp_all_desc",
@@ -39,6 +40,13 @@
   "chemberta_mtr"
  ],
  "cost": {
+  "ecfp": {
+   "us_per_mol": 16.644586335,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "ecfp_r2": 16.644586335
+   }
+  },
   "ecfp_rdkit_desc": {
    "us_per_mol": 444.337305893,
    "measured_on": "c7i.4xlarge, 16 vCPU",
@@ -83,6 +91,14 @@
   }
  },
  "records": [
+  {
+   "task": "physchem",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 1.1282610358794813,
+   "sem": 0.07147748758712945,
+   "n_folds": 40
+  },
   {
    "task": "physchem",
    "arm": "ecfp_rdkit_desc",
@@ -130,6 +146,14 @@
    "mean": 1.2923158933192744,
    "sem": 0.06411439154102921,
    "n_folds": 30
+  },
+  {
+   "task": "adme",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 1.0293510137117705,
+   "sem": 0.014936232491054533,
+   "n_folds": 60
   },
   {
    "task": "adme",
@@ -181,6 +205,14 @@
   },
   {
    "task": "classif",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 0.9877244381439416,
+   "sem": 0.007631779637813094,
+   "n_folds": 30
+  },
+  {
+   "task": "classif",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
    "mean": 1.001372055645506,
@@ -229,19 +261,27 @@
   },
   {
    "task": "quantum",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 1.3289100921428771,
+   "sem": 0.10948128722728434,
+   "n_folds": 15
+  },
+  {
+   "task": "quantum",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": 1.0348705986939195,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 1.0438940086969262,
+   "sem": 0.00902341000300688,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": 1.007957694722267,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 1.0109079855237804,
+   "sem": 0.002950290801513211,
+   "n_folds": 15
   },
   {
    "task": "quantum",
@@ -249,30 +289,30 @@
    "head": "xgboost",
    "mean": 1.0,
    "sem": 0.0,
-   "n_folds": 5
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.9671031851946653,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.9987475796263428,
+   "sem": 0.03164439443167755,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "arm": "chemeleon",
    "head": "xgboost",
-   "mean": 1.2417818173217896,
-   "sem": 0.0,
+   "mean": 1.20112983025433,
+   "sem": 0.04065198706745942,
    "n_folds": 20
   },
   {
    "task": "quantum",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 1.7227248356322602,
-   "sem": 0.0,
+   "mean": 1.599377706113899,
+   "sem": 0.12334712951836123,
    "n_folds": 20
   }
  ]
