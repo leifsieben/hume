@@ -100,7 +100,12 @@ INK = STYLE["ink"]
 NOT_DRAWN = {"notation", "chemberta_mlm"}
 
 NULL = 0.5                  # chance. The floor of the axis and the null of the test.
-YMAX = 1.0
+YMAX = 1.0                  # the largest value an AUC can take; bars are clipped here
+YTOP = 1.03
+#: THE AXIS RUNS SLIGHTLY PAST 1.0 SO THE TOP WHISKERS SURVIVE (Leif 2026-08-29). An AUC cannot
+#: exceed 1, but mean + sd can, and clipping the upper whisker AT 1.0 made it invisible on
+#: exactly the cells that sit near the ceiling -- which is most of row 2. The extra headroom is
+#: not a tick and carries no label, so the axis still reads 0.5 to 1.
 DEGEN_MARK = 0.50           # >=50% identical vectors -> the cell is degenerate, not weak
 FLOOR_TOL = 0.005           # within this of chance -> label it rather than draw a sliver
 
@@ -181,8 +186,8 @@ def _panel(ax, armlist, cells, mode, klass, title):
     for xi, a in zip(x, armlist):                 # hatch marks PREDICTED, never a second hue
         if A.hatch(a):
             ax.patches[xi].set_hatch(A.hatch(a))
-    lo = np.clip(shown - sd, NULL, YMAX)
-    hi = np.clip(shown + sd, NULL, YMAX)
+    lo = np.clip(shown - sd, NULL, YTOP)
+    hi = np.clip(shown + sd, NULL, YTOP)
     ax.errorbar(x, shown, yerr=np.vstack([shown - lo, hi - shown]), fmt="none", ecolor=INK,
                 elinewidth=0.55, capsize=1.3, capthick=0.55, zorder=4)
 
@@ -196,7 +201,7 @@ def _panel(ax, armlist, cells, mode, klass, title):
             ax.text(xi, NULL + (YMAX - NULL) * 0.02, "≡", ha="center", va="bottom",
                     fontsize=FS["annot"] - 1.0, color=INK, zorder=5)
 
-    ax.set_ylim(NULL, YMAX)
+    ax.set_ylim(NULL, YTOP)
     ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
     ax.set_yticklabels(["0.5", "", "0.7", "", "0.9", "1"])
     ax.set_xticks([])

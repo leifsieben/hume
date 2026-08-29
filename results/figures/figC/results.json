@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 645,
+  "n_records": 710,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -27,7 +27,9 @@
  "arms": [
   "ecfp",
   "ecfp_all_desc",
-  "hume"
+  "hume",
+  "chemeleon",
+  "chemberta_mtr"
  ],
  "cost": {
   "ecfp": {
@@ -97,7 +99,7 @@
    "head": "xgboost",
    "mean": 1.0355702852104953,
    "sem": 0.01852999243179207,
-   "n_folds": 35
+   "n_folds": 40
   },
   {
    "task": "adme",
@@ -105,15 +107,15 @@
    "head": "xgboost",
    "mean": 1.0,
    "sem": 0.0,
-   "n_folds": 35
+   "n_folds": 40
   },
   {
    "task": "adme",
    "arm": "hume",
    "head": "xgboost",
    "mean": 1.0080232517347016,
-   "sem": 0.01605776486896336,
-   "n_folds": 35
+   "sem": 0.016057764868963362,
+   "n_folds": 40
   },
   {
    "task": "classif",
@@ -138,6 +140,22 @@
    "mean": 0.9907394561711151,
    "sem": 0.004732082838875546,
    "n_folds": 25
+  },
+  {
+   "task": "classif",
+   "arm": "chemeleon",
+   "head": "xgboost",
+   "mean": 1.000733298596077,
+   "sem": 0.0,
+   "n_folds": 5
+  },
+  {
+   "task": "classif",
+   "arm": "chemberta_mtr",
+   "head": "xgboost",
+   "mean": 0.9750784065039655,
+   "sem": 0.0,
+   "n_folds": 5
   }
  ]
 }

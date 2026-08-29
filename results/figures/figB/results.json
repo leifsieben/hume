@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 645,
+  "n_records": 710,
   "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
  },
  "tasks": [
@@ -67,15 +67,15 @@
    "add": null,
    "mean": 1.0355702852104953,
    "sem": 0.01852999243179207,
-   "n_folds": 35
+   "n_folds": 40
   },
   {
    "task": "adme",
    "base": "desc",
    "add": null,
    "mean": 1.032934409974122,
-   "sem": 0.02333333880719834,
-   "n_folds": 35
+   "sem": 0.02333333880719836,
+   "n_folds": 40
   },
   {
    "task": "adme",
@@ -83,7 +83,7 @@
    "add": null,
    "mean": 1.0,
    "sem": 0.0,
-   "n_folds": 35
+   "n_folds": 40
   },
   {
    "task": "classif",
