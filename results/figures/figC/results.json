@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 2825,
+  "n_records": 2905,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -29,7 +29,6 @@
    "metric": "1 - auroc",
    "lower_is_better": true,
    "proto": [
-    1,
     2
    ]
   },
@@ -244,24 +243,24 @@
    "task": "classif",
    "arm": "ecfp",
    "head": "xgboost",
-   "mean": 0.014783907280181464,
-   "sem": 0.005455087627882894,
+   "mean": 0.014545874486105078,
+   "sem": 0.004385241185545954,
    "n_folds": 30
   },
   {
    "task": "classif",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": -0.000898617401617785,
-   "sem": 0.004084066325705456,
-   "n_folds": 25
+   "mean": -0.0005043832314278,
+   "sem": 0.0034589730523447637,
+   "n_folds": 30
   },
   {
    "task": "classif",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": 0.004738890771904658,
-   "sem": 0.0035552666658316885,
+   "mean": 0.0035964940584165364,
+   "sem": 0.002992867571852729,
    "n_folds": 30
   },
   {
@@ -270,38 +269,38 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 25
+   "n_folds": 30
   },
   {
    "task": "classif",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.007402789032035395,
-   "sem": 0.004370885920248876,
-   "n_folds": 25
+   "mean": 0.005222306264203928,
+   "sem": 0.003077529412746459,
+   "n_folds": 30
   },
   {
    "task": "classif",
    "arm": "minimol",
    "head": "xgboost",
-   "mean": 0.007828958719290435,
-   "sem": 0.00814075392592001,
+   "mean": 0.007752334886863073,
+   "sem": 0.006719406702214357,
    "n_folds": 30
   },
   {
    "task": "classif",
    "arm": "chemeleon",
    "head": "xgboost",
-   "mean": -0.004744919093105415,
-   "sem": 0.003033291560164973,
+   "mean": -0.0038471099922789964,
+   "sem": 0.0028184269906013073,
    "n_folds": 30
   },
   {
    "task": "classif",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 0.02129789850455919,
-   "sem": 0.009799844685339575,
+   "mean": 0.020516152036389956,
+   "sem": 0.008002731427339718,
    "n_folds": 30
   },
   {
