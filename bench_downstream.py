@@ -379,7 +379,29 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
         feats = {}
         for a in arm_names:
             try:
-                feats[a] = ARMS[a](smis)
+                X = np.asarray(ARMS[a](smis), dtype=np.float32)
+                # +/-inf -> NaN, WHICH XGBOOST TREATS AS MISSING AND +inf IT REFUSES OUTRIGHT.
+                #
+                # RDKit emits inf on real molecules -- Ipc overflows on larger graphs and the
+                # partial-charge descriptors do it on a few odd valences -- and XGBoost then
+                # raises `Check failed: valid: Input data contains 'inf' or a value too large`.
+                # The per-fold except below caught it, so ALL FIVE FOLDS of that arm silently
+                # vanished for that dataset and the run still looked complete.
+                #
+                # THAT HIT THE ANCHOR. `ecfp_all_desc` is the denominator of every ratio in
+                # Figures B and C, so a dataset losing it drops out of the task average
+                # ENTIRELY -- and only for the arms that happened to carry RDKit descriptors, so
+                # different arms were being averaged over different dataset sets. Measured on the
+                # first run: aqsoldb, fartdb, pb_bbb and pb_logd all lost desc, ecfp_rdkit_desc
+                # and ecfp_all_desc, and aqsoldb/fartdb/cyp2d6_inh also lost hume.
+                #
+                # NaN rather than a clip: NaN is what "this descriptor has no value here" means,
+                # and XGBoost routes it natively. Clipping would invent a number.
+                n_bad = int((~np.isfinite(X)).sum() - np.isnan(X).sum())
+                if n_bad:
+                    print(f"  {ds}/{a}: {n_bad} non-finite cells -> NaN", flush=True)
+                    X[~np.isfinite(X)] = np.nan
+                feats[a] = X
             except Exception as e:
                 print(f"  {ds}/{a}: FEATURISATION FAILED {type(e).__name__}: {e}", flush=True)
         for a, X in feats.items():
