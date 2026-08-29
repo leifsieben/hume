@@ -153,8 +153,24 @@ def main() -> None:
         lo_better = bool(t.get("lower_is_better", True))
         a_rec = rec.get((t["key"], anchor, None))
         if a_rec is None:
-            raise SystemExit(f"figure B: task {t['key']!r} has no anchor cell "
-                             f"({anchor}, block alone); the % axis has no denominator.")
+            # SKIP THE PANEL, LOUDLY, rather than kill the plate. Every bar here is a percentage
+            # OF the anchor, so a task without one has no denominator and cannot be drawn -- but
+            # while the grid is still landing, one task arriving before its anchor should not
+            # stop the three that are complete from rendering. The panel is left explicitly
+            # marked, so a missing task can never be mistaken for a task with nothing in it.
+            print(f"  SKIPPING task {t['key']!r}: no anchor cell ({anchor}, block alone) yet, "
+                  f"so the % axis has no denominator")
+            # mark_empty() only FLAGS the axes for check_no_empty_panels(); it draws nothing.
+            # A blank framed panel and a panel whose values are all zero look identical on paper,
+            # so the reason is written into the cell.
+            mark_empty(ax, f"{t['label']}: anchor not measured yet")
+            ax.text(0.5, 0.5, f"{t['label']}\n(anchor not measured yet)", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=FS["annot"], color=STYLE["mute"],
+                    style="italic")
+            ax.set_xticks([]); ax.set_yticks([])
+            for sp in ax.spines.values():
+                sp.set_visible(False)
+            continue
         ref = float(a_rec["mean"])
 
         ys, es, cs, xs, ok = [], [], [], [], []

@@ -152,7 +152,21 @@ def main() -> None:
             if r.get("head", DEFAULT_HEAD) != DEFAULT_HEAD:
                 odd_heads.add((a, r["head"]))
         if not ks:
-            raise SystemExit(f"figure C: task {t['key']!r} has no records for any drawn arm")
+            # Same reasoning as fig_b: skip loudly, mark the cell, and let the tasks that ARE
+            # complete render while the grid is still landing. An unmarked empty panel and a
+            # panel whose arms all scored nothing look identical, so the mark is not optional.
+            print(f"  SKIPPING task {t['key']!r}: no records for any arm with a measured cost")
+            # mark_empty() only FLAGS the axes for check_no_empty_panels(); it draws nothing.
+            # A blank framed panel and a panel whose values are all zero look identical on paper,
+            # so the reason is written into the cell.
+            mark_empty(ax, f"{t['label']}: not measured yet")
+            ax.text(0.5, 0.5, f"{t['label']}\n(not measured yet)", transform=ax.transAxes,
+                    ha="center", va="center", fontsize=FS["annot"], color=STYLE["mute"],
+                    style="italic")
+            ax.set_xticks([]); ax.set_yticks([])
+            for sp in ax.spines.values():
+                sp.set_visible(False)
+            continue
 
         # Orient for the frontier only. The AXIS keeps the field's own units and is inverted
         # below, so nothing plotted is a negated metric the reader has to undo mentally.

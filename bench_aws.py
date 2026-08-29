@@ -345,12 +345,26 @@ GPU_BATCHES = {"chemberta": [128, 512, 1024, 2048], "chemeleon": [256, 1024, 409
 
 
 # ==================================================================================== budgets
+#: Arms that cannot have one worker per vCPU. minimol loads a full graphium model INTO EVERY
+#: WORKER, so sixteen copies plus their featuriser state exhausted a 32 GiB box and the pool
+#: surfaced it as `BrokenProcessPool: A process in the process pool was terminated abruptly` at
+#: every batch size -- an error that names no memory and reads like an unrelated crash. This is
+#: the same disguise the Mordred OOM wore, which is why it is a named table rather than a comment.
+#:
+#: FEWER WORKERS IS NOT A HANDICAP HERE. The number is reported alongside the throughput and the
+#: arm still gets its own best batch size, so the figure compares each arm in the best
+#: configuration it can actually be RUN in -- an arm that cannot use sixteen workers genuinely
+#: cannot, and reporting a throughput it can only reach by being killed would be worse.
+MAX_WORKERS = {"minimol": 4}
+
+
 def run_cpu(arm: str, smis: list[str], bs: int) -> float:
     init, fn, _ = ARMS[arm]
-    shards = [(smis[i::NCPU], bs) for i in range(NCPU)]
-    with ProcessPoolExecutor(max_workers=NCPU, initializer=init,
+    nw = min(NCPU, MAX_WORKERS.get(arm, NCPU))
+    shards = [(smis[i::nw], bs) for i in range(nw)]
+    with ProcessPoolExecutor(max_workers=nw, initializer=init,
                              mp_context=mp.get_context("spawn")) as ex:
-        list(ex.map(fn, [(smis[:4], bs)] * NCPU))       # warm every worker, untimed
+        list(ex.map(fn, [(smis[:4], bs)] * nw))         # warm every worker, untimed
         t0 = time.perf_counter()
         list(ex.map(fn, shards))
         return time.perf_counter() - t0
