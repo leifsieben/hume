@@ -200,17 +200,9 @@ def main() -> None:
         # comparison, and without this the reader has to judge it by eye against a grey bar
         # several bars away. The global 100% line answers a different question (does it beat the
         # best classical featurisation we have), and both are worth having.
-        for b_i, b in enumerate(bases):
-            r0 = rec.get((t["key"], b, None))
-            if r0 is None:
-                continue
-            v0 = as_pct(float(r0["mean"]), ref, lo_better)
-            if np.isfinite(v0):
-                ax.plot([centres[b_i] - 0.42, centres[b_i] + 0.42], [v0, v0],
-                        lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=5, solid_capstyle="butt")
         ax.axhline(100.0, ls=(0, (2, 2)), lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=1)
         ax.set_xticks(centres)
-        ax.set_xticklabels([BASE_SHORT.get(b, A.label(b)) for b in bases],
+        ax.set_xticklabels([A.short_label(b) for b in bases],
                            fontsize=FS["annot"] - 1, rotation=20, ha="right",
                            rotation_mode="anchor")
         ax.tick_params(axis="x", length=0)
@@ -225,11 +217,10 @@ def main() -> None:
     # ---- legend: ONE ROW, built from what was actually drawn --------------------------------
     from matplotlib.patches import Patch
     handles = [Patch(facecolor=A.color(BASE_KEY), edgecolor=STYLE["ink"], lw=0.7,
-                     label=A.label(BASE_KEY))]
+                     label=A.short_label(BASE_KEY))]
     for e in adds:
-        star = " (desc-pretrained)" if A.desc_pretrained(e) else ""
         handles.append(Patch(facecolor=A.color(e), edgecolor=STYLE["ink"], lw=0.7,
-                             label=A.label(e) + star))
+                             label=A.short_label(e)))
     lax = fig.add_axes([0.02, 0.005, 0.96, 0.115 if nrow == 1 else 0.055])
     lax.axis("off")
     mark_empty(lax, "legend strip -- holds no data by design")

@@ -1,0 +1,113 @@
+{
+ "meta": {
+  "source": "bench_downstream.py on c7i.4xlarge",
+  "n_records": 645,
+  "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
+ },
+ "tasks": [
+  {
+   "key": "physchem",
+   "label": "Physicochemical",
+   "metric": "rmse",
+   "lower_is_better": true
+  },
+  {
+   "key": "adme",
+   "label": "ADME & tox",
+   "metric": "rmse",
+   "lower_is_better": true
+  },
+  {
+   "key": "classif",
+   "label": "Classification",
+   "metric": "auroc",
+   "lower_is_better": false
+  }
+ ],
+ "bases": [
+  "ecfp",
+  "desc",
+  "ecfp_all_desc"
+ ],
+ "anchor": "ecfp_all_desc",
+ "adds": [
+  "chemeleon",
+  "chemberta_mtr",
+  "minimol",
+  "molformer"
+ ],
+ "records": [
+  {
+   "task": "physchem",
+   "base": "ecfp",
+   "add": null,
+   "mean": 1.2108227634710411,
+   "sem": 0.10904508373593291,
+   "n_folds": 20
+  },
+  {
+   "task": "physchem",
+   "base": "desc",
+   "add": null,
+   "mean": 1.0092915819641557,
+   "sem": 0.02382300849568608,
+   "n_folds": 10
+  },
+  {
+   "task": "physchem",
+   "base": "ecfp_all_desc",
+   "add": null,
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 10
+  },
+  {
+   "task": "adme",
+   "base": "ecfp",
+   "add": null,
+   "mean": 1.0355702852104953,
+   "sem": 0.01852999243179207,
+   "n_folds": 35
+  },
+  {
+   "task": "adme",
+   "base": "desc",
+   "add": null,
+   "mean": 1.032934409974122,
+   "sem": 0.02333333880719834,
+   "n_folds": 35
+  },
+  {
+   "task": "adme",
+   "base": "ecfp_all_desc",
+   "add": null,
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 35
+  },
+  {
+   "task": "classif",
+   "base": "ecfp",
+   "add": null,
+   "mean": 0.9877244381439416,
+   "sem": 0.007631779637813094,
+   "n_folds": 30
+  },
+  {
+   "task": "classif",
+   "base": "desc",
+   "add": null,
+   "mean": 1.0004648173233102,
+   "sem": 0.004035541991490757,
+   "n_folds": 25
+  },
+  {
+   "task": "classif",
+   "base": "ecfp_all_desc",
+   "add": null,
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 25
+  }
+ ]
+}

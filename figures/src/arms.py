@@ -176,6 +176,10 @@ ARMS = {
     # `order()` only positions arms that are actually passed to it -- but a figure must not draw
     # `hume` and `hume_core_custom` together, because they share a shade.
     "hume": dict(label="HUME", family="hume", color=SHADES["hume"][0]),
+    # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
+    # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
+    # string. Grey, like every other control in the set.
+    "notation": dict(label="SMILES characters", family="control", color="#9AA0A6"),
     "hume_core": dict(label="HUME core", family="hume", color=SHADES["hume"][1]),
     "hume_core_custom": dict(label="HUME core + blocks", family="hume", color=SHADES["hume"][0]),
     "hume_core_predict": dict(label="HUME core, predicted", family="hume",
@@ -309,6 +313,25 @@ PROXY_ORDER = ["ridge", "linquad", "pinet", "mlp", "gnn"]
 
 def label(key: str) -> str:
     return ARMS[key]["label"] if key in ARMS else key
+
+
+#: PLAIN NAMES, NO PARENTHESES, for use as tick labels and legend entries (Leif 2026-08-29:
+#: "just write ChemBERTa and no parentheses, same for all the other models"). `label()` keeps the
+#: fully-qualified name for anywhere the distinction is load-bearing -- Figure A draws BOTH
+#: ChemBERTa-2 checkpoints and must not call them the same thing.
+SHORT_LABEL = {
+    "ecfp": "ECFP4", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
+    "desc": "descriptors", "ecfp_rdkit_desc": "ECFP4 + RDKit",
+    "ecfp_mordred_desc": "ECFP4 + Mordred", "ecfp_all_desc": "ECFP4 + descriptors",
+    "hume": "HUME", "minimol": "MiniMol", "chemeleon": "CheMeleon", "chemprop": "chemprop",
+    "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",
+    "selfies_ted": "SELFIES-TED", "classical_base": "classical block alone",
+}
+
+
+def short_label(key: str) -> str:
+    """A parenthesis-free display name. Falls back to `label()` for anything unregistered."""
+    return SHORT_LABEL.get(key, label(key))
 
 
 def color(key: str) -> str:

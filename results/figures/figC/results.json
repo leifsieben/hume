@@ -1,0 +1,143 @@
+{
+ "meta": {
+  "source": "bench_downstream.py + results/scale",
+  "n_records": 645,
+  "unit": "mean over datasets of (arm / ecfp_all_desc) on the same dataset"
+ },
+ "tasks": [
+  {
+   "key": "physchem",
+   "label": "Physicochemical",
+   "metric": "rmse",
+   "lower_is_better": true
+  },
+  {
+   "key": "adme",
+   "label": "ADME & tox",
+   "metric": "rmse",
+   "lower_is_better": true
+  },
+  {
+   "key": "classif",
+   "label": "Classification",
+   "metric": "auroc",
+   "lower_is_better": false
+  }
+ ],
+ "arms": [
+  "ecfp",
+  "ecfp_all_desc",
+  "hume"
+ ],
+ "cost": {
+  "ecfp": {
+   "us_per_mol": 18.93470710700001,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "ecfp": 18.93470710700001
+   }
+  },
+  "ecfp_all_desc": {
+   "us_per_mol": 6200.209362878,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "mordred": 6200.209362878
+   }
+  },
+  "hume": {
+   "us_per_mol": 124.10220537800002,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "hume": 124.10220537800002
+   }
+  },
+  "chemeleon": {
+   "us_per_mol": 2892.4556712090002,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "chemeleon": 2892.4556712090002
+   }
+  },
+  "chemberta_mtr": {
+   "us_per_mol": 340.36042775999994,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "chemberta": 340.36042775999994
+   }
+  }
+ },
+ "records": [
+  {
+   "task": "physchem",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 1.2108227634710411,
+   "sem": 0.10904508373593291,
+   "n_folds": 20
+  },
+  {
+   "task": "physchem",
+   "arm": "ecfp_all_desc",
+   "head": "xgboost",
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 10
+  },
+  {
+   "task": "physchem",
+   "arm": "hume",
+   "head": "xgboost",
+   "mean": 0.9940555107618649,
+   "sem": 0.009698061210209495,
+   "n_folds": 15
+  },
+  {
+   "task": "adme",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 1.0355702852104953,
+   "sem": 0.01852999243179207,
+   "n_folds": 35
+  },
+  {
+   "task": "adme",
+   "arm": "ecfp_all_desc",
+   "head": "xgboost",
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 35
+  },
+  {
+   "task": "adme",
+   "arm": "hume",
+   "head": "xgboost",
+   "mean": 1.0080232517347016,
+   "sem": 0.01605776486896336,
+   "n_folds": 35
+  },
+  {
+   "task": "classif",
+   "arm": "ecfp",
+   "head": "xgboost",
+   "mean": 0.9877244381439416,
+   "sem": 0.007631779637813094,
+   "n_folds": 30
+  },
+  {
+   "task": "classif",
+   "arm": "ecfp_all_desc",
+   "head": "xgboost",
+   "mean": 1.0,
+   "sem": 0.0,
+   "n_folds": 25
+  },
+  {
+   "task": "classif",
+   "arm": "hume",
+   "head": "xgboost",
+   "mean": 0.9907394561711151,
+   "sem": 0.004732082838875546,
+   "n_folds": 25
+  }
+ ]
+}

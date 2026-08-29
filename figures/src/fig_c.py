@@ -156,10 +156,6 @@ def main() -> None:
 
         # Orient for the frontier only. The AXIS keeps the field's own units and is inverted
         # below, so nothing plotted is a negated metric the reader has to undo mentally.
-        oriented = [-v for v in ys] if lo_better else list(ys)
-        front = pareto(xs, oriented)
-        ax.plot([xs[i] for i in front], [ys[i] for i in front], ls="--",
-                lw=STYLE["lw_thin"], color=STYLE["grid"], zorder=1)
 
         for x, y, e, a in zip(xs, ys, es, ks):
             kw = A.bar_kw(a)
@@ -168,8 +164,11 @@ def main() -> None:
             ax.errorbar(x, y, yerr=e, fmt="o", ms=STYLE["marker_size"], color=face,
                         ecolor=STYLE["ink"], elinewidth=STYLE["lw_thin"],
                         capsize=STYLE["cap_size"], zorder=3,
-                        markeredgecolor=kw.get("edgecolor", face),
-                        markeredgewidth=kw.get("linewidth", 0.0))
+                        # AN INK CIRCLE ON EVERY MARKER (Leif 2026-08-29). It was
+                        # `kw.get("linewidth", 0.0)`, so any arm whose style carried no explicit
+                        # width drew with NO outline and the pale fills (MiniMol, ECFP+Mordred)
+                        # dissolved into the panel background.
+                        markeredgecolor=STYLE["ink"], markeredgewidth=0.7)
         label_sets.append(list(zip(xs, ys, ks)))
         ax.set_xscale("log")
         if lo_better:
@@ -207,15 +206,11 @@ def main() -> None:
     handles = []
     for a in arm_keys:
         kw = A.bar_kw(a)
-        star = " (desc-pretrained)" if A.desc_pretrained(a) else ""
         handles.append(Line2D([], [], marker="o", ls="", ms=STYLE["marker_size"],
-                              color=kw["color"], label=A.label(a) + star,
+                              color=kw["color"], label=A.short_label(a),
                               markeredgecolor=STYLE["ink"], markeredgewidth=0.7))
     if nrow == 1:
         fig.supxlabel("featurisation cost (µs / molecule, log)", fontsize=FS["label"], y=0.175)
-    from matplotlib.lines import Line2D
-    handles.append(Line2D([0], [0], ls="--", lw=STYLE["lw_thin"], color=STYLE["grid"],
-                          label="Pareto frontier"))
     lax = fig.add_axes([0.005, 0.005, 0.99, 0.135 if nrow == 1 else 0.055])
     lax.axis("off")
     mark_empty(lax, "legend strip -- holds no data by design")

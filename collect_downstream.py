@@ -39,16 +39,22 @@ CACHE = ROOT / "results" / "figures" / "downstream_raw.json"
 TASKS = {
     "physchem": ("Physicochemical", ["aqsoldb", "esol", "lipophilicity", "pb_logd",
                                      "pb_water_sol", "photoswitch"]),
-    "adme":     ("ADME (regression)", ["pb_hum_mic_cl", "pb_mou_mic_cl", "pb_rat_mic_cl",
-                                       "pb_ppb", "vdss_lombardo", "ld50_zhu"]),
-    "bioact":   ("Bioactivity & tox", ["ames", "pb_ames", "cyp2d6_inh", "pb_cyp2c9",
-                                       "pb_cyp2d6", "pb_cyp3a4", "bioavail", "hia",
-                                       "cycpept_pampa", "pb_bbb"]),
+    "adme":     ("ADME & tox", ["pb_hum_mic_cl", "pb_mou_mic_cl", "pb_rat_mic_cl", "pb_ppb",
+                                "vdss_lombardo", "ld50_zhu", "cycpept_pampa",
+                                "pb_cyp2c9", "pb_cyp2d6", "pb_cyp3a4"]),
+    "classif":  ("Classification", ["ames", "pb_ames", "cyp2d6_inh", "bioavail", "hia",
+                                    "pb_bbb"]),
     "quantum":  ("Quantum", ["qm8", "qm9", "qm9_gap", "qmugs_gap"]),
 }
-# fartdb and rascore are deliberately not in a task: neither shares an endpoint type with the
-# four groups, and a fifth panel holding two unrelated datasets communicates less than leaving
-# them in the CSV. They stay in the raw cache.
+# GROUPED BY METRIC FIRST, endpoint second, and the assertion below enforces it. The obvious
+# chemistry grouping does not survive contact with the lake: `cycpept_pampa` is a permeability
+# REGRESSION and the three `pb_cyp*` panels are regressions while `cyp2d6_inh` is a
+# classification, so a "bioactivity & tox" panel built on endpoint alone mixed AUROC with RMSE.
+# A panel shows one unit; there is no honest way to average those.
+#
+# `fartdb` (accuracy) and `rascore` are the only datasets in no task: neither shares a metric AND
+# an endpoint with a group, and a fifth panel holding two unrelated datasets communicates less
+# than leaving them in the per-dataset CSV, which still carries them.
 
 FIGB_BASES = ["ecfp", "desc", "ecfp_all_desc"]
 FIGB_ANCHOR = "ecfp_all_desc"

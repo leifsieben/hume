@@ -189,9 +189,6 @@ def _panel(ax, armlist, cells, mode, klass, title):
         if np.isfinite(d_) and d_ >= DEGEN_MARK:
             ax.text(xi, NULL + (YMAX - NULL) * 0.02, "≡", ha="center", va="bottom",
                     fontsize=FS["annot"] - 1.0, color=INK, zorder=5)
-        elif m_ <= NULL + FLOOR_TOL:
-            ax.text(xi, NULL + (YMAX - NULL) * 0.02, "0.5", ha="center", va="bottom",
-                    fontsize=FS["annot"] - 2.5, color=INK, zorder=5)
 
     ax.set_ylim(NULL, YMAX)
     ax.set_yticks([0.5, 0.6, 0.7, 0.8, 0.9, 1.0])
