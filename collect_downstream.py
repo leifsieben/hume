@@ -89,19 +89,35 @@ def fetch():
     keys = [l.split()[-1] for l in ls.stdout.splitlines() if l.strip().endswith(".json")]
     done = {k.split(".")[0] for k in keys if not k.endswith(".partial.json")}
     use = [k for k in keys if not (k.endswith(".partial.json") and k.split(".")[0] in done)]
-    recs, seen = [], []
-    for k in sorted(use):
+    # NEWEST WINS, per (dataset, arm, fold).
+    #
+    # A re-run does not replace the file it supersedes -- it lands under a NEW instance id -- so
+    # concatenating everything would give a cell ten fold-values instead of five and quietly
+    # average the old protocol with the new one. Files are read in S3 LastModified order and
+    # later records overwrite earlier ones for the same cell. This also covers the shard overlap
+    # that happens whenever a box is retired mid-dataset and its work relaunched elsewhere.
+    order = {}
+    for line in ls.stdout.splitlines():
+        parts = line.split()
+        if len(parts) >= 4 and parts[-1].endswith(".json"):
+            order[parts[-1]] = parts[0] + " " + parts[1]
+    merged, seen = {}, []
+    for k in sorted(use, key=lambda k: order.get(k, "")):
         r = subprocess.run(["aws", "s3", "cp", f"s3://{BUCKET}/downstream/{k}", "-"],
                            capture_output=True)
         if r.returncode != 0:
             print(f"  ! could not read {k}")
             continue
         rows = json.loads(r.stdout)
-        recs.extend(rows)
-        seen.append((k, len(rows)))
-    for k, n in seen:
-        print(f"  {k:<44s} {n:6,d} records")
-    return recs
+        for x in rows:
+            merged[(x["dataset"], x["arm"], x["fold"])] = x
+        seen.append((k, len(rows), order.get(k, "?")))
+    for k, n, when in seen:
+        print(f"  {k:<44s} {n:6,d} records   {when}")
+    dropped = sum(n for _k, n, _w in seen) - len(merged)
+    if dropped:
+        print(f"  superseded by a later run: {dropped:,} records")
+    return list(merged.values())
 
 
 def aggregate(recs):

@@ -223,6 +223,13 @@ FP_BLOCK = {
 #: as a control rather than as a plausible answer.
 W_GRID = (1.0, 5.0, 10.0, 100.0)
 
+#: Inner-CV settings for the `w` search. K folds rather than one split, and a floor on the
+#: inner-validation size below which we use API.md section 7's documented default instead of
+#: tuning -- a tuner given 90 molecules returns noise, and noise costs only the arms that tune.
+W_INNER_K = 3
+MIN_INNER_VAL = 200
+W_UNTUNED = 10.0
+
 
 def fp_weights(arm, n_cols, w):
     """-> the feature_weights vector, or None when the arm has no fingerprint/descriptor split."""
@@ -420,17 +427,47 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
                     if FP_BLOCK.get(a) in (None, "all"):
                         best_w = 1.0
                     else:
-                        cut = int(0.8 * len(tr))
-                        itr, iva = tr[:cut], tr[cut:]
-                        best_w, best_s = 1.0, None
-                        for w in W_GRID:
-                            if len(iva) < 20:
-                                break
-                            mi = make(task, fp_weights(a, X.shape[1], w))
-                            mi.fit(X[itr], y[itr])
-                            si = score(task, y[iva], predict(mi, task, X[iva]))
-                            if best_s is None or (si < best_s if lower_better else si > best_s):
-                                best_w, best_s = w, si
+                        # K-FOLD INNER CV, NOT ONE 80/20 SPLIT.
+                        #
+                        # The single inner split was fitting noise, and it was doing so at every
+                        # dataset size. Counted over the first grid: the number of DISTINCT w
+                        # values chosen across the five outer folds was 3 or 4 for the tuned arms
+                        # on almost every dataset -- including ames at n=7,278 and pb_ames at
+                        # n=9,139 -- where a tuner finding real signal would pick the same value
+                        # each time.
+                        #
+                        # THE COST OF THAT FELL ON ONE SIDE OF THE COMPARISON. `feature_weights`
+                        # is a no-op for an arm with no fingerprint/descriptor boundary, so every
+                        # dense embedding (CheMeleon, MiniMol, ChemBERTa, MoLFormer) skipped the
+                        # loop entirely and paid no variance for it, while every descriptor-
+                        # carrying arm did. That is a systematic bias in favour of the dense arms
+                        # across the whole grid, not a property of any representation.
+                        #
+                        # Averaging over K inner folds cuts that variance by ~K, and below a
+                        # usable inner-validation size we do not guess at all: API.md section 7's
+                        # documented default is used instead.
+                        idx = np.asarray(tr)
+                        if len(idx) // W_INNER_K < MIN_INNER_VAL:
+                            best_w = W_UNTUNED
+                        else:
+                            best_w, best_s = W_UNTUNED, None
+                            for w in W_GRID:
+                                ss = []
+                                for j in range(W_INNER_K):
+                                    iva = idx[j::W_INNER_K]
+                                    itr = np.concatenate([idx[q::W_INNER_K]
+                                                          for q in range(W_INNER_K) if q != j])
+                                    if len(iva) < 20 or (task in ("binary", "multiclass")
+                                                         and len(np.unique(y[itr])) < 2):
+                                        continue
+                                    mi = make(task, fp_weights(a, X.shape[1], w))
+                                    mi.fit(X[itr], y[itr])
+                                    ss.append(score(task, y[iva], predict(mi, task, X[iva])))
+                                if not ss:
+                                    continue
+                                si = float(np.mean(ss))
+                                if best_s is None or (si < best_s if lower_better else si > best_s):
+                                    best_w, best_s = w, si
                     m = make(task, fp_weights(a, X.shape[1], best_w))
                     m.fit(X[tr], y[tr])
                     v = score(task, y[te], predict(m, task, X[te]))
