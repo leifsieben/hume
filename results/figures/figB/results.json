@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 2905,
+  "n_records": 3110,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -11,7 +11,8 @@
    "metric": "rmse / sd(y)",
    "lower_is_better": true,
    "proto": [
-    1
+    1,
+    2
    ]
   },
   {
@@ -20,7 +21,8 @@
    "metric": "rmse / sd(y)",
    "lower_is_better": true,
    "proto": [
-    1
+    1,
+    2
    ]
   },
   {
@@ -38,7 +40,8 @@
    "metric": "rmse / sd(y)",
    "lower_is_better": true,
    "proto": [
-    1
+    1,
+    2
    ]
   }
  ],
@@ -67,17 +70,17 @@
    "task": "physchem",
    "base": "ecfp",
    "add": "chemeleon",
-   "mean": 0.02908344054990749,
-   "sem": 0.017160558974419707,
-   "n_folds": 25
+   "mean": 0.030902843952741833,
+   "sem": 0.017024792886016115,
+   "n_folds": 30
   },
   {
    "task": "physchem",
    "base": "ecfp",
    "add": "chemberta_mtr",
-   "mean": 0.07722895914718976,
-   "sem": 0.01231109406597335,
-   "n_folds": 25
+   "mean": 0.07518252114231204,
+   "sem": 0.01276560327396144,
+   "n_folds": 30
   },
   {
    "task": "physchem",
@@ -85,7 +88,7 @@
    "add": "minimol",
    "mean": 0.03781353061925273,
    "sem": 0.0091042487747206,
-   "n_folds": 20
+   "n_folds": 25
   },
   {
    "task": "physchem",
@@ -93,7 +96,7 @@
    "add": "molformer",
    "mean": 0.07831422060535503,
    "sem": 0.013150063690949903,
-   "n_folds": 25
+   "n_folds": 30
   },
   {
    "task": "physchem",
@@ -109,7 +112,7 @@
    "add": "chemeleon",
    "mean": -0.006224075248115779,
    "sem": 0.004485739894840371,
-   "n_folds": 25
+   "n_folds": 30
   },
   {
    "task": "physchem",
@@ -117,7 +120,7 @@
    "add": "chemberta_mtr",
    "mean": 0.0008950980343147341,
    "sem": 0.005808642954931716,
-   "n_folds": 25
+   "n_folds": 30
   },
   {
    "task": "physchem",
@@ -125,7 +128,7 @@
    "add": "minimol",
    "mean": -0.005068319414280889,
    "sem": 0.006055999345542827,
-   "n_folds": 20
+   "n_folds": 25
   },
   {
    "task": "physchem",
@@ -133,7 +136,7 @@
    "add": "molformer",
    "mean": 0.003902890041267304,
    "sem": 0.00221619049024251,
-   "n_folds": 25
+   "n_folds": 30
   },
   {
    "task": "physchem",
@@ -147,17 +150,17 @@
    "task": "physchem",
    "base": "ecfp_all_desc",
    "add": "chemeleon",
-   "mean": 0.0009416595135193883,
-   "sem": 0.004079529807914224,
-   "n_folds": 25
+   "mean": 0.0006393050950556645,
+   "sem": 0.004120957824570629,
+   "n_folds": 30
   },
   {
    "task": "physchem",
    "base": "ecfp_all_desc",
    "add": "chemberta_mtr",
-   "mean": -0.00203659894558631,
-   "sem": 0.0044357089769713936,
-   "n_folds": 25
+   "mean": -0.004015580782555694,
+   "sem": 0.005000947699041725,
+   "n_folds": 30
   },
   {
    "task": "physchem",
@@ -165,15 +168,15 @@
    "add": "minimol",
    "mean": 0.0022032651752298543,
    "sem": 0.009212531910906143,
-   "n_folds": 20
+   "n_folds": 25
   },
   {
    "task": "physchem",
    "base": "ecfp_all_desc",
    "add": "molformer",
-   "mean": 0.0009791872962394033,
-   "sem": 0.008129927423511372,
-   "n_folds": 25
+   "mean": 0.0015470984863217518,
+   "sem": 0.00818687928645281,
+   "n_folds": 30
   },
   {
    "task": "adme",
@@ -187,33 +190,33 @@
    "task": "adme",
    "base": "ecfp",
    "add": "chemeleon",
-   "mean": 0.00769512939605016,
-   "sem": 0.00887692139808779,
-   "n_folds": 45
+   "mean": 0.007047331738198542,
+   "sem": 0.007855464558046093,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "ecfp",
    "add": "chemberta_mtr",
-   "mean": 0.00405716699752913,
-   "sem": 0.005927024050432912,
-   "n_folds": 45
+   "mean": 0.00334648704597007,
+   "sem": 0.005275234514037195,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "ecfp",
    "add": "minimol",
-   "mean": -0.0024231774038556836,
-   "sem": 0.009442293971584616,
-   "n_folds": 45
+   "mean": -0.0023614174820089464,
+   "sem": 0.008327549570967447,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "ecfp",
    "add": "molformer",
-   "mean": 0.020714904652174196,
-   "sem": 0.00750653163715838,
-   "n_folds": 45
+   "mean": 0.016829855179647572,
+   "sem": 0.007675926329718796,
+   "n_folds": 50
   },
   {
    "task": "adme",
@@ -227,33 +230,33 @@
    "task": "adme",
    "base": "desc",
    "add": "chemeleon",
-   "mean": 0.021346711976696353,
-   "sem": 0.014934354021678791,
-   "n_folds": 45
+   "mean": 0.023723099531828766,
+   "sem": 0.013383528311670318,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "desc",
    "add": "chemberta_mtr",
-   "mean": 0.032345556856260324,
-   "sem": 0.016552360082486096,
-   "n_folds": 45
+   "mean": 0.026187272222910396,
+   "sem": 0.015843626817991934,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "desc",
    "add": "minimol",
-   "mean": 0.02646381091995341,
-   "sem": 0.013143010879596401,
-   "n_folds": 45
+   "mean": 0.03263053174390104,
+   "sem": 0.013129386701225742,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "desc",
    "add": "molformer",
-   "mean": 0.039149080101580705,
-   "sem": 0.014008502768925386,
-   "n_folds": 45
+   "mean": 0.03853289905196479,
+   "sem": 0.012369694869865016,
+   "n_folds": 50
   },
   {
    "task": "adme",
@@ -267,33 +270,33 @@
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "chemeleon",
-   "mean": -0.0013366408972623894,
-   "sem": 0.009220374739397283,
-   "n_folds": 45
+   "mean": -0.0006684906926597537,
+   "sem": 0.008159009979482148,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "chemberta_mtr",
-   "mean": -0.00014228331449613052,
-   "sem": 0.009729554815128001,
-   "n_folds": 45
+   "mean": 0.0010211209965237636,
+   "sem": 0.008659171403919792,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "minimol",
-   "mean": -0.0037893982548939387,
-   "sem": 0.006806383501037987,
-   "n_folds": 45
+   "mean": -0.003775636580740859,
+   "sem": 0.006002681798769377,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "base": "ecfp_all_desc",
    "add": "molformer",
-   "mean": 0.0030387369560962024,
-   "sem": 0.0062929228165018065,
-   "n_folds": 45
+   "mean": 0.000638451193455267,
+   "sem": 0.006046656456277434,
+   "n_folds": 50
   },
   {
    "task": "classif",
@@ -427,33 +430,33 @@
    "task": "quantum",
    "base": "ecfp",
    "add": "chemeleon",
-   "mean": 0.049470143220084695,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.046414724495195236,
+   "sem": 0.0015426743673056286,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "base": "ecfp",
    "add": "chemberta_mtr",
-   "mean": 0.08199876455695493,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.07326435995416432,
+   "sem": 0.004409003080287421,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "base": "ecfp",
    "add": "minimol",
-   "mean": 7.552749500780442e-05,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": -0.017483403754723587,
+   "sem": 0.013639118515304787,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "base": "ecfp",
    "add": "molformer",
-   "mean": 0.09007709715994838,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.07900664001143852,
+   "sem": 0.005596362393768921,
+   "n_folds": 15
   },
   {
    "task": "quantum",
@@ -467,33 +470,33 @@
    "task": "quantum",
    "base": "desc",
    "add": "chemeleon",
-   "mean": 0.0034198203156705076,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.007674596691054174,
+   "sem": 0.002334184266284137,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "base": "desc",
    "add": "chemberta_mtr",
-   "mean": 0.004700131615464093,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.009204446675613015,
+   "sem": 0.0027065382895294023,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "base": "desc",
    "add": "minimol",
-   "mean": -0.01769619749845111,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": -0.031018525901506343,
+   "sem": 0.011274295672371138,
+   "n_folds": 15
   },
   {
    "task": "quantum",
    "base": "desc",
    "add": "molformer",
-   "mean": 0.007762594810569845,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.009318729948390262,
+   "sem": 0.001825309472324708,
+   "n_folds": 15
   },
   {
    "task": "quantum",
@@ -507,9 +510,9 @@
    "task": "quantum",
    "base": "ecfp_all_desc",
    "add": "chemeleon",
-   "mean": 0.002779496895283312,
-   "sem": 0.0,
-   "n_folds": 5
+   "mean": 0.00611750297321513,
+   "sem": 0.003338006077931818,
+   "n_folds": 10
   },
   {
    "task": "quantum",

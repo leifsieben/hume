@@ -123,7 +123,7 @@ def f_mordred_desc(smis):
             "np.save(sys.argv[2], out)\n")
         r = subprocess.run([MORDRED_PY, "-c", code, smi_f, out_f], capture_output=True)
         if r.returncode != 0:
-            raise RuntimeError(f"mordred subprocess failed: {r.stderr.decode()[-400:]}")
+            raise RuntimeError(f"mordred subprocess failed: {r.stderr.decode()[-2000:]}")
         return np.load(out_f)
 
 
@@ -185,19 +185,45 @@ def f_minimol(smis):
     with tempfile.TemporaryDirectory() as td:
         smi_f, out_f = f"{td}/in.txt", f"{td}/out.npy"
         open(smi_f, "w").write("\n".join(smis))
+        # RETRY SINGLY ON A BATCH FAILURE. torch_geometric's `collate` raises for the WHOLE
+        # batch when one molecule produces a graph it cannot stack, so a single bad SMILES took
+        # 256 molecules -- and then the whole arm -- down with it. Measured on aqsoldb, where all
+        # three minimol arms failed and nothing else did. Molecules that still fail alone are
+        # left as NaN rows, which is what "this featuriser has no value here" means and what
+        # XGBoost already treats as missing; the count is printed so it is never silent.
         code = (
             "import sys, numpy as np, torch\n"
             "from minimol import Minimol\n"
             "torch.set_grad_enabled(False)\n"
             "smis = open(sys.argv[1]).read().split('\\n')\n"
             "m = Minimol()\n"
-            "out, B = [], 256\n"
+            "rows = [None] * len(smis)\n"
+            "D = None\n"
+            "def run(chunk, base):\n"
+            "    global D\n"
+            "    for j, v in enumerate(m(chunk)):\n"
+            "        a = np.asarray(v, np.float32); D = a.shape[0]; rows[base + j] = a\n"
+            "B = 256\n"
             "for i in range(0, len(smis), B):\n"
-            "    out.extend(np.asarray(v, np.float32) for v in m(smis[i:i+B]))\n"
-            "np.save(sys.argv[2], np.vstack(out).astype(np.float32))\n")
+            "    chunk = smis[i:i + B]\n"
+            "    try:\n"
+            "        run(chunk, i)\n"
+            "    except Exception:\n"
+            "        for j, one in enumerate(chunk):\n"
+            "            try: run([one], i + j)\n"
+            "            except Exception: pass\n"
+            "if D is None:\n"
+            "    raise RuntimeError('minimol embedded no molecule at all')\n"
+            "bad = sum(1 for a in rows if a is None)\n"
+            "if bad: print(f'  minimol: {bad}/{len(smis)} molecules unfeaturisable -> NaN',\n"
+            "              file=sys.stderr)\n"
+            "out = np.full((len(smis), D), np.nan, np.float32)\n"
+            "for k, a in enumerate(rows):\n"
+            "    if a is not None: out[k] = a\n"
+            "np.save(sys.argv[2], out)\n")
         r = subprocess.run([MINIMOL_PY, "-c", code, smi_f, out_f], capture_output=True)
         if r.returncode != 0:
-            raise RuntimeError(f"minimol subprocess failed: {r.stderr.decode()[-400:]}")
+            raise RuntimeError(f"minimol subprocess failed: {r.stderr.decode()[-2000:]}")
         return np.load(out_f)
 
 
