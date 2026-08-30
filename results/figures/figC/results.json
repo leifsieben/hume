@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 3215,
+  "n_records": 3280,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -118,24 +118,24 @@
    "task": "physchem",
    "arm": "ecfp",
    "head": "xgboost",
-   "mean": 0.06232110912479523,
-   "sem": 0.023102359308349404,
+   "mean": 0.06606868950255583,
+   "sem": 0.016472187694435265,
    "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": -0.00664849133704748,
-   "sem": 0.0080409404365689,
-   "n_folds": 25
+   "mean": 0.003930578249069607,
+   "sem": 0.007516619441247278,
+   "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": 0.004650279045134154,
-   "sem": 0.005088473087933402,
+   "mean": 0.013817232120581807,
+   "sem": 0.010402400113626122,
    "n_folds": 30
   },
   {
@@ -144,63 +144,63 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 25
+   "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.0057580465709790914,
-   "sem": 0.005142570532780327,
+   "mean": 0.011037665898629692,
+   "sem": 0.007921135659181107,
    "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "minimol",
    "head": "xgboost",
-   "mean": 0.030586458458863777,
-   "sem": 0.025549364100164753,
-   "n_folds": 25
+   "mean": 0.0489368749581918,
+   "sem": 0.01390906772878643,
+   "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "chemeleon",
    "head": "xgboost",
-   "mean": 0.033866539124780326,
-   "sem": 0.01243609660333289,
+   "mean": 0.04139698529249438,
+   "sem": 0.006028239846443782,
    "n_folds": 30
   },
   {
    "task": "physchem",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 0.14114407013340605,
-   "sem": 0.021818269774737494,
+   "mean": 0.15210556095092223,
+   "sem": 0.01595751323062586,
    "n_folds": 30
   },
   {
    "task": "adme",
    "arm": "ecfp",
    "head": "xgboost",
-   "mean": 0.0243195827615358,
-   "sem": 0.013242141548193266,
-   "n_folds": 45
+   "mean": 0.015301532750836299,
+   "sem": 0.015283576612926885,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": -0.004205414827468896,
-   "sem": 0.0073401700377053606,
-   "n_folds": 45
+   "mean": -0.012433915731859346,
+   "sem": 0.013082507599375272,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": -0.0007264304082250157,
-   "sem": 0.008771020123980589,
-   "n_folds": 45
+   "mean": -0.0035746595019213066,
+   "sem": 0.0060662638765014015,
+   "n_folds": 50
   },
   {
    "task": "adme",
@@ -208,38 +208,38 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 45
+   "n_folds": 50
   },
   {
    "task": "adme",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.004085574961657191,
-   "sem": 0.010615714675195544,
-   "n_folds": 45
+   "mean": -0.006616659939135827,
+   "sem": 0.014623275760576374,
+   "n_folds": 50
   },
   {
    "task": "adme",
    "arm": "minimol",
    "head": "xgboost",
-   "mean": 0.03390834563494806,
-   "sem": 0.011471523757268051,
+   "mean": 0.022536149474600076,
+   "sem": 0.01633631287062951,
    "n_folds": 50
   },
   {
    "task": "adme",
    "arm": "chemeleon",
    "head": "xgboost",
-   "mean": 0.03693204095250656,
-   "sem": 0.009702690641205753,
+   "mean": 0.031272478952836115,
+   "sem": 0.011050679884180131,
    "n_folds": 50
   },
   {
    "task": "adme",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 0.0863166712377278,
-   "sem": 0.019427031846785753,
+   "mean": 0.08510142916002675,
+   "sem": 0.017109856243093396,
    "n_folds": 50
   },
   {
@@ -318,8 +318,8 @@
    "task": "quantum",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": 0.014331271636495271,
-   "sem": 0.0035220426022853682,
+   "mean": 0.013861539164196293,
+   "sem": 0.0031472339626710233,
    "n_folds": 15
   },
   {
