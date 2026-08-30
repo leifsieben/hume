@@ -48,23 +48,58 @@ This measures lost column NAMES, not lost information -- every absent column has
 inside HUME by construction. The direct evidence: HUME wins fold 0 of `bioavail` outright
 (0.663 vs 0.655) despite 27.5% of the anchor's gain sitting in columns it lacks.
 
-## So why does HUME still trail on classification?
+## So why does HUME trail on classification? The 0.99 threshold, on small datasets only.
 
-Not because of missing descriptors. Remaining candidates, in order of how much they are worth
-checking:
+**First: the gap is two datasets.** With the protocol-2 tuning fix in, HUME against the full
+descriptor block on classification:
 
-1. **The 0.99 threshold is corpus-dependent.** Two columns can be 0.995-correlated on the
-   dedupe corpus and separate cleanly on a specific downstream endpoint. Dropping one is then a
-   real loss on that endpoint even though the filter was applied correctly. This is the most
-   likely explanation and it is testable: rerun the classification arms with the FULL union and
-   see whether the deficit disappears.
-2. **Fingerprint radius**, r=3 in HUME against r=2 in the anchor. Weak candidate: bits carry
-   only 2-5% of total gain on these datasets.
-3. **Dimensionality at fixed n.** HUME is 3,314 columns against the anchor's 2,913, and the
-   deficit is concentrated on the smallest datasets.
+| dataset | n | delta(1 - auroc), + = HUME worse |
+|---|---:|---:|
+| pb_ames | 9,139 | **-0.0004** (HUME better) |
+| ames | 7,278 | +0.0008 |
+| pb_bbb | 8,301 | +0.0022 |
+| cyp2d6_inh | 13,130 | +0.0030 |
+| hia | 578 | +0.0056 |
+| bioavail | 640 | +0.0200 |
+
+On every dataset with 7k-13k molecules HUME is within +/-0.003 of a block costing 50x more.
+The lag is `bioavail` and `hia`, both under 700 molecules.
+
+**Second: on those two, the dedupe threshold accounts for it.** `dedupe_cost.py` isolates the
+filter and nothing else -- same fingerprint (Morgan r=3), same source columns, same computation,
+same protocol-2 head; the arms differ only in whether the 966 dropped columns are present:
+
+| dataset | deduped 864 | full 1,830 | cost of the filter | HUME's gap | explained |
+|---|---:|---:|---:|---:|---:|
+| bioavail | 0.6806 +/- 0.0217 | 0.6966 +/- 0.0309 | **+0.0160** | +0.0200 | 80% |
+| hia | 0.9739 +/- 0.0040 | 0.9798 +/- 0.0029 | **+0.0059** | +0.0056 | 104% |
+
+So the mechanism is: **|r| >= 0.99 is measured on the dedupe corpus, and two columns that are
+redundant there can separate on a specific small endpoint.** The filter was applied correctly;
+the drop is still a real loss on those two datasets. Nothing about the port, the implementation,
+or the fingerprint is involved.
+
+**Read the size dependence, not just the sign.** The filter costs nothing measurable at 7k+
+molecules and ~0.016 AUROC at 640. That is what you would expect if the dropped columns carry a
+small amount of genuinely independent signal: with enough data the surviving correlated twin
+recovers it, and with 128 test molecules per fold it does not.
+
+**Caveat on the evidence.** n = 578 and 640 with five folds, so the SEMs are +/-0.02-0.03 and each
+delta is roughly one standard error. Individually weak; the direction agrees across both
+datasets and the magnitudes match HUME's independently-measured gap, which is what makes it
+persuasive rather than either number alone.
+
+## Options, if this is worth acting on
+
+1. **Leave it.** The cost is confined to datasets under ~1,000 molecules, and it is the price of
+   a deduplication that is the whole point of the descriptor set.
+2. **Raise the threshold** from 0.99 to, say, 0.995. Keeps more columns, costs inference time,
+   and would need re-measuring.
+3. **Report it.** A one-line statement that the filter costs ~0.016 AUROC on sub-1,000-molecule
+   classification sets and nothing measurable above that is more useful than either change.
 
 ## Lesson for the harness
 
 Nothing checks that every column `data/dedupe.json` keeps is actually emitted by HUME. That
-check would have answered this question in one line instead of three rounds, and would catch a
-genuine porting gap if one ever appeared. Worth adding regardless of the answer here.
+check would have answered the original question in one line instead of three wrong rounds, and
+would catch a genuine porting gap if one ever appeared. Worth adding regardless.
