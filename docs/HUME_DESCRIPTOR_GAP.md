@@ -1,62 +1,70 @@
-# Why HUME loses to ECFP4 + full descriptors on classification
+# Is HUME missing descriptors? No.
 
-Asked 2026-08-30.
+Asked 2026-08-30, after HUME trailed ECFP4 + full descriptors on classification. The answer
+went through two wrong versions before landing; both are recorded below so the numbers are
+traceable.
 
-## CORRECTION to the first version of this note
+## Conclusion
 
-The first pass compared HUME against the FULL 1,830-column RDKit + Mordred union and reported
-717 "missing" columns as a gap. That was the wrong baseline and the alarming conclusion it
-produced was wrong.
+**Every one of the 864 descriptors the selection keeps is present in HUME.** There is no
+implementation gap and nothing to close.
 
-HUME's descriptor set is the output of a deliberate selection (`data/dedupe.json`):
+    1,830 RDKit + Mordred union
+      ->  1,275 usable       (555 dropped: constant or unusable on the corpus)
+      ->    864 kept         (411 dropped: |r| >= 0.99 with a column that WAS kept)
+      ->    864 in HUME      (0 missing)
 
-    1,830 union  ->  1,275 usable   (555 dropped: constant or unusable on the corpus)
-                 ->    865 kept     (410 dropped: |r| >= 0.99 with a column that WAS kept)
+That is exactly the intended design: every RDKit and Mordred descriptor, minus the unusable,
+minus anything 99% correlated with something already carried. `data/dedupe.json` is the record.
 
-That is exactly the intended design -- every RDKit and Mordred descriptor, minus the
-unusable and minus anything 99% correlated with something already carried.
+## The two wrong versions, and why
 
-**Of the 865 descriptors the filter KEPT, only NINE are absent from HUME**, and they are one
-family:
+**v1 claimed 717 missing columns.** Wrong baseline: it compared HUME against the FULL 1,830-column
+union rather than against the 864 the filter keeps. Most of the "missing" columns were dropped
+on purpose -- 158 per-atom-type EState extremes, ~136 autocorrelations weighted by mass and
+intrinsic state, 22 Mordred BCUT variants. Removing them is the deduplication working.
 
-    Chi0n Chi0v Chi1n Chi1v Chi2n Chi2v Chi3n Chi3v Chi4v
+**v2 claimed 9 missing columns** -- `Chi0n Chi0v Chi1n Chi1v Chi2n Chi2v Chi3n Chi3v Chi4v` --
+and called it "the real gap". Also wrong, and more embarrassingly: HUME registers RDKit's chi
+family in LOWERCASE (`chi0n` ... `chi4v`), and the comparison was case-sensitive. Verified
+against RDKit on six molecules: every one matches to a maximum absolute difference of 3e-15.
+HUME additionally carries `chi5n/6n/7n`, `chi5v/6v/7v` and `chi_nv_ratio`, which RDKit does not
+have at all.
 
-That is the real gap. It is nine columns, not seven hundred.
+Case-insensitively, **0 of 864** kept descriptors are absent.
 
-## Why the 30%-of-gain figure does not mean what it looks like
+## What the 30%-of-gain figure actually measures
 
-The anchor arm (`ecfp_all_desc`) uses all 1,830 columns, deduped or not. So XGBoost is free to
-cut on a column that is 0.995-correlated with one HUME carries, and the gain lands on the name
-HUME does not have. The measured share of anchor gain in HUME-absent columns:
+The anchor arm (`ecfp_all_desc`) uses all 1,830 columns, deduplicated or not. XGBoost therefore
+cuts freely on a column 0.995-correlated with one HUME carries, and the gain lands on a name
+HUME does not have. Measured (case-insensitive, five folds):
 
 | | gain in HUME-absent columns |
 |---|---:|
-| classification (bioavail, ames, pb_bbb, cyp2d6_inh) | 28.6 / 31.1 / 31.5 / 31.8 % |
-| regression (pb_ppb, esol, lipophilicity) | 17.6 / 20.3 / 22.3 % |
+| classification (bioavail, ames, pb_bbb, cyp2d6_inh) | ~27-32% |
+| regression (pb_ppb, esol, lipophilicity) | ~18-22% |
 
-Both numbers are correct and neither measures lost INFORMATION -- they measure lost column
-NAMES, most of which have a >=0.99 twin inside HUME. The direct evidence that the information
-is mostly still there: HUME wins fold 0 of `bioavail` outright (0.663 vs 0.655) despite 28.6%
-of the anchor's gain sitting in columns it lacks.
+This measures lost column NAMES, not lost information -- every absent column has a >=0.99 twin
+inside HUME by construction. The direct evidence: HUME wins fold 0 of `bioavail` outright
+(0.663 vs 0.655) despite 27.5% of the anchor's gain sitting in columns it lacks.
 
-What the classification-vs-regression split (30.8% vs 20.1%) does say is that the redundant
-families concentrate more of the model's gain on classification endpoints. It is consistent
-with, but not evidence for, a real information gap.
+## So why does HUME still trail on classification?
 
-## What is actually worth doing
+Not because of missing descriptors. Remaining candidates, in order of how much they are worth
+checking:
 
-1. **Add the nine Chi columns.** They survived a 0.99 correlation filter, so they carry
-   information nothing else in the set does, and `Chi4n` appears in the anchor's top-25 on
-   `bioavail`. This is the only defensible "we lost something" item.
-2. **Do not add the other 708.** They were dropped on purpose, by the criterion the project
-   chose. Re-adding them would undo the deduplication.
-3. **`qed` is in ALL_COLUMNS but OFF by default** (NaN unless `optional=("qed",...)`), which is
-   the intended treatment for an expensive descriptor that is a function of other descriptors.
+1. **The 0.99 threshold is corpus-dependent.** Two columns can be 0.995-correlated on the
+   dedupe corpus and separate cleanly on a specific downstream endpoint. Dropping one is then a
+   real loss on that endpoint even though the filter was applied correctly. This is the most
+   likely explanation and it is testable: rerun the classification arms with the FULL union and
+   see whether the deficit disappears.
+2. **Fingerprint radius**, r=3 in HUME against r=2 in the anchor. Weak candidate: bits carry
+   only 2-5% of total gain on these datasets.
+3. **Dimensionality at fixed n.** HUME is 3,314 columns against the anchor's 2,913, and the
+   deficit is concentrated on the smallest datasets.
 
-## Superseded detail from the first pass
+## Lesson for the harness
 
-The families absent from HUME relative to the FULL union were: 158 per-atom-type EState
-extremes, ~136 autocorrelations weighted by mass and intrinsic state, 22 Mordred BCUT variants,
-12 RDKit connectivity indices. All but the nine Chi columns above were dropped by the filter as
-unusable or as >=0.99 correlated. Recorded here so the earlier numbers are traceable rather
-than silently deleted.
+Nothing checks that every column `data/dedupe.json` keeps is actually emitted by HUME. That
+check would have answered this question in one line instead of three rounds, and would catch a
+genuine porting gap if one ever appeared. Worth adding regardless of the answer here.
