@@ -36,6 +36,22 @@ measured over five scaffold folds per dataset:
 anchor's top-25 features on `bioavail` are absent from HUME: `MID_O`, `AMID_X`, `BCUTdv-1l`,
 `Chi4n`, `MAXssssC`, `AATSC8m`.
 
+### And the gap is 50% larger on classification than on regression
+
+The same measurement on regression datasets, where HUME is at PARITY with the anchor:
+
+| dataset | n | gain in HUME-absent columns |
+|---|---:|---:|
+| pb_ppb | 1,262 | 17.6% |
+| esol | 1,128 | 20.3% |
+| lipophilicity | 4,200 | 22.3% |
+
+**Classification ~30.8%, regression ~20.1%.** That is the answer to "why classification
+specifically": the families HUME lacks -- per-atom-type EState extremes and the mass /
+intrinsic-state autocorrelations -- carry half again as much of the model's gain on
+classification endpoints as on physicochemical regression. HUME's deficit appears exactly where
+its missing columns are worth the most, and vanishes where they are worth least.
+
 ## What it rules out
 
 * **Not the fingerprint.** Only 2–5% of total gain comes from fingerprint bits on these
