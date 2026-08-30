@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 3110,
+  "n_records": 3215,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
