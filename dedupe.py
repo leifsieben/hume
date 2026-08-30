@@ -31,7 +31,25 @@ from rdkit.Chem import Descriptors
 RDLogger.DisableLog("rdApp.*")
 
 ROOT = Path(__file__).resolve().parent
+# WHERE THE CORRELATIONS ARE ESTIMATED, and it matters more than the threshold does.
+#
+# This was the FIRST 20,000 lines of chembl_150k.smi. Two problems, both measured:
+#   * A PREFIX, NOT A SAMPLE. The file is not shuffled: its first 20k average MW 416.1 against
+#     438.9 for a random 20k of the same file, and median 386.8 against 413.3 -- a 6% bias
+#     toward smaller molecules, from nothing but where the read stopped.
+#   * ChEMBL ONLY. The benchmark this feeds spans QM9 (MW ~120) and CycPeptMPDB cyclic peptides
+#     at the other extreme. A redundancy that holds across drug-like ChEMBL space need not hold
+#     on either, and `dedupe_cost.py` measured exactly that: columns dropped at |rho| >= 0.99
+#     here are only 0.88-0.96 correlated on `bioavail`.
+#
+# Now: a stride over the whole ChEMBL file, plus the benchmark lake's own molecules. Using the
+# benchmark molecules is legitimate and not leakage -- this selection is UNSUPERVISED, it never
+# sees a label, and the descriptors should be deduplicated on the chemistry they will actually
+# be applied to.
 CORPUS = "/Users/lsieben/VSCode/ChemTFM_OLD/data/corpus/chembl_150k.smi"
+LAKE_DATASETS = ["aqsoldb", "esol", "lipophilicity", "pb_logd", "photoswitch", "cycpept_pampa",
+                 "ld50_zhu", "vdss_lombardo", "ames", "bioavail", "hia", "pb_bbb",
+                 "qm8", "qm9", "qmugs_gap", "rascore"]
 OUT = ROOT / "data" / "dedupe.json"
 N_MOL = 20000
 THRESH = 0.99    # near-exact duplicates only, not mere correlation
@@ -53,14 +71,24 @@ def main() -> None:
     from mordred import Calculator, descriptors as mdesc
     from multiprocessing import Pool
 
-    smis = []
-    with open(CORPUS) as fh:
-        for line in fh:
-            s = line.split()[0] if line.strip() else ""
-            if s:
-                smis.append(s)
-            if len(smis) >= N_MOL:
-                break
+    import random
+    allc = [l.split()[0] for l in open(CORPUS) if l.strip()]
+    random.seed(0)
+    smis = random.sample(allc, min(N_MOL, len(allc)))
+    n_chembl = len(smis)
+    # plus the benchmark chemistry, capped per dataset so one large set cannot dominate
+    try:
+        import bench_downstream as BD
+        for ds in LAKE_DATASETS:
+            try:
+                v = BD.load_ds(ds)["smiles"]
+            except Exception as e:
+                print(f"  (lake {ds}: {type(e).__name__}, skipped)")
+                continue
+            smis += random.sample(v, min(1500, len(v)))
+    except Exception as e:
+        print(f"  (lake unavailable: {type(e).__name__}; ChEMBL only)")
+    print(f"corpus: {n_chembl:,} ChEMBL (random) + {len(smis)-n_chembl:,} benchmark = {len(smis):,}")
     mols = [m for m in (Chem.MolFromSmiles(s) for s in smis) if m is not None]
     print(f"{len(mols):,} molecules")
     MAT = ROOT / "data" / "dedupe_matrix.npz"
@@ -133,13 +161,30 @@ def main() -> None:
     order = idx[np.argsort(cost[idx], kind="stable")]
     pos = {g: k for k, g in enumerate(idx)}
 
-    def cover(th):
-        kept = []
+    def cover(th, record=False):
+        """-> kept, and (when asked) the (dropped, kept-partner, |rho|) triple for every drop.
+
+        THE PARTNER IS THE WHOLE POINT OF RECORDING IT. `|rho| >= 0.99` is a numerical claim;
+        whether the pair is MECHANISTICALLY the same quantity is a chemical one, and only the
+        second justifies calling a column redundant. Without the partner written down, nobody can
+        check the second -- which is how `MDEO-12` (a distance-edge descriptor over oxygens) and
+        `nO` (a count of oxygens) end up indistinguishable from `ETA_dBeta` and whatever happened
+        to correlate with it on 20k prefix molecules.
+        """
+        kept, drops = [], []
         for g in order:
             k = pos[g]
-            if not any(M[k, pos[h]] >= th for h in kept):
+            hit = None
+            for h in kept:
+                r = M[k, pos[h]]
+                if r >= th:
+                    hit = (h, float(r)); break
+            if hit is None:
                 kept.append(g)
-        return sorted(kept, key=lambda g: cost[g])
+            elif record:
+                drops.append([src[g][1], src[hit[0]][1], hit[1]])
+        kept = sorted(kept, key=lambda g: cost[g])
+        return (kept, drops) if record else kept
 
     print(f"\n{'|rho| >=':>10s}{'survivors':>11s}{'absorbed':>10s}   interpretation")
     note = {1.0: "bitwise-identical only", 0.9999: "numerically identical",
@@ -150,7 +195,9 @@ def main() -> None:
         k = cover(th)
         results[th] = k
         print(f"{th:10.4f}{len(k):11d}{int(usable.sum())-len(k):10d}   {note[th]}")
-    kept = results[THRESH]
+    kept, drops = cover(THRESH, record=True)
+    kept = sorted(kept, key=lambda g: cost[g])
+    drops.sort(key=lambda d: d[2])   # closest to the threshold first: the ones worth reviewing
 
     # --- step 5: budget split ------------------------------------------------------------
     cum, compute, predict = 0.0, [], []
@@ -176,7 +223,13 @@ def main() -> None:
                "n_kept": len(kept), "thresh": THRESH, "budget_us": BUDGET_US,
                "compute": [list(src[g]) + [float(cost[g])] for g in compute],
                "predict": [list(src[g]) + [float(cost[g])] for g in predict],
-               "compute_us": cum, "predict_us": pred_cost}, open(OUT, "w"), indent=2)
+               "compute_us": cum, "predict_us": pred_cost,
+               "n_corpus": int(X.shape[0]),
+               "drops": drops}, open(OUT, "w"), indent=2)
+    print(f"recorded {len(drops)} (dropped, kept-partner, |rho|) triples")
+    print("\nthe 15 drops CLOSEST to the threshold -- review these for a mechanistic link:")
+    for a, b, r in drops[:15]:
+        print(f"   {r:.4f}  {a:<22} absorbed by  {b}")
     print(f"\nwrote {OUT}")
 
 

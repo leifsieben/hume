@@ -8,7 +8,7 @@
   "host": "ip-172-31-64-66",
   "python": "3.12.14",
   "usd_per_hour_ondemand": 0.714,
-  "usd_per_hour_spot": 0.30665,
+  "usd_per_hour_spot": 0.3077,
   "priced_on": "2026-08-30",
   "corpus": "/opt/bench/data/corpus1m/selected.txt",
   "started": "2026-08-29T11:43:17Z"
