@@ -674,3 +674,86 @@ about **half reconstructible** from the eleven cheap families (20 of 40 and 21 o
 columns above GBM R2 0.97, against 13 of 40 for `blocks`), so they are the next candidates for
 the section 5 treatment -- with the caveat that neither cuts proportionally, because both
 enumerate once and read many columns off the result.
+
+---
+
+## 7. Exactness, measured on 42,000 diverse molecules
+
+Section 4 says where the implementations differ and why. This section says how much, on a corpus
+large and varied enough for the number to mean something.
+
+### 7.1 The corpus
+
+`data/exactness_corpus.json`: **42,000 molecules**, 41,781 of them the first 6,000 unique SMILES
+from each of seven benchmark sets (litpcba, muv, pb_ames, pb_bbb, qm8, qm9, tox21) and 219
+adversarial structures from `cpp/hard.smi`. 41,992 parse. It is real screening and quantum
+chemistry rather than a drug-like sample: metals, salts, radicals and cages are in it, which is
+the point -- the divergences below are concentrated in exactly those.
+
+References were computed live in float64, not read from a stored matrix: RDKit's
+`Descriptors._descList` (217 columns) and mordred's full `Calculator` (1,613 columns).
+
+### 7.2 Against RDKit
+
+| | |
+|---|---:|
+| columns compared | 191 |
+| cells compared | 8,018,587 |
+| **bit-identical** | **95.83%** |
+| columns 100% bit-identical | **163 / 191** |
+| columns >=99.9% within 1e-9 | 183 / 191 |
+
+The residue is one failure mode, not many. **114 molecules -- 0.271% of the corpus -- account for
+`Kappa2`, `Kappa3`, `Phi` and `HallKierAlpha`**, and they are organometallics and metal salts:
+Hg, Na, Zn, Fe, Cu, Cr and Au, 110 of the 114 from tox21. `HallKierAlpha`'s table is solved over
+the 31 (element, hybridisation) pairs the training corpora contained (see the note above `ALPHA`
+in `hume_blocks.h`); these elements are outside it. On the 99.7% of the corpus that is organic,
+those four columns are exact.
+
+### 7.3 Against mordred
+
+| | |
+|---|---:|
+| columns compared | 1,191 |
+| cells compared | 47,997,388 |
+| bit-identical | 60.10% |
+| **within 1e-9 relative** | **99.32%** |
+| columns 100% bit-identical | 520 / 1,191 |
+| columns >=99.9% within 1e-9 | **1,104 / 1,191** |
+| NaN disagreements | 41 |
+
+Bit-identity is the wrong headline against mordred and the 1e-9 figure is the right one: mordred
+sums in numpy, we sum in C++, and a centred autocorrelation subtracts a mean before summing. The
+87 columns below the 1e-9 bar are four groups, and only one of them is a divergence we chose:
+
+**65 centred and normalised autocorrelations** (`ATSC*` 21, `AATSC*` 22, `MATS*` 22). Floating
+point, not arithmetic: they agree to 1e-9 on 98-99.97% of molecules and the disagreements are
+last-bit. The mean subtraction is what costs the bit-identity the uncentred `ATS*` columns keep.
+
+**20 information-content columns, orders 1-5** (`IC1-5`, `BIC1-5`, `MIC1-5`, `ZMIC1-5`), and this
+one is deliberate and was declared before it was measured. `infocontent.h:112` states "ORDERS 1-5
+DIFFER FROM MORDRED BY DESIGN", because mordred's atom-equivalence refinement is numbering
+dependent there; what this package claims instead is DETERMINISM, demonstrated under atom
+renumbering, bond-list shuffling and a canonical-SMILES round trip. The same note names order 0
+as the control -- "if IC0/TIC0/SIC0/CIC0/MIC0/ZMIC0 do not match mordred, this file has a bug".
+Measured here: **IC0, BIC0 and ZMIC0 are 100% bit-identical over all 41,992 molecules and MIC0 is
+99.99%**, and every divergent member of the family is order 1 or above. The prediction the file
+made is exactly the result. The size of the divergence, for the record: `IC3` differs on 37% of
+molecules with a median relative difference of 3.65e-02.
+
+**`BalabanJ`, and it is not our divergence.** HUME agrees with RDKit on **100.00%** of molecules
+within 1e-9. RDKit and mordred agree with EACH OTHER on **8.24%**, median relative difference
+1.40e-01. The two reference packages compute different quantities under one name; we match
+RDKit's. Reporting this as a HUME error would be reporting someone else's disagreement as ours.
+
+**`PEOE_VSA8`**, 119 molecules of 41,992. The differences are tiny in absolute terms against a
+near-zero bin total, which is what produces relative figures of 1e14; the bin is empty or nearly
+so on those molecules.
+
+### 7.4 What this supports saying
+
+Against RDKit, on a diverse 42,000-molecule corpus, 163 of 191 shared columns are bit-identical
+on every molecule and 95.83% of all cells are. Against mordred, 99.32% of 48 million cells agree
+to 1e-9 and 1,104 of 1,191 columns agree to 1e-9 on at least 99.9% of molecules. Every column
+that falls below that is accounted for above, and one of the four groups is a disagreement
+between the two reference packages rather than a divergence of ours.
