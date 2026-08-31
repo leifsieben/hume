@@ -1373,7 +1373,15 @@ inline double logEE_A(const Mol &m, Scratch &S) {
 // ---------------------------------------------------------------------------------------------
 // All 81 columns for one molecule.
 // ---------------------------------------------------------------------------------------------
-inline void compute(const Mol &m, Scratch &S, double *out) {
+//! `chi_in` / `pc_in` LET THE CALLER LEND WORK IT HAS ALREADY DONE. chi.h's subgraph
+//! enumeration and pathcount.h's path walk are run by bindings.cpp for their own families on
+//! the same graph; running them again here measured 58.6 + 13.1 us/mol of pure duplication.
+//! Pass the caller's Scratch and this reuses it verbatim -- same Mol, same accumulators, so the
+//! values are identical rather than merely equal. Null keeps the self-contained behaviour that
+//! verify_misc.py exercises.
+inline void compute(const Mol &m, Scratch &S, double *out,
+                    const chisub::Scratch *chi_in = nullptr,
+                    const pathcount::Scratch *pc_in = nullptr) {
   using namespace detail;
   const int n = m.n;
   const double NAN_ = qnan();
@@ -1418,8 +1426,11 @@ inline void compute(const Mol &m, Scratch &S, double *out) {
       S.brows[(size_t)e * 2] = m.bu[e];
       S.brows[(size_t)e * 2 + 1] = m.bv[e];
     }
-    chisub::build_from_rows(S.chim, n, m.nb, S.arows.data(), 4, S.brows.data(), 2);
-    chisub::compute(S.chim, S.chibuf.data(), S.chis);
+    if (!chi_in) {
+      chisub::build_from_rows(S.chim, n, m.nb, S.arows.data(), 4, S.brows.data(), 2);
+      chisub::compute(S.chim, S.chibuf.data(), S.chis);
+    }
+    const chisub::Scratch &CHI = chi_in ? *chi_in : S.chis;
     struct CS { int col, shape, order, prop, avg; };
     static const CS CC[13] = {
         {C_Xch3d, chisub::CHAIN, 3, chisub::D, 0},
@@ -1438,10 +1449,10 @@ inline void compute(const Mol &m, Scratch &S, double *out) {
     };
     for (int k = 0; k < 13; ++k) {
       const CS &c = CC[k];
-      if (S.chis.bad[c.prop][c.shape][c.order]) { out[c.col] = NAN_; continue; }
-      const double x = S.chis.sum[c.prop][c.shape][c.order];
+      if (CHI.bad[c.prop][c.shape][c.order]) { out[c.col] = NAN_; continue; }
+      const double x = CHI.sum[c.prop][c.shape][c.order];
       if (!c.avg) { out[c.col] = x; continue; }
-      const int64_t k2 = S.chis.cnt[c.shape][c.order];
+      const int64_t k2 = CHI.cnt[c.shape][c.order];
       out[c.col] = k2 == 0 ? NAN_ : x / (double)k2;
     }
   }
@@ -1453,23 +1464,26 @@ inline void compute(const Mol &m, Scratch &S, double *out) {
       S.brows[(size_t)e * 2] = m.bu[e];
       S.brows[(size_t)e * 2 + 1] = m.bv[e];
     }
-    pathcount::build_from_rows(S.pcm, n, m.nb, S.brows.data(), 2, 0, 1, m.bord.data(),
-                               m.z.data(), 1, 0);
-    pathcount::compute(S.pcm, S.pcbuf.data(), S.pcs);
-    out[C_MPC5] = (double)(S.pcs.cnt[5] / 2);
-    out[C_MPC7] = (double)(S.pcs.cnt[7] / 2);
-    out[C_MPC8] = (double)(S.pcs.cnt[8] / 2);
-    out[C_MPC10] = (double)(S.pcs.cnt[10] / 2);
-    out[C_piPC7] = std::log(S.pcs.w[7] * 0.5 + 1.0);
-    out[C_piPC9] = std::log(S.pcs.w[9] * 0.5 + 1.0);
+    if (!pc_in) {
+      pathcount::build_from_rows(S.pcm, n, m.nb, S.brows.data(), 2, 0, 1, m.bord.data(),
+                                 m.z.data(), 1, 0);
+      pathcount::compute(S.pcm, S.pcbuf.data(), S.pcs);
+    }
+    const pathcount::Scratch &PC = pc_in ? *pc_in : S.pcs;
+    out[C_MPC5] = (double)(PC.cnt[5] / 2);
+    out[C_MPC7] = (double)(PC.cnt[7] / 2);
+    out[C_MPC8] = (double)(PC.cnt[8] / 2);
+    out[C_MPC10] = (double)(PC.cnt[10] / 2);
+    out[C_piPC7] = std::log(PC.w[7] * 0.5 + 1.0);
+    out[C_piPC9] = std::log(PC.w[9] * 0.5 + 1.0);
     // The `total` variants recurse acc_k = acc_{k-1} + PC_k from order 0 upwards, so the
     // accumulation order is part of the definition.  acc_0 is int(A) for MPC and float(A) for
     // piPC, and only the LAST term of TpiPC10 takes the log.
     int64_t tm = n;
-    for (int k = 1; k <= 10; ++k) tm += S.pcs.cnt[k] / 2;
+    for (int k = 1; k <= 10; ++k) tm += PC.cnt[k] / 2;
     out[C_TMPC10] = (double)tm;
     double tp = (double)n;
-    for (int k = 1; k <= 10; ++k) tp += S.pcs.w[k] * 0.5;
+    for (int k = 1; k <= 10; ++k) tp += PC.w[k] * 0.5;
     out[C_TpiPC10] = std::log(tp + 1.0);
   }
 
