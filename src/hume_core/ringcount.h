@@ -122,7 +122,7 @@
 
 namespace ringcount {
 
-static constexpr int N_COLS = 49;
+static constexpr int N_COLS = 52;   // 49 + the three the emit filter found missing
 
 // arom / hetero are tri-state, matching mordred's `None / True / False`.
 enum { ANY = -1, NO = 0, YES = 1 };
@@ -136,7 +136,17 @@ struct Spec {
   int hetero;         // ANY / YES / NO
 };
 
-// The 49 dedupe survivors, IN mordred's preset() ORDER. Generated from mordred's own
+// The dedupe survivors, IN mordred's preset() ORDER.
+//
+// THREE WERE MISSING AND THE EMIT FILTER FOUND THEM. Applying the deduplication to the emitted
+// set turned up `nAHRing`, `n8FARing` and `nG12FaHRing` as columns the dedup had SELECTED and
+// this table did not supply -- the build computed only their case partners `naHRing`, `n8FaRing`
+// and `nG12FAHRing`, which are different quantities (lowercase `a` is AROMATIC, uppercase `A` is
+// ALIPHATIC). They are inserted in preset order: `nAHRing` heads the unfused/aliphatic/hetero
+// group the way `naHRing` heads the aromatic one, `n8FARing` sorts by size before `n9FARing`,
+// and `nG12FaHRing` closes the fused/aromatic/hetero group the way every other G12 entry closes
+// its own. selfCheck() re-derives all three tuples from the name and refuses to load on a
+// mismatch, so a wrong guess here is a load error and not a wrong column. Generated from mordred's own
 // RingCount.preset() and filtered against data/dedupe.json; selfCheck() re-derives every
 // parameter tuple from the name string and refuses to load if the two disagree.
 static const Spec COLS[N_COLS] = {
@@ -149,7 +159,8 @@ static const Spec COLS[N_COLS] = {
     {"n5aRing", 5, 0, 0, YES, ANY},       {"n6aRing", 6, 0, 0, YES, ANY},
     {"naHRing", -1, 0, 0, YES, YES},      {"n6aHRing", 6, 0, 0, YES, YES},
     {"nARing", -1, 0, 0, NO, ANY},        {"n5ARing", 5, 0, 0, NO, ANY},
-    {"n6ARing", 6, 0, 0, NO, ANY},        {"n5AHRing", 5, 0, 0, NO, YES},
+    {"n6ARing", 6, 0, 0, NO, ANY},        {"nAHRing", -1, 0, 0, NO, YES},
+    {"n5AHRing", 5, 0, 0, NO, YES},
     {"n6AHRing", 6, 0, 0, NO, YES},       {"nFRing", -1, 0, 1, ANY, ANY},
     {"n7FRing", 7, 0, 1, ANY, ANY},       {"n8FRing", 8, 0, 1, ANY, ANY},
     {"n9FRing", 9, 0, 1, ANY, ANY},       {"n10FRing", 10, 0, 1, ANY, ANY},
@@ -160,7 +171,9 @@ static const Spec COLS[N_COLS] = {
     {"n8FaRing", 8, 0, 1, YES, ANY},      {"n9FaRing", 9, 0, 1, YES, ANY},
     {"n10FaRing", 10, 0, 1, YES, ANY},    {"nG12FaRing", 12, 1, 1, YES, ANY},
     {"nFaHRing", -1, 0, 1, YES, YES},     {"n10FaHRing", 10, 0, 1, YES, YES},
-    {"nFARing", -1, 0, 1, NO, ANY},       {"n9FARing", 9, 0, 1, NO, ANY},
+    {"nG12FaHRing", 12, 1, 1, YES, YES},
+    {"nFARing", -1, 0, 1, NO, ANY},       {"n8FARing", 8, 0, 1, NO, ANY},
+    {"n9FARing", 9, 0, 1, NO, ANY},
     {"n10FARing", 10, 0, 1, NO, ANY},     {"nG12FARing", 12, 1, 1, NO, ANY},
     {"nFAHRing", -1, 0, 1, NO, YES},      {"n8FAHRing", 8, 0, 1, NO, YES},
     {"n9FAHRing", 9, 0, 1, NO, YES},      {"n10FAHRing", 10, 0, 1, NO, YES},
