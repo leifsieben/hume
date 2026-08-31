@@ -71,8 +71,26 @@ def main() -> None:
         od, sp = price_cache[itype]
         m["usd_per_hour_ondemand"], m["usd_per_hour_spot"], m["priced_on"] = od, sp, today
         tag = f"{itype}_{m['budget']}"
+        # NEWEST WINS, PER (arm, n). Two runs on the same instance TYPE are merged here, and a
+        # plain extend() gave two `hume` curves once the column set changed -- 1,266 columns at
+        # 124 us/mol from the first box and 1,536 at 159 from the second, both live, with the
+        # plate silently picking one. `meta.started` is the tiebreak: a later run of the same arm
+        # is a re-measurement and supersedes, which is the same rule collect_downstream.py uses.
+        for q in d["points"]:
+            q["_started"] = m.get("started", "")
         by_instance.setdefault(tag, {"meta": m, "points": []})["points"].extend(d["points"])
     for tag, blob in by_instance.items():
+        newest: dict = {}
+        for q in blob["points"]:
+            k = (q["arm"], q["n"])
+            if k not in newest or q.get("_started", "") > newest[k].get("_started", ""):
+                newest[k] = q
+        dropped = len(blob["points"]) - len(newest)
+        if dropped:
+            print(f"  {tag}: {dropped} superseded point(s) dropped (older run of the same arm)")
+        blob["points"] = list(newest.values())
+        for q in blob["points"]:
+            q.pop("_started", None)
         blob["points"].sort(key=lambda p: (p["arm"], p["n"]))
         p = OUT / f"{tag}.json"
         p.write_text(json.dumps(blob, indent=1))

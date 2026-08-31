@@ -295,8 +295,8 @@ def main(paths):
     # molecules cost, on the box you would really use.
     NATIVE = {a: ("gpu" if a in GPU_ARMS else "cpu") for a in ORDER}
     fig, axes = plt.subplots(1, 2, figsize=(STYLE["col2"], 2.9))
-    for ax, kind, ttl in ((axes[0], "hours", "a  Time per 10\u2079 molecules"),
-                          (axes[1], "usd", "b  Cost per 10\u2079 molecules")):
+    for ax, kind, ttl in ((axes[0], "hours", "a  Time per billion molecules"),
+                          (axes[1], "usd", "b  Cost per billion molecules")):
         items = []
         for a in ORDER:
             bud = NATIVE[a]
@@ -319,7 +319,7 @@ def main(paths):
             ax.bar(x, v, width=0.78, color=colour(a), edgecolor=STYLE["ink"], lw=0.6,
                    hatch=(HATCH if cop else None), zorder=3)
             ax.text(x, v, (_hours(v) if kind == "hours" else _usd(v)), ha="center", va="bottom",
-                    rotation=90, fontsize=FS["value"], color=STYLE["ink"], zorder=4)
+                    rotation=90, fontsize=FS["annot"], color=STYLE["ink"], zorder=4)
         ncpu = sum(1 for _a, b, _v, _c in items if b == "cpu")
         if 0 < ncpu < len(items):
             ax.axvline((xs[ncpu - 1] + xs[ncpu]) / 2.0, color=STYLE["ink"], lw=0.7,
@@ -328,23 +328,23 @@ def main(paths):
         ax.set_xticklabels([LABEL[a].split(" (")[0] for a, _b, _v, _c in items],
                            rotation=38, ha="right", fontsize=FS["tick"])
         ax.set_yscale("log")
-        ax.set_ylabel(("hours" if kind == "hours" else "USD") + " per 10\u2079 molecules",
+        ax.set_ylabel(("hours" if kind == "hours" else "USD") + " per billion molecules",
                       fontsize=FS["label"])
         ax.set_title(ttl, fontsize=FS["title"], fontweight="bold", loc="left", pad=4)
-        ax.margins(y=0.28)
+        ax.margins(y=0.34)
         # the two hardware groups, named on the axis rather than in a caption
+        # INSIDE the axes, not above them: at y=1.0 in xaxis coords these sat exactly where the
+        # panel title is drawn and overprinted it.
         if 0 < ncpu < len(items):
-            ax.text(np.mean(xs[:ncpu]), 1.0, BUDGET_LABEL["cpu"], transform=
-                    ax.get_xaxis_transform(), ha="center", va="bottom",
-                    fontsize=FS["tick"], color=STYLE["ink"])
-            ax.text(np.mean(xs[ncpu:]), 1.0, BUDGET_LABEL["gpu"], transform=
-                    ax.get_xaxis_transform(), ha="center", va="bottom",
-                    fontsize=FS["tick"], color=STYLE["ink"])
+            for xpos, key in ((np.mean(xs[:ncpu]), "cpu"), (np.mean(xs[ncpu:]), "gpu")):
+                ax.text(xpos, 0.965, BUDGET_LABEL[key], transform=ax.get_xaxis_transform(),
+                        ha="center", va="top", fontsize=FS["tick"], color=STYLE["ink"])
 
     handles = [Patch(facecolor=colour(a), edgecolor=STYLE["ink"], lw=0.6, label=LABEL[a])
                for a in ORDER if any(by(runs, arm=a))]
-    handles.append(Patch(facecolor="white", edgecolor=STYLE["ink"], lw=0.6, hatch=HATCH,
-                         label="no GPU path: CPU measurement"))
+    # NO HATCH ENTRY ANY MORE. It meant "this bar is a CPU number standing in for a GPU one",
+    # which only existed because the four-panel version drew every arm on both budgets. Each arm
+    # now appears once, on the hardware it is deployed on, so nothing stands in for anything.
     # ncol=3: at four columns the legend row was WIDER THAN THE PANELS and savefig("tight")
     # grew the canvas to it, so the plate rendered 6% past the A4 text block and LaTeX would
     # scale every font on it down to fit.

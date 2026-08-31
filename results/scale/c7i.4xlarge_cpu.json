@@ -1,17 +1,17 @@
 {
  "meta": {
   "instance": "c7i.4xlarge",
-  "instance_id": "i-0186a59476512eec5",
+  "instance_id": "i-0179a15f1100caa52",
   "region": "us-east-1",
   "vcpu": 16,
   "budget": "cpu",
-  "host": "ip-172-31-64-66",
+  "host": "ip-172-31-76-182",
   "python": "3.12.14",
   "usd_per_hour_ondemand": 0.714,
-  "usd_per_hour_spot": 0.3077,
-  "priced_on": "2026-08-30",
+  "usd_per_hour_spot": 0.30945,
+  "priced_on": "2026-08-31",
   "corpus": "/opt/bench/data/corpus1m/selected.txt",
-  "started": "2026-08-29T11:43:17Z"
+  "started": "2026-08-31T16:18:07Z"
  },
  "points": [
   {
@@ -87,10 +87,34 @@
    "fwd_s": null
   },
   {
+   "arm": "descriptastorus",
+   "n": 10000,
+   "batch": 4096,
+   "wall_s": 6.451130590000048,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "descriptastorus",
+   "n": 100000,
+   "batch": 4096,
+   "wall_s": 63.985581077000006,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "descriptastorus",
+   "n": 1000000,
+   "batch": 4096,
+   "wall_s": 639.3288614370001,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
    "arm": "ecfp",
    "n": 10000,
    "batch": 4096,
-   "wall_s": 0.20743592800000954,
+   "wall_s": 0.20081657299999733,
    "prep_s": null,
    "fwd_s": null
   },
@@ -98,7 +122,7 @@
    "arm": "ecfp",
    "n": 100000,
    "batch": 4096,
-   "wall_s": 1.9022758119999992,
+   "wall_s": 1.9938114019999915,
    "prep_s": null,
    "fwd_s": null
   },
@@ -106,7 +130,7 @@
    "arm": "ecfp",
    "n": 1000000,
    "batch": 4096,
-   "wall_s": 18.93470710700001,
+   "wall_s": 19.723892160000005,
    "prep_s": null,
    "fwd_s": null
   },
@@ -137,24 +161,24 @@
   {
    "arm": "hume",
    "n": 10000,
-   "batch": 1024,
-   "wall_s": 1.2561085090000006,
+   "batch": 4096,
+   "wall_s": 1.468248568000007,
    "prep_s": null,
    "fwd_s": null
   },
   {
    "arm": "hume",
    "n": 100000,
-   "batch": 1024,
-   "wall_s": 12.372330266000006,
+   "batch": 4096,
+   "wall_s": 14.908843805000004,
    "prep_s": null,
    "fwd_s": null
   },
   {
    "arm": "hume",
    "n": 1000000,
-   "batch": 1024,
-   "wall_s": 124.10220537800001,
+   "batch": 4096,
+   "wall_s": 158.99057642,
    "prep_s": null,
    "fwd_s": null
   },
