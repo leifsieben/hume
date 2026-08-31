@@ -23,25 +23,34 @@ pickle is a wrong descriptor with no symptom. Measured, one probe per release:
 | **2024.09.1** | 16.2.0 | **lower bound** |
 | 2025.03.6 | 16.2.0 | yes |
 | 2025.09.2 | 16.2.0 | yes — the exactness numbers are measured here |
-| **2026.03.1** | 16.3.0 | **upper bound** |
+| 2026.03.5 | 16.3.0 | yes — added after measuring, below |
+| 2026.09.x | ? | **upper bound, unmeasured** |
 
-`pyproject.toml` declares `rdkit>=2024.09.1,<2026.03` for exactly this reason. Without the cap,
-`pip install mol-hume` on a clean machine resolves the newest RDKit and the package does not
-import at all.
+`pyproject.toml` declares `rdkit>=2024.09.1,<2026.09`. Without a cap, `pip install mol-hume` on
+a clean machine resolves whatever RDKit is newest and the package may not import at all. **This
+is the single most likely reason a user cannot install it**, and it is how CI found the problem
+in the first place: CI pins nothing, so the first three-platform run installed RDKit 2026.3.5
+and failed identically on all three.
 
-**Supporting a new pickle format is a real task, not a version-range edit.** Re-read
-`Code/GraphMol/MolPickler.cpp` for what changed between the two formats, update the tag table and
-the reader in `src/hume_core/molpickle.h`, move `PIN_MAJOR/MINOR/PATCH`, then re-run
-`cpp/verify_molpickle.py` on both corpora and the full `verify_*.py` suite. Only then widen the
-cap. Reproduce the probe above with:
+**A new format is not automatically a "no".** 16.3.0 was added on evidence, not on a reading of
+the diff. The only wire-format change from 16.2.0 is `AtomMonomerInfo` — PDB residue fields moved
+to the base class — and a SMILES-derived molecule never carries it, while one that does (a `Mol`
+read from a PDB file and handed to `featurize`) is rejected by the reader on *both* formats. So
+the changed region is one the reader errors out of before it could misread it. Measured: 4,000
+corpus molecules pickled under both releases differ **only in the version triple**, 0 elsewhere;
+and end to end, all 1,269 columns over 8,000 molecules are **bit-identical**.
+
+**Run the check, do not repeat the investigation.** `tools/check_rdkit_release.py` performs all
+three steps in throwaway venvs and tells you which of four situations you are in:
 
 ```bash
-python -c "import struct; from rdkit import Chem; print(struct.unpack('<3i', Chem.MolFromSmiles('C').ToBinary()[8:20]))"
+.venv/bin/python tools/check_rdkit_release.py 2026.09.1
 ```
 
-**This is the single most likely reason a user cannot install the package**, and it is why CI
-pins nothing and therefore found it: the first three-platform run installed RDKit 2026.3.5 and
-failed on all three.
+If it reports the blobs differ beyond the version triple, the reader genuinely has to be updated:
+re-read `Code/GraphMol/MolPickler.cpp`, update the tag table in `src/hume_core/molpickle.h`, add
+the triple to `SUPPORTED`, and re-run `cpp/verify_molpickle.py` on both corpora plus the full
+`verify_*.py` suite before widening the cap.
 
 ### 1b. Perceived properties: the gradual one
 

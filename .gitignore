@@ -1,6 +1,13 @@
 # Data and artefacts — regenerable, and far too large for git.
 # The 1M corpus alone is 5.6 GB; checkpoints and job tarballs add hundreds of MB.
-data/
+#
+# ROOT-ANCHORED on purpose. A bare `data/` matches EVERY directory named data at any depth, and
+# it silently swallowed tests/data/ -- the committed test fixture was never actually committed,
+# `git add -A` skipped it without a word, and CI on a fresh clone failed with FileNotFoundError
+# on all three platforms. Ignore the two that are actually huge, by path.
+/data/
+gpu/data/
+gpu/gpu/data/
 gpu/devsets/
 gpu/payload/
 gpu/*.tar.gz

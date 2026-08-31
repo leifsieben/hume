@@ -46,16 +46,24 @@ requires-python = ">=3.11"
 #     rdkit 2024.09.1   pickle 16.2.0   yes   <- lower bound
 #     rdkit 2025.03.6   pickle 16.2.0   yes
 #     rdkit 2025.09.2   pickle 16.2.0   yes   <- what the exactness numbers are measured on
-#     rdkit 2026.03.1   pickle 16.3.0   NO    <- upper bound
+#     rdkit 2026.03.5   pickle 16.3.0   yes   <- added after measuring, see below
+#     rdkit 2026.09.x   pickle ?             <- upper bound, unmeasured
 #
-# So the cap is real and belongs in the metadata: without it `pip install mol-hume` on a clean
-# machine resolves the newest rdkit and the package does not import at all. Supporting 16.3.0
-# is a maintenance task, not a version-range edit -- see MAINTENANCE.md section 1.
+# 16.3.0 IS ACCEPTED BECAUSE IT WAS MEASURED, not because the diff looked harmless. The only
+# wire-format change between 16.2.0 and 16.3.0 is AtomMonomerInfo; a SMILES-derived molecule
+# never carries it, and one that does is rejected by the reader on both formats. Pickling 4,000
+# corpus molecules under 2025.9.2 and 2026.3.5 with this package's exact flags: 4,000 of 4,000
+# blobs differ ONLY in the version triple. Then, end to end, all 1,269 columns over 8,000
+# molecules are BIT-IDENTICAL between the two releases.
+#
+# The cap is still real and belongs in the metadata: without it `pip install mol-hume` resolves
+# whatever rdkit is newest and the package may not import at all. Widening it to a new release
+# line means re-running `tools/check_rdkit_release.py` -- see MAINTENANCE.md section 1.
 #
 # Within the supported range the values are still version-relative: rdkit's perceived atom and
 # bond properties drift, and the exactness numbers are quoted against 2025.9.2 specifically.
 # That is documentation, not a pin.
-dependencies = ["numpy>=1.24", "rdkit>=2024.09.1,<2026.03"]
+dependencies = ["numpy>=1.24", "rdkit>=2024.09.1,<2026.09"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

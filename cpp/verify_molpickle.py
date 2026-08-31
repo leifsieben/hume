@@ -113,7 +113,7 @@ def check_guards() -> int:
         Chem.PropertyPickleOptions.PrivateProps | Chem.PropertyPickleOptions.AtomProps
         | Chem.PropertyPickleOptions.ComputedProps | Chem.PropertyPickleOptions.NoConformers))
     _core.pickle_check(bytes(probe))                       # the real one must pass
-    print(f"  pinned MolPickler format version {'.'.join(map(str, _core.PICKLE_VERSION))} "
+    print(f"  supported MolPickler formats {', '.join('.'.join(map(str, v)) for v in _core.PICKLE_VERSIONS)} "
           f"accepted for the live rdkit {rdkit.__version__}")
 
     # Bytes 8/12/16 are majorVersion / minorVersion / patchVersion. Bump each in turn.

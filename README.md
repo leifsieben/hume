@@ -80,12 +80,18 @@ no single correct answer. Every one of them is listed with a measurement in `MET
 
 ### The RDKit range
 
-`mol-hume` requires **`rdkit>=2024.09.1,<2026.03`**, and this is a hard requirement rather than a
+`mol-hume` requires **`rdkit>=2024.09.1,<2026.09`**, and this is a hard requirement rather than a
 preference. The library reads RDKit's `MolPickler` blob directly — a large part of where the
-speed comes from — and that format is explicitly not a stable API. Those are the releases that
-write pickle format 16.2.0; outside them `mol-hume` refuses to import rather than misparse a
-molecule into wrong numbers with no symptom. Widening it is a maintenance task with a
-verification step, not a metadata edit; see `MAINTENANCE.md`.
+speed comes from — and that format is explicitly not a stable API. Outside the range that has
+been measured, `mol-hume` refuses to import rather than misparse a molecule into wrong numbers
+with no symptom.
+
+Within the range, the pickle format is checked rather than assumed: RDKit 2026.03 writes a
+different format version from 2025.09, and it is accepted because 4,000 corpus molecules pickle
+to bytes that differ only in the version triple, and all 1,269 columns over 8,000 molecules come
+out bit-identical. Widening it for a future release is one command —
+`tools/check_rdkit_release.py` — plus, if the blobs really changed, work on the reader. See
+`MAINTENANCE.md`.
 
 Within that range, values are quoted against **RDKit 2025.9.2** specifically. RDKit's perceived
 atom and bond properties drift across releases, so a different RDKit inside the range can still

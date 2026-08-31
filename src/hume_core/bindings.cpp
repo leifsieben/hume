@@ -1551,9 +1551,15 @@ PYBIND11_MODULE(_core, mod) {
           "Per-atom Wildman-Crippen (logP, MR) as (n_atoms, 2). For verification against "
           "rdMolDescriptors._CalcCrippenContribs; blocks() computes this internally.");
 
-  // The pickle path. See src/hume_core/molpickle.h for the format pin and what it costs.
-  mod.attr("PICKLE_VERSION") = py::make_tuple(molpickle::PIN_MAJOR, molpickle::PIN_MINOR,
-                                              molpickle::PIN_PATCH);
+  // The pickle path. See src/hume_core/molpickle.h for the supported formats and what the
+  // direct read buys. PICKLE_VERSIONS is a tuple of triples -- more than one RDKit release line
+  // writes a layout this reader accepts.
+  {
+    py::list vs;
+    for (const molpickle::Version &v : molpickle::SUPPORTED)
+      vs.append(py::make_tuple(v.major, v.minor, v.patch));
+    mod.attr("PICKLE_VERSIONS") = py::tuple(vs);
+  }
   mod.attr("PICKLE_TABLES_SPEC") = std::string(pickletab::SPEC_SHA256);
   mod.attr("PICKLE_TABLES_RDKIT") = std::string(pickletab::SOURCE_RDKIT);
   mod.def("blocks_from_pickles", &blocks_from_pickles, py::arg("pickles"),

@@ -11,6 +11,11 @@ First release.
   `fp_size`, `optional`, `batch_size`.
 - `mol_hume` is an alias for `molhume`.
 - BSD 3-Clause, matching rdkit and mordred.
+- Requires `rdkit>=2024.09.1,<2026.09`. The MolPickler blob is read directly and that format is
+  not a stable API, so the range is measured rather than assumed. Pickle formats 16.2.0
+  (rdkit 2024.09 - 2025.09) and 16.3.0 (rdkit 2026.03) are both supported: the two differ only
+  in `AtomMonomerInfo`, which a SMILES molecule never carries, and all 1,269 columns over 8,000
+  molecules are bit-identical between rdkit 2025.9.2 and 2026.3.5.
 - Verified against RDKit 2025.9.2 and Mordred 1.2.0 over a 42,000-molecule corpus: 167/186
   RDKit and 412/968 Mordred columns bit-identical, 99.99% and 99.23% of values within 1e-9.
   Divergences are enumerated in `METHODS.md`.

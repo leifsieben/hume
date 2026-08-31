@@ -650,7 +650,8 @@ def _check_pickle_version() -> None:
         raise ImportError(
             f"{exc}\n\n"
             f"This is rdkit {Chem.rdBase.rdkitVersion}. mol-hume supports rdkit >=2024.09.1 and "
-            "<2026.03, which are the releases that write pickle format 16.2.0; pyproject.toml "
+            "<2026.09, which are the releases whose pickle format it has been measured against; "
+            "pyproject.toml "
             "declares that range, so this usually means rdkit was upgraded in place after "
             "mol-hume was installed. Either pin rdkit back into the range, or install mol-hume "
             "into an environment resolved from scratch."
