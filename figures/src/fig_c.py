@@ -137,6 +137,8 @@ def main() -> None:
     check_font()
     d = load()
     _HW = _cost_hardware(d["cost"])
+    # how far above the runner-up a point must sit before the axis is cut for it
+    TOP_GAP = 2.0
     tasks, arm_keys = d["tasks"], A.order(d["arms"])
     rec = {(r["task"], r["arm"]): r for r in d["records"]}
 
@@ -191,7 +193,42 @@ def main() -> None:
         # Orient for the frontier only. The AXIS keeps the field's own units and is inverted
         # below, so nothing plotted is a negated metric the reader has to undo mentally.
 
-        for x, y, e, a in zip(xs, ys, es, ks):
+        # A CUT AXIS WHERE ONE ARM SETS THE RANGE FOR EVERYONE ELSE (Leif).
+        #
+        # In the quantum panel ChemBERTa sits at 0.176 against 0.076 for the next arm, so seven
+        # of nine arms were squeezed into the bottom eighth of the axis and five of them had
+        # whiskers of 1.7-3.3 pt against a 5 pt marker -- invisible, and indistinguishable from
+        # "this arm has no uncertainty". The whiskers were being drawn correctly the whole time;
+        # the axis was the problem.
+        #
+        # So: if the top point is more than TOP_GAP times the next one, the axis is cut just
+        # above the second, and the outlier is drawn ON the cut with its value written beside it
+        # and a break mark on the spine. Its position no longer carries magnitude -- the number
+        # does -- which is the honest trade for making the rest of the panel readable. The gap
+        # has to be large before this fires: a cut axis is a claim that one point is of a
+        # different order, and applying it to a merely-largest point would be a lie about the
+        # data.
+        tops = sorted(((y + e, i) for i, (y, e) in enumerate(zip(ys, es))), reverse=True)
+        cut_i, cut_top = None, None
+        if len(tops) >= 2 and tops[1][0] > 0 and tops[0][0] > TOP_GAP * tops[1][0]:
+            cut_i = tops[0][1]
+            lo = min(y - e for y, e in zip(ys, es))
+            cut_top = tops[1][0] + 0.18 * (tops[1][0] - lo)
+            ax.set_ylim(lo - 0.18 * (tops[1][0] - lo), cut_top)
+
+        for j, (x, y, e, a) in enumerate(zip(xs, ys, es, ks)):
+            if j == cut_i:
+                # ON the cut, not above it: a marker drawn outside the axes would be clipped
+                # away and the arm would vanish from the panel entirely.
+                ax.plot([x], [cut_top], marker="^", ms=STYLE["marker_size"] + 0.5,
+                        color=A.bar_kw(a)["color"], markeredgecolor=STYLE["ink"],
+                        markeredgewidth=0.7, clip_on=False, zorder=6)
+                # INSIDE the axes and to the side. Above the cut it landed on the panel
+                # title, which is drawn in the same strip of figure space.
+                ax.annotate(f"{y:.3f}", (x, cut_top), textcoords="offset points",
+                            xytext=(9, -3), ha="left", va="top", fontsize=FS["annot"],
+                            color=STYLE["ink"], annotation_clip=False, zorder=6)
+                continue
             kw = A.bar_kw(a)
             face = kw.pop("color")
             kw.pop("hatch", None)                     # hatch reads as noise at marker size
@@ -214,6 +251,12 @@ def main() -> None:
                         # width drew with NO outline and the pale fills (MiniMol, ECFP+Mordred)
                         # dissolved into the panel background.
                         markeredgecolor=STYLE["ink"], markeredgewidth=0.7)
+        if cut_i is not None:
+            # two short diagonals on the left spine: the conventional "this axis is cut" mark
+            for dy in (-0.012, 0.012):
+                ax.plot([0, 0.022], [1.0 + dy - 0.012, 1.0 + dy + 0.012],
+                        transform=ax.transAxes, color=STYLE["ink"], lw=0.9,
+                        clip_on=False, zorder=7)
         label_sets.append(list(zip(xs, ys, ks)))
         ax.set_xscale("log")
         # NO INVERSION. Every panel now plots an ERROR RATIO, so down is better everywhere and
@@ -233,7 +276,7 @@ def main() -> None:
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.
         if nrow > 1 or t_i == 0:
-            ax.set_ylabel("\u0394 error vs ECFP4 + descriptors  (\u2193 better)",
+            ax.set_ylabel("\u0394 error vs ECFP + all desc  (\u2193 better)",
                           fontsize=FS["label"])
         ax.grid(axis="both")
         # THE DIRECTION GOES IN THE TITLE, not only on the y-label. These panels invert the

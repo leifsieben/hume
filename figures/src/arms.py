@@ -131,7 +131,7 @@ SHADES = {
 # hatch   -> bar hatch, or None. Reserved for "predicted rather than computed" (see module head).
 #
 # LABEL RULES, because these strings sit next to each other on a page:
-#   * "ECFP4" not "ECFP4+stereo" -- chirality is on for BOTH fingerprints, so the suffix would
+#   * "ECFP" not "ECFP4+stereo" -- chirality is on for BOTH fingerprints, so the suffix would
 #     mark a property they share.
 #   * "Morgan r=3" not "R3FP". CLIMB calls it R3FP; this paper contrasts the two RADII directly
 #     and in that context the radius has to be visible in the label, which "R3FP" hides.
@@ -139,7 +139,7 @@ SHADES = {
 #     elided where it does not ("+ descriptors" = both).
 #   * "predicted" spelled out. Never "pred", never "surrogate" -- the paper uses one word for
 #     this and a reader should not have to learn a second.
-# SHORT LABELS (Leif). "ECFP4 + descriptors", "ChemBERTa-2 (MTR)" and friends spent a third of
+# SHORT LABELS (Leif). "ECFP + all desc", "ChemBERTa-2 (MTR)" and friends spent a third of
 # every legend on detail no comparison in this set turns on -- the radius, the pretraining
 # objective and the embedding width are in the methods, and repeating them on four plates made
 # the axes narrower without making any of them clearer. The keys are unchanged, so nothing that
@@ -331,10 +331,11 @@ def label(key: str) -> str:
 #: fully-qualified name for anywhere the distinction is load-bearing -- Figure A draws BOTH
 #: ChemBERTa-2 checkpoints and must not call them the same thing.
 SHORT_LABEL = {
-    "ecfp": "ECFP4", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
-    "desc": "descriptors", "ecfp_rdkit_desc": "ECFP4 + RDKit",
-    "ecfp_mordred_desc": "ECFP4 + Mordred", "ecfp_all_desc": "ECFP4 + descriptors",
-    "hume": "HUME", "hume_no_new": "HUME no-new", "minimol": "MiniMol", "chemeleon": "CheMeleon", "chemprop": "chemprop",
+    "ecfp": "ECFP", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
+    "desc": "descriptors", "ecfp_rdkit_desc": "ECFP + RDKit",
+    "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
+    "hume": "HUME", "hume_no_new": "HUME no-new", "minimol": "MiniMol",
+    "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",
     "selfies_ted": "SELFIES-TED", "classical_base": "classical block alone",
 }

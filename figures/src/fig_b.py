@@ -78,8 +78,8 @@ BASE_KEY = "classical_base"        # the block-alone bar's arm key (one color in
 
 #: Tick labels for the base groups. Deliberately SHORTER than arms.py's labels: three of them
 #: share a quarter-width panel, where the full names overprint each other.
-BASE_SHORT = {"ecfp": "ECFP4", "desc": "descriptors", "ecfp_all_desc": "ECFP4 + desc",
-              "ecfp_rdkit_desc": "ECFP4 + RDKit", "ecfp_mordred_desc": "ECFP4 + Mordred"}
+BASE_SHORT = {"ecfp": "ECFP", "desc": "descriptors", "ecfp_all_desc": "ECFP + desc",
+              "ecfp_rdkit_desc": "ECFP + RDKit", "ecfp_mordred_desc": "ECFP + Mordred"}
 
 
 def load():
@@ -223,7 +223,7 @@ def main() -> None:
         ax.tick_params(axis="x", length=0)
         ax.set_xlim(-0.5, len(bases) - 0.5)
         if t_i % ncol == 0:
-            ax.set_ylabel("\u0394 error vs ECFP4 + descriptors\n(\u2193 better)",
+            ax.set_ylabel("\u0394 error vs ECFP + all desc\n(\u2193 better)",
                           fontsize=FS["label"])
         ax.grid(axis="y")
         title(ax, f"{t['label']}\n({t['metric']}, \u2193 better)", pad=4)

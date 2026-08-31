@@ -133,7 +133,7 @@ def native(runs, arm):
 HATCH = "///"
 
 
-SHORT = {"ecfp_r2": "ECFP4", "hume": "HUME", "chemprop": "chemprop",
+SHORT = {"ecfp_r2": "ECFP", "hume": "HUME", "chemprop": "chemprop",
          "chemberta": "ChemBERTa", "chemeleon": "CheMeleon",
          "rdkit_desc": "+RDKit", "mordred_desc": "+Mordred", "mordred": "+all desc"}
 BUDGET_LABEL = {"cpu": "16 vCPU", "gpu": "1 GPU + 4 vCPU"}
