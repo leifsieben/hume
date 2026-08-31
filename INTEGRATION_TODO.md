@@ -3,22 +3,37 @@
 Agents may not edit shared files. These are the changes they identified and correctly
 refused to make. Each is applied here, serially, re-verifying after each.
 
-## 1. estate_from() accumulation order  (hume_blocks.h)  -- AFFECTS 79 SHIPPING COLUMNS
+## 1. estate_from() accumulation order -- WITHDRAWN, DO NOT APPLY
 
-RDKit (Chem/EState/EState.py, verified by reading it):
-    accum = zeros(n); ...deltas...; res = accum + Is
-Ours: S[i] = I[i] first, then deltas accumulate into S.
+Agent D reported that estate_from() in hume_blocks.h uses the wrong accumulation order
+(RDKit does `res = accum + Is`; ours seeds `S[i] = I[i]`) and that 79 shipping S<t>
+columns sit on that vector. The ORDER claim is correct -- the parent verified it
+independently over 39,592 atoms, 80.3% of atoms differ, worst 3.55e-14.
 
-Mathematically identical, bitwise not. Independently measured by the parent over
-39,592 atoms: 80.3% of atoms differ, worst |delta| 3.55e-14. Agent D measured
-541,049/670,280 (80.7%), worst 2.13e-14, and that reordering makes it 0/670,280.
+THE IMPACT CLAIM IS WRONG, and the fix was applied, tested and reverted.
 
-This is floating-point associativity, NOT a chemical error -- nothing downstream moves.
-It matters only because our stated bar is bit-exactness: it takes the 16 MAX*/MIN*
-columns from 6-30% exact to 100%.
+Measured decisively: injecting `S[i] *= 2.0` at the end of estate_from and rebuilding
+changes **0 of 1374 columns** over 400 corpus molecules. estate_from is dead code with
+respect to every shipping column.
 
-Fix: accumulate into a zero array, add I at the end. 3 lines + one n-length array.
-AFTER APPLYING: re-verify the 79 existing S<t> columns move by <= 1 ulp and no more.
+The reason is already written down in src/hume_core/vsa_bins.h:369-390, which the parent
+found only after applying the fix. That file carries a SECOND copy of the E-state index
+in RDKit's exact association order, precisely because of this, and says so with its own
+measurements over 86,654 atoms:
+    seed with Is, then accumulate   (estate_from's order)   22,482 / 86,654 bit-exact
+    accumulate into zero, add Is last (RDKit's order)       86,654 / 86,654 bit-exact
+and states outright: "It is also the reason MaxEStateIndex and friends are computed here
+rather than read from the blocks", and "Left alone deliberately: it is another agent's
+file and its own callers are verified against it."
+
+So: do not touch estate_from. Its callers (cpp/hume.cpp) are verified against its current
+behaviour.
+
+CONSEQUENCE FOR WIRING estate_ext.h: its compute() asks for "BlockWork::ES (hume_blocks.h
+estate_from())". Pass vsa_bins.h's RDKit-ordered `estate_indices()` output INSTEAD. The 16
+MAX*/MIN* columns should then be bit-exact with no change to any shared file -- agent D
+measured them at 6-30% exact against estate_from's order and 100% against RDKit's, and
+vsa_bins already computes RDKit's. VERIFY THIS AT WIRING TIME rather than assuming it.
 
 ## 2. ringcount::compute delegation  (ringcount.h)
 
