@@ -33,7 +33,7 @@
 // the other 486. `Z` is the one weight that can never take this path -- GetAtomicNum() is never
 // NaN, so its 54 columns survive every molecule; see ac_weights.h.
 //
-// ALL TEN WEIGHTS ARE HERE. This header computed nine for a while and said so; the tenth, `Z`,
+// ALL TWELVE WEIGHTS ARE HERE. This header computed nine for a while and said so; the tenth, `Z`,
 // closes the 52 members of the 865 that were the last Autocorrelation gap
 // ({ATS,AATS,ATSC,AATSC} x lags 0-8 + {MATS,GATS} x lags 1-8, all suffixed `Z`; mordred defines
 // no MATS0/GATS0, so it is 52 of the 54 emitted). Adding it re-shaped cpp/values_ac.txt from 486
@@ -66,14 +66,15 @@ namespace autocorr {
 inline constexpr int NL = 9;    // lags 0..8
 inline constexpr int NVAR = 6;  // ATS, AATS, ATSC, AATSC, MATS, GATS -- this order is fixed
 inline constexpr int BIG = 1 << 20;
-inline constexpr int N_COLS = NVAR * NL * NW;   // 540 = 6 x 9 x 10
+inline constexpr int N_COLS = NVAR * NL * NW;   // 648 = 6 x 9 x 12
 
 // out is laid out [variant][lag][weight]. This is the order cpp/values_ac.txt is written in and
 // the order verify_ac.py reads, so it is part of the format rather than an implementation
 // detail: col_name() below is the only place that has to know it.
 inline const char *col_name(int i) {
   static const char *VAR[NVAR] = {"ATS", "AATS", "ATSC", "AATSC", "MATS", "GATS"};
-  static const char *WT[NW] = {"c", "d", "dv", "i", "p", "v", "se", "pe", "are", "Z"};
+  static const char *WT[NW] = {"c", "d", "dv", "i", "p", "v", "se", "pe", "are", "Z",
+                               "m", "s"};
   static char buf[16][24];
   static int slot = 0;
   const int q = i % NW, k = (i / NW) % NL, v = i / (NL * NW);

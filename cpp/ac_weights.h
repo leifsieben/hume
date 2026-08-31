@@ -52,11 +52,14 @@
 
 #include "ac_tables.h"
 
-// c d dv i p v se pe are Z -- this order is fixed by verify_ac.py and by autocorr.h's col_name().
+// c d dv i p v se pe are Z m s -- this order is fixed by verify_ac.py and by autocorr.h's
+// col_name(). `m` and `s` are APPENDED for the same reason `Z` was: every pre-existing column
+// keeps the name it already had, and the 108 new ones interleave as weight indices 10 and 11 of
+// each (variant, lag) group.
 // `Z` is APPENDED, not inserted in mordred's own getter order, so that every one of the 486
 // pre-existing columns keeps the name it already had; the 54 new ones interleave into the row as
 // weight index 9 of each (variant, lag) group rather than landing in a block at the end.
-static const int NW = 10;
+static const int NW = 12;
 
 // A Gasteiger charge RDKit could not produce. It travels as a SENTINEL NUMBER, not as the token
 // "nan", because libc++'s `istream >> double` refuses "nan": it sets failbit and leaves 0.0
@@ -107,5 +110,19 @@ static void ac_weights(const std::vector<AtomRec> &at,
     o[7] = ac_look(AC_PE, a.z);
     o[8] = ac_look(AC_ARE, a.z);
     o[9] = (double)a.z;  // mordred's `Z`: GetAtomicNum(), no table, never NaN. See the header.
+    // `m` is a PER-ELEMENT mass lookup, not GetMass(): mordred's getter reads GetAtomicNum(),
+    // so [2H] weighs exactly what [H] does -- consistent with every other weight in this table.
+    o[10] = ac_look(AC_MASS, a.z);
+    // `s`, the intrinsic state: ((2 / period)^2 * dv + 1) / d, with d the SIGMA ELECTRON count
+    // (heavy neighbours) and dv the valence-electron ratio already computed above -- mordred's
+    // get_sigma_electrons and get_valence_electrons are exactly those two quantities, so this
+    // reuses them rather than recomputing. d == 0 is mordred's NaN case (a disconnected or
+    // all-hydrogen environment), not a division by zero.
+    if (heavy == 0) {
+      o[11] = NAN;
+    } else {
+      double per = ac_look(AC_PERIOD, a.z);
+      o[11] = ((2.0 / per) * (2.0 / per) * dv + 1.0) / (double)heavy;
+    }
   }
 }
