@@ -45,6 +45,11 @@
 #include "pathcount.h"
 #include "rdkcore.h"
 #include "sps.h"
+#include "counts_ext.h"
+#include "estate_ext.h"
+#include "eta.h"
+#include "spectral.h"
+#include "misc_ext.h"
 #include "ringcount.h"
 #include "topocharge.h"
 #include "topomisc.h"
@@ -425,6 +430,37 @@ static void pickle_check(py::buffer probe) {
 // hume_blocks.h explains. This is a load-bearing dependency on that fact, so it is asserted.
 static constexpr int N_ESTATE_TYPES = estate_tbl::N_ROWS;   // 79 patterns -> 79 N + 79 S columns
 
+
+// ---------------------------------------------------------------------------------------------
+// WHICH SLOTS OF THE FIVE NEW HEADERS ARE ACTUALLY EMITTED.
+// Each header computes its full N_COLS; the cost triage of METHODS section 5 dropped 43 of
+// those columns, so the emitted set is a subset. The headers are NOT edited to remove them --
+// the code stays verified in the tree and a reversal is a wiring change -- and a dropped slot is
+// simply never copied out. spectral additionally leaves its dropped slots NaN by construction,
+// which is a belt-and-braces guard, not the mechanism.
+// ---------------------------------------------------------------------------------------------
+
+// THE 18 INFORMATION-CONTENT COLUMNS THAT ARE EXACT ALGEBRAIC FUNCTIONS OF COLUMNS WE EMIT.
+// Wiring counts_ext made `nAtom` -- mordred's H-added atom count, the n these indices are
+// normalised by -- available for the first time, and with it these identities became provable
+// rather than merely suspected. Verified bit-identical on 2,800 corpus molecules, all six k:
+//     TIC_k == nAtom * IC_k        CIC_k == log2(nAtom) - IC_k        SIC_k == IC_k / log2(nAtom)
+// This is a stronger reason than the 0.997 reconstruction bar used elsewhere in METHODS 5: these
+// carry no information at all beyond IC0..IC5 and nAtom, which are all still emitted. IC0..IC5
+// are themselves genuinely diverse (pairwise |r| down to 0.177), which is precisely what the
+// size factor in TIC destroys -- TIC0..TIC5 are 0.979-0.999 correlated with each other.
+// They cost nothing to compute (one multiply off an IC row that is built anyway), so this buys
+// 18 fewer dimensions, not microseconds.
+static constexpr int KEEP_IC[25] = {0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42};
+static constexpr int KEEP_SPECTRAL[36] = {0, 1, 2, 3, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 41, 49, 50, 54, 59, 60, 61, 62};
+static constexpr int KEEP_MISC[67] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80};
+
+inline constexpr int N_COUNTS_COLS     = counts_ext::N_COLS;   // 31, all kept
+inline constexpr int N_ESTATE_EXT_COLS = estate_ext::N_COLS;   // 22, all kept
+inline constexpr int N_ETA_COLS        = eta::N_COLS;          // 29, all kept
+inline constexpr int N_SPECTRAL_COLS   = 36;
+inline constexpr int N_MISC_COLS       = 67;
+
 enum {
   OFF_BLOCKS = 0,
   OFF_VSA    = OFF_BLOCKS + HUME_NBLOCK_COLS,
@@ -442,7 +478,7 @@ enum {
   // coefficients are exact integers, so there is no cancellation for an ordering to change: seven
   // distinct renumberings of all 100,000 molecules of cpp/hard.smi give byte-identical Ipc,
   // AvgIpc and Log2Ipc (cpp/ic_in0..7.txt -> cpp/ic_out0..7.txt).
-  N_IC_WIRED = infoic::N_IC + 1,
+  N_IC_WIRED = 25,   // 43 computed, 18 dropped as exact identities; see KEEP_IC
   OFF_AC     = OFF_IC + N_IC_WIRED,
   // 74 SMARTS pattern counts plus the two rdkit_core columns that are not substructure counts
   // but ride along on the same graph -- NHOHCount (a SUM OF HYDROGENS over N and O, not the
@@ -475,7 +511,12 @@ enum {
   // purpose -- every pre-existing column keeps its index, so an A/B of the extension across this
   // change compares like with like rather than a shifted row.
   OFF_RDKCORE = OFF_ALIAS + N_ALIAS_COLS,
-  N_ALL_COLS = OFF_RDKCORE + rdkcore::N_COLS,
+  OFF_COUNTS     = OFF_RDKCORE + rdkcore::N_COLS,
+  OFF_ESTATE_EXT = OFF_COUNTS + N_COUNTS_COLS,
+  OFF_ETA        = OFF_ESTATE_EXT + N_ESTATE_EXT_COLS,
+  OFF_SPECTRAL   = OFF_ETA + N_ETA_COLS,
+  OFF_MISC       = OFF_SPECTRAL + N_SPECTRAL_COLS,
+  N_ALL_COLS     = OFF_MISC + N_MISC_COLS,
 };
 
 // B_CODE -> the bond-order number `fragmatch` compares against, which is RDKit's Bond::BondType
@@ -592,6 +633,13 @@ struct AllWork {
   sps::detail::Work sw;
   // the synthesised H-added charge vector; see the autocorrelation block.
   std::vector<double> hc_syn;
+  // ---- the five families wired after the cost triage ----
+  eta::Mol etam;            eta::Work etaw;
+  spectral::Mol spm;        spectral::Scratch sps_;
+  miscext::Mol mxm;         miscext::Scratch mxs;
+  estate_ext::Scratch exs;
+  // Each header computes its full N_COLS into these, and only the kept slots are copied out.
+  std::vector<double> buf_spectral, buf_misc;
   fragmatch::Mol fm;
   // TWO MATCHERS, ONE Mol, ONE EVALUATOR. Each holds the recursive-query cache and the search
   // plans for the program it is bound to; the molecule they read is the same `fm`, filled once.
@@ -639,7 +687,9 @@ enum : unsigned {
   F_BLOCKS = 1u, F_VSA = 2u, F_ESTATE = 4u, F_RING = 8u, F_PATH = 16u, F_TOPO = 32u, F_IC = 64u,
   F_AC = 128u, F_FRAG = 256u, F_CHI = 512u, F_TOPOMISC = 1024u, F_CONSTIT = 2048u,
   F_ALIAS = 4096u, F_RDKCORE = 8192u,
-  F_ALL = 16383u,
+  F_COUNTS = 16384u, F_ESTATE_EXT = 32768u, F_ETA = 65536u, F_SPECTRAL = 131072u,
+  F_MISC = 262144u,
+  F_ALL = 524287u,
 };
 
 // ---- OPTIONAL COLUMNS: members of the 864 the caller can decline to pay for -----------------
@@ -816,12 +866,17 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   const bool want_ipc = (opts & OPT_AVGIPC) != 0;
   if (want_ipc) infoic::compute(W.im, W.irow);
   else          infoic::computeIC(W.im, W.irow);
-  for (int c = 0; c < infoic::N_IC; c++) out[OFF_IC + c] = W.irow.v[c];
+  for (int c = 0; c < N_IC_WIRED; c++) {
+    const int slot = KEEP_IC[c];
+    out[OFF_IC + c] = (slot < infoic::N_IC) ? W.irow.v[slot] : std::nan("");
+  }
   // `Ipc` and `Log2Ipc` are computed and deliberately NOT emitted -- they are not members of the
   // 865, and unlike everything else here they are unbounded (`Ipc` reaches 1.65e88 and saturates
   // at DBL_MAX by design; `Log2Ipc` is -inf where `Ipc` is 0). Adding them is one line each and
   // costs no compute, but putting an unbounded column in front of a model is the owner's call.
-  out[OFF_IC + infoic::N_IC] = want_ipc ? W.irow.v[infoic::C_AVGIPC] : std::nan("");
+  // AvgIpc is the last KEEP_IC entry (slot == infoic::N_IC), filled here rather than above
+  // because it is gated on `want_ipc`.
+  out[OFF_IC + N_IC_WIRED - 1] = want_ipc ? W.irow.v[infoic::C_AVGIPC] : std::nan("");
   }
 
   // ---- Autocorrelation: 540 columns, on the HYDROGEN-ADDED graph ----
@@ -1107,6 +1162,76 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.sm.add_ring(ring_at + ring_ptr[q], ring_ptr[q + 1] - ring_ptr[q]);
     sps::compute(W.sm, W.sw, out + OFF_CONSTIT + constit::C_SPS);
   }
+
+  // =============================================================================================
+  // The five families implemented after the deduplication, wired here. Column ORDER is the
+  // offset chain; EXECUTION order is this sequence, and the two are independent. counts_ext is
+  // last of the constit-dependent pair for a reason: it reads constit's own output.
+  // =============================================================================================
+
+  // ---- ETA: 29 columns, self-contained ----
+  if (fams & F_ETA) {
+    eta::build_from_rows(W.etam, n, nb, ai, N_ATOM_INT, bi, N_BOND_INT, bd, n_rings);
+    eta::compute(W.etam, out + OFF_ETA, W.etaw);
+  }
+
+  // ---- E-state extremes + walk sums: 22 columns ----
+  // Reductions over the per-atom E-state index blocks_row() has already written, and over the
+  // atom typing esttyper::aggregate() has already done. No new enumeration.
+  if (fams & F_ESTATE_EXT) {
+    estate_ext::compute(W.em, W.bw.ES.data(), out + OFF_ESTATE_EXT, W.exs);
+  }
+
+  // ---- spectral: 36 of 65 slots emitted ----
+  // `c` here is mordred's heavy-graph getter, `_GasteigerCharge + _GasteigerHCharge`, which is
+  // exactly the two halves molpickle.h now splits out -- the same pair the synthesised H-added
+  // graph uses. BCUTc-1h/-1l are the only columns that need the sum rather than either half.
+  if (fams & F_SPECTRAL) {
+    W.spm.n = n; W.spm.nb = nb;
+    W.spm.at.resize(n);
+    for (int i = 0; i < n; i++) {
+      const int *r = ai + (std::size_t)i * N_ATOM_INT;
+      AtomRec &a = W.spm.at[i];
+      a.z = r[A_Z]; a.fc = r[A_FCHG]; a.nh = r[A_NH];
+      a.c = (ACO && ACH) ? ACO[i] + ACH[i] : AC_C_MISSING;
+    }
+    W.spm.bu.resize(nb); W.spm.bv.resize(nb); W.spm.bord.resize(nb);
+    W.spm.adj.assign(n, {});
+    for (int b = 0; b < nb; b++) {
+      const int *r = bi + (std::size_t)b * N_BOND_INT;
+      W.spm.bu[b] = r[B_U]; W.spm.bv[b] = r[B_V]; W.spm.bord[b] = bd[b];
+      W.spm.adj[r[B_U]].push_back(r[B_V]);
+      W.spm.adj[r[B_V]].push_back(r[B_U]);
+    }
+    W.buf_spectral.assign(spectral::N_COLS, std::nan(""));
+    spectral::compute(W.spm, W.buf_spectral.data(), W.sps_);
+    for (int c = 0; c < N_SPECTRAL_COLS; c++)
+      out[OFF_SPECTRAL + c] = W.buf_spectral[KEEP_SPECTRAL[c]];
+  }
+
+  // ---- misc singletons: 67 of 81 slots emitted ----
+  if (fams & F_MISC) {
+    miscext::build_from_rows(W.mxm, n, nb, ai, N_ATOM_INT, AD + (ssize_t)a0 * N_ATOM_DBL,
+                             N_ATOM_DBL, bi, N_BOND_INT, bd, chg_ok, n_rings);
+    W.buf_misc.assign(miscext::N_COLS, std::nan(""));
+    miscext::compute(W.mxm, W.mxs, W.buf_misc.data());
+    for (int c = 0; c < N_MISC_COLS; c++) out[OFF_MISC + c] = W.buf_misc[KEEP_MISC[c]];
+  }
+
+  // ---- ring / atom counts: 31 columns. MUST BE LAST of the constit-dependent blocks ----
+  // It reads constit's nBondsD / nBondsKD out of the row that constit::compute has just
+  // written, and RDKit's NumRotatableBonds out of the fragment block. F_COUNTS therefore
+  // IMPLIES F_CONSTIT and F_FRAG -- see the mask fixup in family_mask(), which is where that
+  // is enforced rather than documented, so asking for `counts` alone cannot silently read
+  // whatever was in the row.
+  if (fams & F_COUNTS) {
+    const InputCols &ICc = input_cols();
+    counts_ext::Inputs cin;
+    cin.nRot = (int)out[OFF_FRAG + ICc.nrot];
+    cin.nBondsD = (int)out[OFF_CONSTIT + 18];
+    cin.nBondsKD = (int)out[OFF_CONSTIT + 22];
+    counts_ext::compute(W.km, W.rm, cin, out + OFF_COUNTS, W.rs);
+  }
 }
 
 static unsigned family_mask(const py::object &families) {
@@ -1115,7 +1240,9 @@ static unsigned family_mask(const py::object &families) {
       {"blocks", F_BLOCKS}, {"vsa", F_VSA}, {"estate", F_ESTATE}, {"ringcount", F_RING},
       {"pathcount", F_PATH}, {"topocharge", F_TOPO}, {"infocontent", F_IC},
       {"autocorr", F_AC}, {"frag", F_FRAG}, {"chi", F_CHI}, {"topomisc", F_TOPOMISC},
-      {"constit", F_CONSTIT}, {"alias", F_ALIAS}, {"rdkcore", F_RDKCORE}};
+      {"constit", F_CONSTIT}, {"alias", F_ALIAS}, {"rdkcore", F_RDKCORE},
+      {"counts", F_COUNTS}, {"estate_ext", F_ESTATE_EXT}, {"eta", F_ETA},
+      {"spectral", F_SPECTRAL}, {"misc", F_MISC}};
   unsigned mask = F_BLOCKS;   // never optional; see the note on the enum
   for (auto h : families) {
     const std::string want = py::cast<std::string>(h);
@@ -1130,6 +1257,12 @@ static unsigned family_mask(const py::object &families) {
   // alternative -- computing it over a row of zeros -- is the silent-wrong-descriptor failure.
   if (mask & F_CONSTIT) mask |= F_VSA | F_RING | F_FRAG;
   if (mask & F_ALIAS) mask |= F_VSA;
+  // counts_ext reads constit's nBondsD / nBondsKD and the fragment block's NumRotatableBonds
+  // out of the row; estate_ext reduces over the esttyper Mol that the estate block builds.
+  // Forced for the same reason as the two above: asking for `counts` alone must not read
+  // whatever happened to be in the row.
+  if (mask & F_COUNTS) mask |= F_CONSTIT | F_FRAG | F_VSA | F_RING;
+  if (mask & F_ESTATE_EXT) mask |= F_ESTATE;
   return mask;
 }
 
@@ -1244,8 +1377,11 @@ static py::list all_column_names_tail() {
   // The 42 IC columns, then `AvgIpc` -- which is columnNames()[C_AVGIPC], not [N_IC]: the row's
   // Ipc block is (Ipc, AvgIpc, Log2Ipc) in that order, so the census member is the MIDDLE one.
   // This must stay in lockstep with the emit loop in all_row().
-  for (int c = 0; c < infoic::N_IC; c++) out.append(py::str(infoic::columnNames()[c]));
-  out.append(py::str(infoic::columnNames()[infoic::C_AVGIPC]));
+  for (int c = 0; c < N_IC_WIRED; c++) {
+    const int slot = KEEP_IC[c];
+    out.append(py::str(slot < infoic::N_IC ? infoic::columnNames()[slot]
+                                           : infoic::columnNames()[infoic::C_AVGIPC]));
+  }
   for (int c = 0; c < autocorr::N_COLS; c++) out.append(py::str(autocorr::col_name(c)));
   for (int c = 0; c < frag_prog::N_NAMED; c++) out.append(py::str(frag_prog::NAMED[c].name));
   out.append(py::str("NHOHCount"));
@@ -1257,6 +1393,13 @@ static py::list all_column_names_tail() {
   // for the opposite reason -- it is a real value under a second name.
   out.append(py::str("SLogP"));
   for (int c = 0; c < rdkcore::N_COLS; c++) out.append(py::str(rdkcore::col_name(c)));
+  // The five families wired after the deduplication. Dropped slots are skipped here in exactly
+  // the same order all_row() skips them, which is what keeps names and values in lockstep.
+  for (int c = 0; c < counts_ext::N_COLS; c++) out.append(py::str(counts_ext::col_name(c)));
+  for (int c = 0; c < estate_ext::N_COLS; c++) out.append(py::str(estate_ext::col_name(c)));
+  for (int c = 0; c < eta::N_COLS; c++) out.append(py::str(eta::col_name(c)));
+  for (int c = 0; c < N_SPECTRAL_COLS; c++) out.append(py::str(spectral::col_name(KEEP_SPECTRAL[c])));
+  for (int c = 0; c < N_MISC_COLS; c++) out.append(py::str(miscext::col_name(KEEP_MISC[c])));
   return out;
 }
 

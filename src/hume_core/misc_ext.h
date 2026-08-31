@@ -1634,6 +1634,10 @@ inline void compute(const Mol &m, Scratch &S, double *out) {
   }
 
   // ---- S9 MolecularId ------------------------------------------------------------------------
+  // DROPPED IN THE COST TRIAGE (METHODS 5.2) AND THEREFORE NOT COMPUTED. 55.6 us/mol measured by
+  // difference, and the reason is the exhaustive weighted-path walk below, whose worst case on
+  // this corpus is 16 ms on a single 76-atom bridged cage. -DMISC_WANT_DROPPED restores it.
+#ifdef MISC_WANT_DROPPED
   if (connected && n > 0) {
     std::vector<int32_t> w(m.start[n]);
     for (int i = 0; i < n; ++i)
@@ -1675,11 +1679,19 @@ inline void compute(const Mol &m, Scratch &S, double *out) {
     }
   }
 
+#endif
   // ---- S10 BertzCT ---------------------------------------------------------------------------
+  // DROPPED IN THE COST TRIAGE (METHODS 5.2) AND THEREFORE NOT COMPUTED. Skipping the copy-out
+  // in bindings.cpp was not enough: this call is 55.5 us/mol on its own, the highest per-column
+  // cost anywhere in the package, and it was still being paid for a column nothing emits.
+  // -DMISC_WANT_DROPPED restores all three clusters for verification against mordred.
+#ifdef MISC_WANT_DROPPED
   out[C_BertzCT] = bertzCT(m, S);
-
-  // ---- S11 LogEE_A ---------------------------------------------------------------------------
   out[C_LogEE_A] = connected ? logEE_A(m, S) : NAN_;
+#else
+  out[C_BertzCT] = NAN_;
+  out[C_LogEE_A] = NAN_;
+#endif
 }
 
 }  // namespace miscext
