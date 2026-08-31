@@ -4,7 +4,12 @@
 
 First release.
 
-- `molhume.featurize(smiles, ...)` — SMILES to `(fp, X, names)`, 1,269 descriptors per molecule.
+- `molhume.featurize(smiles, ...)` — SMILES (or RDKit `Mol` objects) to one
+  `(n_molecules, n_features)` array. 1,269 descriptors per molecule, about 285 us/molecule.
+  Column names are not returned, since they are identical for a given set of flags;
+  `molhume.feature_names(**flags)` gives them in the same order.
+- `fingerprint` is off by default and its bits are appended *after* the descriptors, so
+  descriptor column indices do not shift when it is turned on.
 - `standardize` has no silent default: leaving it unset behaves as `"none"` and warns once,
   because what molecule the descriptors describe is the caller's decision.
 - `columns`, `additional_descriptors`, `on_error`, `threads`, `fingerprint`, `fp_radius`,
@@ -19,7 +24,6 @@ First release.
 - Verified against RDKit 2025.9.2 and Mordred 1.2.0 over a 42,000-molecule corpus: 167/186
   RDKit and 412/968 Mordred columns bit-identical, 99.99% and 99.23% of values within 1e-9.
   Divergences are enumerated in `METHODS.md`.
-
 - Wheels for CPython 3.11-3.14 on Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows.
 - Values are bit-identical across RDKit releases in the supported range, but **not across
   architectures**: the exactness numbers are from macOS arm64/clang, and x86-64 moves 594

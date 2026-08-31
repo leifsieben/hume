@@ -63,10 +63,15 @@ counts as a hydrogen-bond donor. When one changes, this library's output changes
 the same input SMILES, with no code change here.
 
 So the honest statement is not "these values are correct" but **"these values are what RDKit
-2025.9.2 implies"**. That is why `pyproject.toml` declares `rdkit>=2023.03` and not a pin: a
-hard pin in a library fights the user's environment and would make `mol-hume` uninstallable
-alongside anything else that has an opinion about RDKit. The version relativity belongs in the
-documentation, and it is stated in the README.
+2025.9.2 implies"**. Note that this is a *different* constraint from 1a: the range in
+`pyproject.toml` is set by the pickle format, and within that range values can still move
+because a perception changed. Measured so far they have not — all 1,269 columns are
+bit-identical between 2025.9.2 and 2026.3.5 over 8,000 molecules — but that is a measurement,
+not a guarantee, and it is what step 3 of `tools/check_rdkit_release.py` re-runs.
+
+The version relativity is documentation rather than a pin: an exact pin in a library fights the
+user's environment and would make `mol-hume` uninstallable alongside anything else with an
+opinion about RDKit. It is stated in the README.
 
 **How you find out.** Two independent alarms, and you need both:
 
