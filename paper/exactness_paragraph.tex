@@ -1,0 +1,17 @@
+% Exactness paragraph. Numbers from results/exactness_vs_mordred.json and the RDKit
+% comparison in the same run; corpus statistics from data/exactness_corpus.json.
+% Requires no packages beyond the standard ones; the siunitx variant is below.
+
+On a diverse corpus of 42{,}000 molecules (41{,}992 parsed; MW 9--2{,}209, median 274;
+1--163 heavy atoms, median 19; 51 elements) we find that 162 of 186 descriptors shared
+with RDKit and 412 of 968 shared with Mordred are bit-identical on every molecule, and
+that 99.99\% and 99.23\% of all cells agree to within $10^{-9}$ relative. The differences
+are concentrated in four places: 114 molecules (0.271\%), all organometallics and metal
+salts, where \texttt{HallKierAlpha}'s element table has no entry and \texttt{Kappa1--3}
+and \texttt{Phi} follow it; the centred autocorrelations, where a mean subtraction costs
+the bit-identity the uncentred columns keep; the information-content indices at orders
+1--5, where we diverge from Mordred deliberately because its atom-equivalence refinement
+is numbering-dependent and we claim determinism instead---order~0, the declared control,
+is bit-identical on all 41{,}992; and \texttt{BalabanJ}, which is not our divergence at
+all, since RDKit and Mordred agree with each other on only 8.24\% of molecules and we
+match RDKit on 100.00\%.

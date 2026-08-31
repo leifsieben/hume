@@ -1,0 +1,17 @@
+% Same paragraph using siunitx (\usepackage{siunitx}) for numbers and percentages.
+
+On a diverse corpus of \num{42000} molecules (\num{41992} parsed; MW \numrange{9}{2209},
+median \num{274}; \numrange{1}{163} heavy atoms, median \num{19}; \num{51} elements) we
+find that \num{162} of \num{186} descriptors shared with RDKit and \num{412} of \num{968}
+shared with Mordred are bit-identical on every molecule, and that \qty{99.99}{\percent}
+and \qty{99.23}{\percent} of all cells agree to within \num{e-9} relative. The differences
+are concentrated in four places: \num{114} molecules (\qty{0.271}{\percent}), all
+organometallics and metal salts, where \texttt{HallKierAlpha}'s element table has no entry
+and \texttt{Kappa1--3} and \texttt{Phi} follow it; the centred autocorrelations, where a
+mean subtraction costs the bit-identity the uncentred columns keep; the information-content
+indices at orders \numrange{1}{5}, where we diverge from Mordred deliberately because its
+atom-equivalence refinement is numbering-dependent and we claim determinism
+instead---order~\num{0}, the declared control, is bit-identical on all \num{41992}; and
+\texttt{BalabanJ}, which is not our divergence at all, since RDKit and Mordred agree with
+each other on only \qty{8.24}{\percent} of molecules and we match RDKit on
+\qty{100.00}{\percent}.

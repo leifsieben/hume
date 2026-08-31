@@ -1291,23 +1291,60 @@ static void estate_from(const Mol &m, const std::vector<int> &D, std::vector<dou
 struct AlphaRow { int z, hyb; double a; };
 static const double RC = 0.77;
 static const AlphaRow ALPHA[] = {
+    // THE TEN HYBRIDISATION-DEPENDENT ELEMENTS, verbatim from RDKit's own `hallKierAlphas`.
     {  1, -1,  0.0},
-    {  5, -1, 0.82 / RC - 1.0},            // B
     {  6,  2, -0.22}, {  6,  3, -0.13}, {  6, -1,  0.0},
     {  7,  2, -0.29}, {  7,  3, -0.20}, {  7, -1, -0.04},
     {  8,  3, -0.20}, {  8, -1, -0.04},
     {  9, -1, -0.07},
-    { 14, -1, 0.937 / RC - 1.0},           // Si
     { 15,  3,  0.30}, { 15, -1,  0.43},
     { 16,  3,  0.22}, { 16, -1,  0.35},
     { 17, -1,  0.29},
-    { 32, -1, +0.5428571428571427},        // Ge
-    { 33, -1, +0.55844155844156118},       // As
-    { 34, -1, 1.17 / RC - 1.0},            // Se
     { 35, -1,  0.48},
-    { 50, -1, +0.79870129870129658},       // Sn
-    { 52, -1, +0.7896103896103901},        // Te
     { 53, -1,  0.73},
+    // EVERY OTHER ELEMENT, rA/rC - 1, GENERATED FROM RDKit's OWN GetRb0 TABLE.
+    //
+    // This block used to hold seven entries -- B, Si, Ge, As, Se, Sn, Te -- recovered by a
+    // least-squares solve over a corpus, and anything outside them fell through to a constant
+    // guess of 1.20/RC - 1.0. That guess is what made HallKierAlpha, and Kappa1-3 and Phi with
+    // it, wrong on 114 of 41,992 molecules of the exactness corpus: 0.271%, every one an
+    // organometallic or a metal salt (Hg, Na, Zn, Fe, Cu, Cr, Au), because a corpus solve can
+    // only cover the elements its corpus happens to contain.
+    //
+    // The solve was answering a question that has a closed form. Checked against all seven
+    // solved values: `GetRb0(Z) / GetRb0(6) - 1` reproduces every one of them EXACTLY, so the
+    // rule RDKit applies to off-table elements is simply its own bond-radius table. Generating
+    // from that covers all 85 elements RDKit has a radius for, provably, rather than covering
+    // whichever ones appeared in a sample.
+    {  2, -1, 0.7 / RC - 1.0}, {  3, -1, 1.23 / RC - 1.0}, {  4, -1, 0.9 / RC - 1.0},   // He Li Be
+    {  5, -1, 0.82 / RC - 1.0}, { 10, -1, 0.7 / RC - 1.0}, { 11, -1, 1.54 / RC - 1.0},   // B Ne Na
+    { 12, -1, 1.36 / RC - 1.0}, { 13, -1, 1.18 / RC - 1.0}, { 14, -1, 0.937 / RC - 1.0},   // Mg Al Si
+    { 18, -1, 1.74 / RC - 1.0}, { 19, -1, 2.03 / RC - 1.0}, { 20, -1, 1.74 / RC - 1.0},   // Ar K Ca
+    { 21, -1, 1.44 / RC - 1.0}, { 22, -1, 1.32 / RC - 1.0}, { 23, -1, 1.22 / RC - 1.0},   // Sc Ti V
+    { 24, -1, 1.18 / RC - 1.0}, { 25, -1, 1.17 / RC - 1.0}, { 26, -1, 1.17 / RC - 1.0},   // Cr Mn Fe
+    { 27, -1, 1.16 / RC - 1.0}, { 28, -1, 1.15 / RC - 1.0}, { 29, -1, 1.17 / RC - 1.0},   // Co Ni Cu
+    { 30, -1, 1.25 / RC - 1.0}, { 31, -1, 1.26 / RC - 1.0}, { 32, -1, 1.188 / RC - 1.0},   // Zn Ga Ge
+    { 33, -1, 1.2 / RC - 1.0}, { 34, -1, 1.17 / RC - 1.0}, { 36, -1, 1.91 / RC - 1.0},   // As Se Kr
+    { 37, -1, 2.16 / RC - 1.0}, { 38, -1, 1.91 / RC - 1.0}, { 39, -1, 1.62 / RC - 1.0},   // Rb Sr Y
+    { 40, -1, 1.45 / RC - 1.0}, { 41, -1, 1.34 / RC - 1.0}, { 42, -1, 1.3 / RC - 1.0},   // Zr Nb Mo
+    { 43, -1, 1.27 / RC - 1.0}, { 44, -1, 1.25 / RC - 1.0}, { 45, -1, 1.25 / RC - 1.0},   // Tc Ru Rh
+    { 46, -1, 1.28 / RC - 1.0}, { 47, -1, 1.34 / RC - 1.0}, { 48, -1, 1.48 / RC - 1.0},   // Pd Ag Cd
+    { 49, -1, 1.44 / RC - 1.0}, { 50, -1, 1.385 / RC - 1.0}, { 51, -1, 1.4 / RC - 1.0},   // In Sn Sb
+    { 52, -1, 1.378 / RC - 1.0}, { 54, -1, 1.98 / RC - 1.0}, { 55, -1, 2.35 / RC - 1.0},   // Te Xe Cs
+    { 56, -1, 1.98 / RC - 1.0}, { 57, -1, 1.69 / RC - 1.0}, { 58, -1, 1.83 / RC - 1.0},   // Ba La Ce
+    { 59, -1, 1.82 / RC - 1.0}, { 60, -1, 1.81 / RC - 1.0}, { 61, -1, 1.8 / RC - 1.0},   // Pr Nd Pm
+    { 62, -1, 1.8 / RC - 1.0}, { 63, -1, 1.99 / RC - 1.0}, { 64, -1, 1.79 / RC - 1.0},   // Sm Eu Gd
+    { 65, -1, 1.76 / RC - 1.0}, { 66, -1, 1.75 / RC - 1.0}, { 67, -1, 1.74 / RC - 1.0},   // Tb Dy Ho
+    { 68, -1, 1.73 / RC - 1.0}, { 69, -1, 1.72 / RC - 1.0}, { 70, -1, 1.94 / RC - 1.0},   // Er Tm Yb
+    { 71, -1, 1.72 / RC - 1.0}, { 72, -1, 1.44 / RC - 1.0}, { 73, -1, 1.34 / RC - 1.0},   // Lu Hf Ta
+    { 74, -1, 1.3 / RC - 1.0}, { 75, -1, 1.28 / RC - 1.0}, { 76, -1, 1.26 / RC - 1.0},   // W Re Os
+    { 77, -1, 1.27 / RC - 1.0}, { 78, -1, 1.3 / RC - 1.0}, { 79, -1, 1.34 / RC - 1.0},   // Ir Pt Au
+    { 80, -1, 1.49 / RC - 1.0}, { 81, -1, 1.48 / RC - 1.0}, { 82, -1, 1.48 / RC - 1.0},   // Hg Tl Pb
+    { 83, -1, 1.45 / RC - 1.0}, { 84, -1, 1.46 / RC - 1.0}, { 85, -1, 1.45 / RC - 1.0},   // Bi Po At
+    { 86, -1, 2.4 / RC - 1.0}, { 87, -1, 2 / RC - 1.0}, { 88, -1, 1.9 / RC - 1.0},   // Rn Fr Ra
+    { 89, -1, 1.88 / RC - 1.0}, { 90, -1, 1.79 / RC - 1.0}, { 91, -1, 1.61 / RC - 1.0},   // Ac Th Pa
+    { 92, -1, 1.58 / RC - 1.0}, { 93, -1, 1.55 / RC - 1.0}, { 94, -1, 1.53 / RC - 1.0},   // U Np Pu
+    { 95, -1, 1.07 / RC - 1.0},   // Am
 };
 
 static double hk_alpha_atom_tab(int z, int hyb) {
