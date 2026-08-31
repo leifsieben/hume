@@ -21,4 +21,5 @@ def smiles():
 def expected():
     with np.load(DATA / "fixture_expected.npz", allow_pickle=False) as z:
         return {"X": z["X"], "names": tuple(str(n) for n in z["names"]),
-                "rdkit_version": str(z["rdkit_version"]), "n_heavy": z["n_heavy"]}
+                "rdkit_version": str(z["rdkit_version"]), "n_heavy": z["n_heavy"],
+                "platform": str(z["platform"]) if "platform" in z else "(not recorded)"}

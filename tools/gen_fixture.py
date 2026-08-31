@@ -15,6 +15,8 @@ import hashlib
 import json
 import sys
 
+import platform
+
 import numpy as np
 from rdkit import Chem, RDLogger
 
@@ -55,6 +57,12 @@ np.savez_compressed(
     X=X,
     names=np.array(names),
     rdkit_version=np.array(Chem.rdBase.rdkitVersion),
+    # WHICH MACHINE THESE NUMBERS ARE FROM. This library reproduces upstream floating-point
+    # behavior, so the architecture and the libm are part of the specification: the same source
+    # on x86-64/gcc moves the last two or three digits of several hundred columns. The
+    # regression test compares exactly here and within a measured tolerance elsewhere, and it
+    # can only tell the two apart if the fixture says where it came from.
+    platform=np.array(f"{platform.system()} {platform.machine()}"),
     n_heavy=np.array([Chem.MolFromSmiles(s).GetNumHeavyAtoms() for s in picked]),
 )
 digest = hashlib.sha256(np.ascontiguousarray(X).tobytes()).hexdigest()[:16]

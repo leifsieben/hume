@@ -97,13 +97,28 @@ minimum-version = "0.10"
 # cpp/ is a build input, not research scaffolding, and dropping it makes the sdist unbuildable.
 # Everything below IS research scaffolding -- corpora, figures, benchmark outputs, the vendored
 # benchmark package -- and took the sdist to 19 MB.
-# An allowlist, not a denylist: this repo is a research monorepo whose root is 60 loose
-# analysis scripts, and a denylist would silently start shipping the next one somebody adds.
+# AN ALLOWLIST, AND A SHORT ONE. This repo is a research monorepo -- a 9 GB corpus, figures,
+# benchmark outputs, a vendored benchmark package, 60 loose analysis scripts at the root -- and
+# none of it belongs in something people download. A denylist would silently start shipping the
+# next thing somebody adds; this ships what BUILDS the package and nothing else.
+#
+# cpp/*.h is not optional: nine headers under src/hume_core include generated tables from there
+# by relative path, so it is a build input.
+#
+# tests/ is deliberately NOT here. The fixture alone is 1.2 MB of stored descriptor values, and
+# an sdist is for building, not for shipping a dataset. The suite lives in the git repo, which
+# is where anyone changing the code is working anyway.
+# LISTED BY FILE TYPE, NOT BY DIRECTORY. In scikit-build-core `include` overrides `exclude`, so
+# a directory glob like /src/** re-admits everything inside it -- including __pycache__, which
+# is how 77 KB of compiled test bytecode and a .pyc for a file that no longer exists were
+# getting shipped. Naming the extensions is what actually keeps them out.
 sdist.exclude = ["*"]
 sdist.include = [
   "/pyproject.toml", "/CMakeLists.txt", "/README.md", "/LICENSE", "/CHANGELOG.md",
-  "/METHODS.md", "/PACKAGING.md", "/constraints.txt",
-  "/src/**", "/cpp/*.h", "/docs/**", "/tests/**", "/tools/gen_fixture.py",
+  "/METHODS.md",
+  "/src/molhume/*.py", "/src/mol_hume/*.py",
+  "/src/hume_core/*.h", "/src/hume_core/*.cpp",
+  "/cpp/*.h",
 ]
 cmake.version = ">=3.15"
 build-dir = "build/{wheel_tag}"

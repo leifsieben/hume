@@ -40,6 +40,13 @@ jobs:
       - name: Test
         run: pytest tests -q
 
+      # How far this toolchain's arithmetic is from the fixture's, as a distribution. The
+      # regression test only asserts a bound; this says where the values actually sit, which is
+      # what tells ordinary cross-platform noise (~1e-15) apart from a real defect.
+      - name: Cross-platform value drift
+        if: always()
+        run: python tools/platform_drift.py
+
       - name: Report the toolchain
         if: always()
         shell: bash
