@@ -595,6 +595,9 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
         {P_i, 28, 29},
     };
     for (const Slot &sl : SL) {
+#ifdef SPECTRAL_NO_BCUT
+      break;   // measurement only
+#endif
       if (!prop_ok(w, n, sl.q)) continue;          // AtomicProperty.calculate() fails -> NaN
       for (std::size_t k = 0; k < (std::size_t)n * n; k++) M[k] = base[k];
       for (int i = 0; i < n; i++)
@@ -617,6 +620,19 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
       int q; bool paths; bool vec;
       int spabs, spdiam, spmad, sm1, ve1, ve2, vr1, vr2, vr3;
     };
+#ifdef SPECTRAL_ONE_BARYSZ_SPECTRUM
+    // Experiment: SpAbs/SpDiam/SpMAD are 0.982-0.999 correlated ACROSS the atomic-property
+    // weightings, so only P_Z keeps its eigensolve; the rest fall back to the trace, which is
+    // what SM1 needs and is the only aggregate that genuinely varies with the property.
+    static const Bar BR[6] = {
+        {P_Z,   true,  false, 30, 31, 32, 33, -1, -1, -1, -1, -1},
+        {P_v,   false, false, -1, -1, -1, 41, -1, -1, -1, -1, -1},
+        {P_se,  false, false, -1, -1, -1, 49, -1, -1, -1, -1, -1},
+        {P_are, false, false, -1, -1, -1, 50, -1, -1, -1, -1, -1},
+        {P_p,   false, false, -1, -1, -1, 54, -1, -1, -1, -1, -1},
+        {P_i,   false, false, -1, -1, -1, 59, -1, -1, -1, -1, -1},
+    };
+#else
     static const Bar BR[6] = {
         {P_Z,   true,  true,  30, 31, 32, 33, 34, 35, 36, 37, -1},
         {P_v,   true,  true,  38, 39, 40, 41, 42, 43, -1, 44, 45},
@@ -625,6 +641,7 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
         {P_p,   true,  true,  51, 52, 53, 54, 55, 56, -1, -1, -1},
         {P_i,   true,  false, 57, -1, 58, 59, -1, -1, -1, -1, -1},
     };
+#endif
     for (const Bar &b : BR) {
       if (!prop_ok(w, n, b.q)) continue;
       if (!barysz(m, w, b.q, b.paths, M)) continue;
