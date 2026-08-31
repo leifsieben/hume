@@ -1,0 +1,49 @@
+# Every push: does it build, and does it produce the same numbers?
+#
+# Deliberately ONE platform on push. This repository is private, so Actions minutes are billed,
+# and macOS bills at 10x and Windows at 2x -- a three-platform matrix on every push would spend
+# the monthly allowance in days. Pull requests and `workflow_dispatch` run all three, which is
+# what to use after touching anything in src/hume_core or CMakeLists.txt. The full wheel matrix
+# is wheels.yml, on a tag.
+name: ci
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["**.md", "figures/**", "paper/**", "results/**", "docs/**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'push' && '["ubuntu-latest"]' || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build and install
+        run: |
+          python -m pip install --upgrade pip
+          pip install . pytest
+
+      # The exactness claim is "bit-identical to rdkit", and it was measured with clang on
+      # arm64. tests/test_regression.py compares all 1,269 columns EXACTLY, so this step is
+      # also the measurement of whether gcc and MSVC agree with that clang -- see the
+      # ffp-contract note in CMakeLists.txt for why they might not.
+      - name: Test
+        run: pytest tests -q
+
+      - name: Report the toolchain
+        if: always()
+        shell: bash
+        run: |
+          python -c "import platform, sys; print(platform.platform()); print(sys.version)"
+          python -c "import rdkit; print('rdkit', rdkit.__version__)" || true
+          python -c "import molhume; print('columns', len(molhume.ALL_COLUMNS))" || true

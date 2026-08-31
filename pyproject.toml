@@ -82,3 +82,37 @@ sdist.include = [
 ]
 cmake.version = ">=3.15"
 build-dir = "build/{wheel_tag}"
+
+# ==============================================================================================
+# CROSS-PLATFORM WHEELS
+# ==============================================================================================
+# The matrix is pinned to what rdkit itself ships, because a mol-hume wheel for a platform with
+# no rdkit wheel is a wheel that cannot be imported. rdkit 2026.3.5 publishes exactly
+# macosx_11_0_arm64, manylinux_2_28 x86_64 and aarch64, and win_amd64, for cp310-cp314. So:
+#
+#   * NO musllinux -- rdkit has no musl wheels, so the tests could not even run there.
+#   * NO i686, NO PyPy -- same reason.
+#   * macOS x86_64 IS built even though rdkit dropped it after 2025.9.2, because that is the
+#     release this library is verified against and an Intel Mac user pinning it should not also
+#     have to compile this from source.
+[tool.cibuildwheel]
+build = "cp311-* cp312-* cp313-* cp314-*"
+skip = ["*-musllinux*", "*_i686", "pp*"]
+build-frontend = "build[uv]"
+# Run the real suite on every wheel, on the machine that built it. The fixture comparison is
+# exact, so this is also the measurement of whether gcc and MSVC agree with the clang the
+# exactness numbers were taken on -- see the ffp-contract note in CMakeLists.txt.
+test-requires = ["pytest", "rdkit"]
+test-command = "pytest {project}/tests -q"
+manylinux-x86_64-image = "manylinux_2_28"
+manylinux-aarch64-image = "manylinux_2_28"
+
+[tool.cibuildwheel.macos]
+# rdkit's own wheels are macosx_11_0_arm64 and macosx_10_15_x86_64; match them or pip resolves
+# a wheel pair that cannot be installed together.
+environment = { MACOSX_DEPLOYMENT_TARGET = "11.0" }
+
+[[tool.cibuildwheel.overrides]]
+select = "*-macosx_x86_64"
+inherit.environment = "append"
+environment = { MACOSX_DEPLOYMENT_TARGET = "10.15" }

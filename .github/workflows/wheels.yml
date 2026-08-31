@@ -1,0 +1,95 @@
+# The release matrix: build every wheel, test each one on the machine that built it, publish.
+#
+# HOW TO CUT A RELEASE
+#   1. bump `version` in pyproject.toml, write the entry in CHANGELOG.md, commit
+#   2. Actions -> wheels -> Run workflow, target `testpypi`. Install from TestPyPI in a clean
+#      venv and check it works.
+#   3. `git tag v0.1.0 && git push --tags`. The tag publishes to PyPI.
+#
+# PUBLISHING USES TRUSTED PUBLISHING (OIDC), NOT AN API TOKEN. Nothing secret is stored in this
+# repository or in Actions secrets: PyPI is configured to trust this repo + this workflow file
+# + the named environment, and mints a short-lived token per run. Set it up at
+# https://pypi.org/manage/account/publishing/ with:
+#     owner leifsieben, repository hume, workflow wheels.yml, environment pypi
+# and the same for test.pypi.org with environment testpypi.
+name: wheels
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      publish_to:
+        description: "Where to publish (none = build and test only)"
+        type: choice
+        options: [none, testpypi, pypi]
+        default: none
+
+jobs:
+  wheels:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: linux-x86_64, os: ubuntu-latest, archs: x86_64 }
+          - { name: linux-aarch64, os: ubuntu-latest, archs: aarch64 }
+          - { name: macos-arm64, os: macos-latest, archs: arm64 }
+          - { name: macos-x86_64, os: macos-13, archs: x86_64 }
+          - { name: windows-x86_64, os: windows-latest, archs: AMD64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      # aarch64 has no free runner on a private repo, so it is emulated. It is slow -- roughly
+      # 20 minutes per interpreter against 3 native -- which is why it is a separate matrix
+      # entry that can be dropped from a release without touching the other four.
+      - name: Set up QEMU
+        if: matrix.archs == 'aarch64'
+        uses: docker/setup-qemu-action@v3
+        with: { platforms: arm64 }
+
+      - uses: pypa/cibuildwheel@v2.21.3
+        env:
+          CIBW_ARCHS: ${{ matrix.archs }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheels-${{ matrix.name }}
+          path: wheelhouse/*.whl
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx run build --sdist
+
+      # An sdist that does not build is worse than no sdist: pip falls back to it on any
+      # platform the wheels missed, and the user gets a compiler error instead of a clean
+      # "no wheel available".
+      - name: Build the sdist back into a wheel and run the tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install dist/*.tar.gz pytest
+          pytest tests -q
+
+      - uses: actions/upload-artifact@v4
+        with: { name: sdist, path: dist/*.tar.gz }
+
+  publish:
+    needs: [wheels, sdist]
+    if: github.event_name == 'push' || inputs.publish_to != 'none'
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'push' && 'pypi' || inputs.publish_to }}
+    permissions:
+      id-token: write        # this, and only this, is what Trusted Publishing needs
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dist, merge-multiple: true }
+
+      - name: What is about to be published
+        run: ls -la dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: ${{ (github.event_name == 'push' || inputs.publish_to == 'pypi') && 'https://upload.pypi.org/legacy/' || 'https://test.pypi.org/legacy/' }}
