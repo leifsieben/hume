@@ -45,6 +45,8 @@
 #include "pathcount.h"
 #include "rdkcore.h"
 #include <thread>
+#include <mutex>
+#include <exception>
 #include "sps.h"
 #include "counts_ext.h"
 #include "estate_ext.h"
@@ -1373,7 +1375,13 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     //
     // The GIL is already released around this block, so python threads are not involved.
     // `threads` <= 0 means "one per hardware thread"; 1 restores the serial loop exactly.
+    // AN EXCEPTION MUST NOT ESCAPE A std::thread: that is std::terminate, i.e. the process
+    // aborts with the message lost. all_row() throws std::runtime_error on several contract
+    // violations, so every worker catches, stores, and the first one is rethrown after join.
+    std::vector<std::exception_ptr> errs;
+    std::mutex errmu;
     auto worker = [&](ssize_t lo, ssize_t hi) {
+      try {
       AllWork W;
       for (ssize_t k = lo; k < hi; k++) {
         const int r0 = RM[k], nr = RM[k + 1] - r0;
@@ -1384,6 +1392,10 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                 need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
                 f.chg_ok[k], SA, SB, fams, opts,
                 O + (ssize_t)k * N_ALL_COLS);
+      }
+      } catch (...) {
+        std::lock_guard<std::mutex> g(errmu);
+        errs.push_back(std::current_exception());
       }
     };
     int nt = n_threads;
@@ -1405,6 +1417,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
       }
       for (auto &th : ts) th.join();
     }
+    if (!errs.empty()) std::rethrow_exception(errs.front());
   }
   return out;
 }

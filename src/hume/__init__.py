@@ -180,7 +180,7 @@ def featurize_blocks(smiles: Iterable[str], batch_size: int = 4096, reader: str 
 # ------------------------------------------------------------------------------------------
 
 def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: int = 3,
-                            threads: int = 0,
+                            threads: int = 0, fingerprint: bool = True,
                             fp_size: int = 2048, optional=None):
     """-> ``(fp, X, ALL_COLUMNS)``: the ECFP and every natively computed descriptor column.
 
@@ -219,8 +219,13 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     if not mols:
         return (np.zeros((0, fp_size), dtype=np.uint8),
                 np.zeros((0, N_ALL_COLS), dtype=np.float64), ALL_COLUMNS)
-    gen = rfg.GetMorganGenerator(radius=fp_radius, fpSize=fp_size, includeChirality=True)
-    fp = np.empty((len(mols), fp_size), dtype=np.uint8)
+    # THE FINGERPRINT IS AN OUTPUT, NOT A DESCRIPTOR, AND IT IS NOT FREE. GetFingerprintAsNumPy
+    # is 28.1 us/mol at the corpus median -- 10% of the whole call -- and it holds the GIL, so it
+    # cannot be threaded the way the descriptor block now is. A caller who wants descriptors only
+    # was paying for it. `fingerprint=False` returns a (n, 0) array in its place.
+    gen = (rfg.GetMorganGenerator(radius=fp_radius, fpSize=fp_size, includeChirality=True)
+           if fingerprint else None)
+    fp = np.empty((len(mols), fp_size if fingerprint else 0), dtype=np.uint8)
     X = np.empty((len(mols), N_ALL_COLS), dtype=np.float64)
     for lo in range(0, len(mols), batch_size):
         chunk = mols[lo:lo + batch_size]
@@ -239,13 +244,15 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
             p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs,
             p.stereo_a, p.stereo_b, optional=optional, threads=threads)
-        for i, m in enumerate(chunk):
-            fp[lo + i] = gen.GetFingerprintAsNumPy(m)
+        if fingerprint:
+            for i, m in enumerate(chunk):
+                fp[lo + i] = gen.GetFingerprintAsNumPy(m)
     return fp, X, ALL_COLUMNS
 
 
 def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int = 3,
-                  fp_size: int = 2048, optional=None, threads: int = 0):
+                  fp_size: int = 2048, optional=None, threads: int = 0,
+                  fingerprint: bool = True):
     """`featurize_all_from_mols` from SMILES. Unparseable input raises; see `featurize_blocks`."""
     from rdkit import Chem
 
@@ -256,6 +263,7 @@ def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int 
             raise ValueError(f"could not parse SMILES at index {i}: {s!r}")
         mols.append(m)
     return featurize_all_from_mols(mols, batch_size=batch_size, fp_radius=fp_radius,
+                                   fingerprint=fingerprint,
                                    fp_size=fp_size, optional=optional, threads=threads)
 
 

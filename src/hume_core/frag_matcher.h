@@ -114,6 +114,7 @@
 #include <cstdlib>
 #include <memory>
 #include <string>
+#include <mutex>
 #include <vector>
 
 #include "../../cpp/frag_prog_types.h"
@@ -336,8 +337,20 @@ class Matcher {
   // one program and would silently serve `frag_prog`'s plan for `qed_prog`'s pattern 7 the moment
   // there were two.  The registry is process-lifetime by design -- a Plan is derived purely from
   // a constexpr table, so there is nothing to invalidate.
+  // THREAD SAFETY. This registry is read and MUTATED lazily, and bindings.cpp now runs the
+  // per-molecule row loop on every core. Two threads reaching a cold cache together raced on
+  // `reg.push_back` -- a vector reallocating under a concurrent scan -- which showed up as an
+  // intermittent process abort, roughly one run in four, with no message and a python traceback
+  // pointing at the featurise call. It reproduced only with a fresh process, because the race
+  // window is the FIRST call and the registry is process-lifetime by design.
+  //
+  // The mutex is taken once per bindProgram, i.e. a couple of times per molecule against ~700 us
+  // of work, so the cost is not measurable. A lock-free fast path would still be UB: the scan
+  // reads the same vector another thread may be reallocating.
   static const std::vector<Plan>& planCache(const Program& p) {
     static std::vector<std::pair<const Program*, std::shared_ptr<std::vector<Plan> > > > reg;
+    static std::mutex mu;
+    std::lock_guard<std::mutex> guard(mu);
     for (size_t i = 0; i < reg.size(); ++i)
       if (reg[i].first == &p) return *reg[i].second;
     std::shared_ptr<std::vector<Plan> > v(new std::vector<Plan>((size_t)p.n_patterns));
