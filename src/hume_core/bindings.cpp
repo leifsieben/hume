@@ -44,6 +44,7 @@
 #include "molpickle.h"
 #include "pathcount.h"
 #include "rdkcore.h"
+#include "sps.h"
 #include "ringcount.h"
 #include "topocharge.h"
 #include "topomisc.h"
@@ -581,6 +582,8 @@ struct AllWork {
   infoic::Row irow;
   autocorr::Mol am;
   autocorr::Work aw;
+  sps::Mol sm;
+  sps::detail::Work sw;
   fragmatch::Mol fm;
   // TWO MATCHERS, ONE Mol, ONE EVALUATOR. Each holds the recursive-query cache and the search
   // plans for the program it is bound to; the molecule they read is the same `fm`, filled once.
@@ -976,8 +979,9 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     // `NumUnspecifiedAtomStereoCenters` count the LEGACY `_ChiralityPossible` flag out of
     // `atom_i`; the two atom sets disagree on 262 of 4,000 corpus molecules. Two perceptions,
     // two boundary fields, and neither substitutes for the other.
-    in.stereoAtom = SA ? SA + a0 : nullptr;
-    in.stereoBond = SB ? SB + b0 : nullptr;
+    // SPS is computed in C++ below; these stay null and constit's C_SPS is overwritten.
+    in.stereoAtom = nullptr;
+    in.stereoBond = nullptr;
 
     constit::compute(W.km, in, out + OFF_CONSTIT, out[OFF_VSA + vsabin::C_TPSA]);
   }
@@ -1022,6 +1026,45 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.dm.add_ring(ring_at + ring_ptr[q], ring_ptr[q + 1] - ring_ptr[q]);
     rdkcore::compute(W.dm, out[OFF_BLOCKS + B_KAPPA1], out[OFF_BLOCKS + B_KAPPA2],
                      out + OFF_RDKCORE, W.ds);
+  }
+
+  // ---- SPS, from the C++ potential-stereo perception rather than from python ----
+  // sps.h ports RDKit's NEW perception (FindStereo.cpp's runCleanup, new_canon's
+  // rankFragmentAtoms, hanoiSort, and the legacy CIP ranking) and reproduces
+  // Chem.SpacialScore.SPS bit-identically on all 20,000 corpus molecules. It needs no boundary
+  // field that all_row does not already hold, so `_potential_stereo` -- and the stereo_a /
+  // stereo_b arrays it produced -- become dead python. That is the point of wiring it: the
+  // C++ perception is 16.9 us/mol against 68.4 for the python route it replaces.
+  //
+  // constit.h's C_SPS keeps the column's SLOT so no layout moves; it is simply written here
+  // instead of there, and Inputs::stereoAtom / stereoBond are now always null.
+  if (fams & F_CONSTIT) {
+    W.sm.alloc(n, nb);
+    for (int i = 0; i < n; i++) {
+      const int *r = ai + (ssize_t)i * N_ATOM_INT;
+      W.sm.z[i] = r[A_Z];       W.sm.deg[i] = r[A_DEG];   W.sm.nH[i] = r[A_NH];
+      W.sm.fchg[i] = r[A_FCHG]; W.sm.hyb[i] = r[A_HYB];   W.sm.arom[i] = r[A_AROM];
+      W.sm.nring[i] = r[A_NRING]; W.sm.tval[i] = r[A_TVAL];
+      W.sm.ctag[i] = r[A_CTAG]; W.sm.iso[i] = r[A_ISO];   W.sm.cip[i] = r[A_CIP];
+    }
+    for (int b = 0; b < nb; b++) {
+      const int *r = bi + (ssize_t)b * N_BOND_INT;
+      W.sm.bu[b] = r[B_U];  W.sm.bv[b] = r[B_V];  W.sm.btype[b] = r[B_BTYPE];
+      W.sm.barom[b] = (r[B_CODE] & 8) ? 1 : 0;
+      W.sm.bconj[b] = r[B_CONJ];
+      // THE TWO ENCODINGS ARE NOT THE SAME AND THE DIFFERENCE IS SILENT. The boundary's
+      // `bond_s` is src/hume/_extract.py's _EZ: E/TRANS -> +1, Z/CIS -> -1, none -> 0. sps.h
+      // wants RDKit's raw Bond::BondStereo ordinal (NONE=0, ANY=1, Z=2, E=3, CIS=4, TRANS=5),
+      // so passing bond_s straight through reads +1 as STEREOANY and -1 as nothing at all.
+      // Caught by one molecule in 4,000 -- SPS differed by 1.256 -- which is exactly how a
+      // wrong-encoding bug presents: almost always right, because most bonds are 0.
+      const int ez = BS[b0 + b];
+      W.sm.bstereo[b] = ez > 0 ? sps::BS_E : ez < 0 ? sps::BS_Z
+                                                            : sps::BS_NONE;
+    }
+    for (int q = 0; q < n_rings; q++)
+      W.sm.add_ring(ring_at + ring_ptr[q], ring_ptr[q + 1] - ring_ptr[q]);
+    sps::compute(W.sm, W.sw, out + OFF_CONSTIT + constit::C_SPS);
   }
 }
 
