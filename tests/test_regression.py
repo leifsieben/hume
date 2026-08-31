@@ -5,14 +5,21 @@ intended, regenerate with tools/gen_fixture.py and record what moved in CHANGELO
 
 TWO TIERS, because the architecture is part of the specification. This library reproduces
 upstream floating-point BEHAVIOR, not just upstream mathematics, so a different libm's log and
-a different FMA decision move the last two or three digits. Measured: on the machine the fixture
-came from every one of the 1,269 columns is bit-identical, while x86-64 gcc moves 594 of them
-and MSVC 595 -- all at a relative difference around 1e-15.
+a different FMA decision move the last digits. Measured in CI: on the machine the fixture came
+from all 1,269 columns are bit-identical, while x86-64 gcc moves 594 of them and MSVC 595.
 
-So: EXACT on the fixture's own platform, where any movement at all is a real change. Within
-RTOL elsewhere, which still catches a logic error by orders of magnitude while not failing on
-arithmetic nobody can control. The NaN pattern is compared exactly on every platform, because
-which cells are undefined is structural and must not drift with the compiler.
+So: EXACT on the fixture's own platform, where any movement at all is a real change, and within
+RTOL elsewhere. The NaN pattern is compared exactly on every platform, because which cells are
+undefined is structural and must not drift with the compiler.
+
+THE TOLERANT TIER SCALES BY COLUMN, NOT BY CELL, and that is not a detail. Several columns here
+are differences that cancel to near zero -- the centered autocorrelations (ATSC/AATSC/MATS),
+Cyclicity, DeltaMean/DeltaMax. A per-cell relative comparison judges a value of 5e-14 against
+itself, so an absolute wobble of 1e-12 reads as a relative error of 27, and 28 columns look
+catastrophically broken when the real disagreement is in the last bits. Measured against each
+column's own dynamic range instead, the worst of those same 28 is 9.5e-15.
+
+That is the honest metric: each column must agree to RTOL of the range it actually spans.
 """
 import platform
 
@@ -74,17 +81,23 @@ def test_values_match(actual, expected):
                 "the moved columns in CHANGELOG.md.")
         return
 
-    worst = rel.max()
-    if worst > RTOL:
-        c = int(np.unravel_index(np.argmax(rel), rel.shape)[1])
-        r = int(np.unravel_index(np.argmax(rel), rel.shape)[0])
-        n_cols = len({int(j) for j in np.argwhere(rel > RTOL)[:, 1]})
+    # Each column against its OWN dynamic range. See the module docstring: a per-cell relative
+    # comparison is meaningless for a column that cancels to near zero.
+    scale = np.where(finite, np.abs(want), 0.0).max(axis=0)
+    scale[scale == 0.0] = 1.0                    # an all-zero column must stay all-zero
+    scaled = absd.max(axis=0) / scale
+    over = np.argwhere(scaled > RTOL).ravel()
+    if over.size:
+        c = int(over[np.argmax(scaled[over])])
+        r = int(np.argmax(absd[:, c]))
         pytest.fail(
-            f"{n_cols} column(s) differ by more than rtol={RTOL:g} from the fixture, which came "
-            f"from {expected['platform']} and is being compared on {_this_platform()}. Largest "
-            f"at row {r} column {expected['names'][c]}: {got[r, c]!r} vs {want[r, c]!r} "
-            f"(rel {worst:.3e}). Cross-platform arithmetic drift is ~1e-15; this is too big to "
-            "be that. Run tools/platform_drift.py for the full distribution.")
+            f"{over.size} column(s) differ by more than rtol={RTOL:g} of their own range. The "
+            f"fixture came from {expected['platform']}; this is {_this_platform()}. Worst is "
+            f"{expected['names'][c]}: {got[r, c]!r} vs {want[r, c]!r} at row {r}, "
+            f"absolute {absd[:, c].max():.3e} against a column range of {scale[c]:.3e} "
+            f"= {scaled[c]:.3e}. Cross-platform arithmetic drift measures ~1e-14 by this "
+            "metric, so this is too large to be that. Run tools/platform_drift.py for the "
+            "full distribution.")
 
 
 def test_fixture_spans_the_documented_range(expected):

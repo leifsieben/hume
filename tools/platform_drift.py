@@ -54,20 +54,29 @@ print(f"\n  columns bit-identical : {want.shape[1] - len(moved)} / {want.shape[1
 print(f"  columns that moved    : {len(moved)}")
 print(f"  NaN-pattern changes   : {int(nan_d.sum())} cells   <- must be 0")
 
+# Scaled by each column's own dynamic range, which is the metric the regression test uses:
+# several columns here cancel to near zero, and judging such a value against itself turns a
+# last-bit wobble into a relative error of 27.
+scale = np.where(fin, np.abs(want), 0.0).max(axis=0)
+scale[scale == 0.0] = 1.0
+scaled = absd.max(axis=0) / scale
+
 if moved:
-    per_col = rel.max(axis=0)[moved]
-    print("\n  worst relative difference per moved column:")
+    print(f"\n  MAX per-cell relative difference : {rel.max():.3e}   <- misleading, see below")
+    print(f"  MAX difference / column range   : {scaled.max():.3e}   <- what the test asserts")
+    per_col = scaled[moved]
+    print("\n  difference as a fraction of each moved column's range:")
     for lo, hi in [(0, 1e-15), (1e-15, 1e-13), (1e-13, 1e-11), (1e-11, 1e-9),
                    (1e-9, 1e-6), (1e-6, np.inf)]:
         n = int(((per_col > lo) & (per_col <= hi)).sum())
         if n:
             print(f"     {lo:8.0e} < rel <= {hi:8.0e} : {n:4d} columns")
-    print(f"\n  MAX relative difference anywhere: {rel.max():.3e}")
-    order = np.argsort(-rel.max(axis=0))
-    print("  worst columns:")
+    order = np.argsort(-scaled)
+    print("  worst columns, by difference against their own range:")
     for c in order[:15]:
-        if rel[:, c].max() == 0:
+        if scaled[c] == 0:
             break
-        print(f"     {names[c]:26s} rel {rel[:, c].max():.3e}  abs {absd[:, c].max():.3e}")
+        print(f"     {names[c]:26s} {scaled[c]:.3e}   (abs {absd[:, c].max():.3e}, "
+              f"range {scale[c]:.3e}, per-cell rel {rel[:, c].max():.3e})")
 else:
     print("\n  bit-identical to the fixture.")
