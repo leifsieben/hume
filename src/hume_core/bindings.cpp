@@ -1590,7 +1590,14 @@ PYBIND11_MODULE(_core, mod) {
       py::arg("frag") = (int)OFF_FRAG, py::arg("chi") = (int)OFF_CHI,
       py::arg("topomisc") = (int)OFF_TOPOMISC, py::arg("constit") = (int)OFF_CONSTIT,
       py::arg("alias") = (int)OFF_ALIAS, py::arg("rdkcore") = (int)OFF_RDKCORE,
-      py::arg("end") = (int)N_ALL_COLS);
+      py::arg("counts") = (int)OFF_COUNTS, py::arg("estate_ext") = (int)OFF_ESTATE_EXT,
+      py::arg("eta") = (int)OFF_ETA, py::arg("spectral") = (int)OFF_SPECTRAL,
+      py::arg("misc") = (int)OFF_MISC,
+      // THESE OFFSETS INDEX THE FULL COMPUTED ROW, so `end` is N_ROW_COLS and not N_ALL_COLS.
+      // It was the latter for one build, which made `end` (1,269, the EMITTED count) smaller
+      // than several of the offsets it is supposed to bound -- anything slicing by this table
+      // would have run off the end of the row or silently produced an empty family.
+      py::arg("end") = (int)N_ROW_COLS);
   // Exported so src/hume/__init__.py can assert them BY NAME against _columns.py, which is where
   // the 182 block names live. See the note on B_KAPPA1.
   mod.attr("BLOCK_KAPPA_COLS") = py::make_tuple((int)B_KAPPA1, (int)B_KAPPA2);
