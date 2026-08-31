@@ -436,7 +436,29 @@ reference on nine of ten sampled cells -- but a column whose reference definitio
 itself has no place in a package whose central claim is bit-exactness. Their GBM R2 of 0.876
 means they were not carrying much unique information either, but that is the secondary reason.
 
-Total: **20 columns, ~138 us/molecule.**
+**The ten Barysz eigenvector columns (see 5.3) -- dropped on the same criterion.** Every one
+is reconstructible from the cheap basis at GBM R2 >= 0.997, four of them at 0.9998:
+
+    VE1_DzZ 0.9998   VE1_Dzv 0.9998   VR3_Dzv 0.9998   VE1_Dzp 0.9997
+    VR1_DzZ 0.9992   VE2_DzZ 0.9990   VE2_Dzv 0.9990   VE2_Dzp 0.9988
+    VR2_DzZ 0.9977   VR2_Dzv 0.9973
+
+They are all `VE*`/`VR*` -- the eigenvector-derived Barysz summaries -- which is the same
+failure mode as the six adjacency `VE/VR_A` columns above, and for the same reason: an
+eigenvector summary of a molecular graph is a branching statistic, and the heteroatom weighting
+that is supposed to distinguish the Barysz matrix from plain topology does not survive it. The
+`SpAbs_*`, `SpDiam_*`, `SpMAD_*` and `SM1_*` members are kept: they sit at 0.95-0.99 and one,
+`SM1_DzZ` at 0.687, carries substantial independent information.
+
+Total: **30 columns**, taking the set from 1,327 survivors to **1,297**. The 20 timed columns
+account for ~138 us/molecule; the ten Barysz columns are eigenvector reductions computed inside
+the shared spectral kernel, so their saving is the inverse-iteration work they no longer force,
+not a separable per-column figure.
+
+Every one of these 30 was dropped **before wiring**, not removed afterwards: the 228 newly
+implemented descriptors live in standalone headers, and a dropped column is simply one that is
+never registered in `bindings.cpp`. The implementations remain in the tree, verified, so a
+reversal is a wiring change rather than a reimplementation.
 
 ### 5.3 Kept, and why the expensive ones survive
 
@@ -465,5 +487,6 @@ The mechanistic reading is consistent: the Barysz matrix is the topological dist
 weighted by atomic number, so its spectral summaries are heteroatom-weighted restatements of
 topology -- and Chi and Kappa, which are in the cheap basis, are topology. The heteroatom
 weighting is what ought to add information, and for the `VE*`/`VR*` eigenvector-derived members
-it evidently does not. This is recorded rather than acted on; it is the strongest remaining
-candidate for a further reduction.
+it evidently does not. Acted on: the ten `VE*`/`VR*` members at GBM R2 >= 0.997 are dropped (listed in 5.2). The 20
+retained Barysz columns are the `SpAbs`/`SpDiam`/`SpMAD`/`SM1` summaries, which are spectral
+*aggregates* rather than eigenvector reductions and are not reconstructible to the same degree.
