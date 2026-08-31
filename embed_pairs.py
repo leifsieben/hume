@@ -107,7 +107,10 @@ def arm_hume(smiles):
         m = Chem.MolFromSmiles(sm)
         if m is not None:
             mols.append(m); keep.append(i)
-    fp, X, _ = hume.featurize_all_from_mols(mols, optional=("qed", "AvgIpc"))
+    # `qed` IS NO LONGER REQUESTED. The column was dropped in the cost triage because it
+    # shipped 100% NaN, so asking for it now buys 69.3 us/mol of structural-alert matching
+    # for a column that is not emitted. AvgIpc is still asked for -- it IS emitted.
+    fp, X, _ = hume.featurize_all_from_mols(mols, optional=("AvgIpc",))
     out = np.full((len(smiles), X.shape[1] + fp.shape[1]), np.nan, np.float32)
     out[keep] = np.hstack([X, fp]).astype(np.float32)
     return out
@@ -349,6 +352,19 @@ def arm_chemprop(smiles):
     return _chemprop_embed(smiles, pretrained=False)
 
 
+#: Arms whose width is a function of a version we control, checked against the cache. An arm
+#: absent here is cached on the pair-set hash alone, which is right for a frozen third-party
+#: model and wrong for anything in this repository.
+def _hume_width():
+    try:
+        import hume
+        return len(hume.ALL_COLUMNS) + 2048        # descriptors + the ECFP block arm_hume adds
+    except Exception:
+        return None
+
+
+_ARM_WIDTH = {"hume": _hume_width()}
+
 ARMS = {"ecfp": arm_ecfp, "r3cfp": arm_r3cfp, "r4cfp": arm_r4cfp, "desc": arm_desc, "hume": arm_hume,
         "notation": arm_notation,
         "chemberta_mlm": arm_chemberta_mlm, "chemberta_mtr": arm_chemberta_mtr,
@@ -382,10 +398,27 @@ def main() -> None:
                 prev = str(np.load(f)["index_sha"])
             except Exception:
                 prev = ""
-            if prev == idx_sha:
+            # THE INDEX SHA IS NOT ENOUGH FOR `hume`, AND THIS SILENTLY SHIPPED A STALE ARM.
+            # It hashes the PAIR SET, so it answers "were these the same molecules?" and not
+            # "was this the same featuriser?". HUME's column set moved from 1,266 to 1,536
+            # during this work and the cache happily reported "index matches", leaving figure A
+            # scoring an embedding built by a different version of the thing the figure is
+            # about. The width is a cheap, honest part of the key: any column added, dropped or
+            # reordered changes it.
+            width = ""
+            try:
+                width = str(np.load(f)["X"].shape[1])
+            except Exception:
+                pass
+            want_width = _ARM_WIDTH.get(name)
+            if prev == idx_sha and (want_width is None or width == str(want_width)):
                 print(f"  {name}: cached (index matches)")
                 continue
-            print(f"  {name}: STALE -- built for a different pair set, recomputing")
+            if prev == idx_sha:
+                print(f"  {name}: STALE -- {width} columns cached, featuriser now emits "
+                      f"{want_width}; recomputing")
+            else:
+                print(f"  {name}: STALE -- built for a different pair set, recomputing")
         t0 = time.time()
         X = ARMS[name](allsmi)
         np.savez_compressed(f, X=X, n_pair=len(order), index_sha=idx_sha)
