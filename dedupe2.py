@@ -53,6 +53,17 @@ OUT = ROOT / "data" / "dedupe2"
 OUT.mkdir(parents=True, exist_ok=True)
 THRESH = 0.99
 MIN_FINITE = 0.50
+#: A column must actually VARY. `mode_share` is the fraction of its finite rows equal to its most
+#: common value; at 0.999 a column differs from its mode on fewer than 20 of 20,000 molecules and
+#: cannot carry signal, however interesting the thing it names.
+MAX_MODE_SHARE = 0.999
+#: Above this, a column is treated as SPARSE-BINARY-LIKE and redundancy is judged on support
+#: overlap rather than correlation. Two columns that are both zero on 99.9% of molecules correlate
+#: at ~0.99 for that reason alone -- which is how `n9Ring`, `fr_isocyan` and `SssssB` all came to
+#: be "absorbed by" one of our autocorrelation columns in the first pass. Jaccard on the non-modal
+#: support asks the question the correlation was standing in for: do they fire on the SAME
+#: molecules? A sparse column paired with a dense one scores near zero, which is correct.
+SPARSE_MODE_SHARE = 0.90
 PER_STRATUM = 4000
 STRATA = [(0, 15), (15, 25), (25, 35), (35, 55), (55, 10**6)]
 CHEMBL = "/Users/lsieben/VSCode/ChemTFM_OLD/data/corpus/chembl_150k.smi"
@@ -185,10 +196,21 @@ def analyse():
 
     fin = np.isfinite(X)
     with np.errstate(all="ignore"): sd = np.nanstd(X, 0)
-    usable = (fin.mean(0) >= MIN_FINITE) & (sd > 0)
+    mode_share = np.zeros(X.shape[1]); mode_val = np.zeros(X.shape[1])
+    for j in range(X.shape[1]):
+        v = X[fin[:, j], j]
+        if v.size == 0: mode_share[j] = 1.0; continue
+        u, ct = np.unique(v, return_counts=True)
+        k = int(np.argmax(ct)); mode_val[j] = u[k]; mode_share[j] = ct[k] / v.size
+    usable = (fin.mean(0) >= MIN_FINITE) & (sd > 0) & (mode_share <= MAX_MODE_SHARE)
     idx = np.where(usable)[0]
-    print(f"usable (>= {MIN_FINITE:.0%} finite, non-constant): {len(idx)} of {X.shape[1]} "
-          f"(dropped {X.shape[1]-len(idx)})")
+    print(f"usable (>= {MIN_FINITE:.0%} finite, non-constant, varies on > "
+          f"{1-MAX_MODE_SHARE:.1%} of rows): {len(idx)} of {X.shape[1]} "
+          f"(dropped {X.shape[1]-len(idx)}; {int(((fin.mean(0) >= MIN_FINITE) & (sd > 0) & (mode_share > MAX_MODE_SHARE)).sum())} "
+          f"for near-zero variance alone)")
+    sparse = mode_share[idx] >= SPARSE_MODE_SHARE
+    print(f"  sparse-binary-like (mode covers >= {SPARSE_MODE_SHARE:.0%}): {int(sparse.sum())} "
+          f"-- judged on support overlap, not correlation")
 
     # rank per column over its OWN finite rows, per stratum; NaN preserved
     Rmin = np.ones((len(idx), len(idx)))
@@ -211,6 +233,24 @@ def analyse():
     np.fill_diagonal(Rmin, 0.0)
     print(f"pairs with MIN-across-strata |rho| >= {THRESH}: {int((Rmin >= THRESH).sum())//2:,}")
 
+    # SUPPORT OVERLAP for any pair involving a sparse column. Jaccard over the rows where the
+    # column differs from its own mode: 1.0 means they fire on exactly the same molecules, which
+    # is what "these are the same descriptor" has to mean for a rare feature.
+    Sup = np.zeros((X.shape[0], len(idx)), np.float64)
+    for k, g in enumerate(idx):
+        Sup[:, k] = (np.isfinite(X[:, g]) & (X[:, g] != mode_val[g])).astype(np.float64)
+    inter = Sup.T @ Sup
+    sz = np.diag(inter).copy()
+    union = sz[:, None] + sz[None, :] - inter
+    with np.errstate(all="ignore"):
+        J = np.where(union > 0, inter / union, 0.0)
+    np.fill_diagonal(J, 0.0)
+    involves_sparse = sparse[:, None] | sparse[None, :]
+    Score = np.where(involves_sparse, J, Rmin)
+    n_sw = int((involves_sparse & (Rmin >= THRESH) & (J < THRESH)).sum()) // 2
+    print(f"  pairs RESCUED by the support rule (rho passed, Jaccard did not): {n_sw:,}")
+    Rmin = Score
+
     cost = column_costs(names, src, z)
     order = sorted(range(len(idx)), key=lambda k: (cost[idx[k]], k))
     kept, cands = [], []
@@ -223,7 +263,8 @@ def analyse():
         else:
             gi, hi = idx[k], idx[hit]
             cands.append({"dropped": names[gi], "kept": names[hi],
-                          "min_rho": float(Rmin[k, hit]),
+                          "score": float(Rmin[k, hit]),
+                          "rule": "support-overlap" if (sparse[k] or sparse[hit]) else "min-rho",
                           "dropped_src": src[gi], "kept_src": src[hi],
                           "dropped_fam": fam[gi], "kept_fam": fam[hi],
                           "same_family": fam[gi] == fam[hi],
@@ -243,16 +284,16 @@ def analyse():
                          "us": float(cost[idx[k]]), "aliases": alias.get(names[idx[k]], [])}
                         for k in kept],
                "candidates": cands}, open(OUT / "dedupe2.json", "w"), indent=1)
-    cross = sorted([c for c in cands if not c["same_family"]], key=lambda c: c["min_rho"])
+    cross = sorted([c for c in cands if not c["same_family"]], key=lambda c: c["score"])
     with open(OUT / "cross_family_review.md", "w") as fh:
         fh.write("# Cross-family dedup candidates, for mechanistic review\n\n")
         fh.write(f"{len(cands)} pairs cleared |rho| >= {THRESH} in EVERY size stratum. "
                  f"{len(cross)} of them pair columns from DIFFERENT families -- those are where a "
                  f"numerical coincidence is most likely to be standing in for a mechanism that is "
                  f"not there. Closest to the threshold first.\n\n")
-        fh.write("| min rho | dropped | family | absorbed by | family |\n|---|---|---|---|---|\n")
+        fh.write("| score | rule | dropped | family | absorbed by | family |\n|---|---|---|---|---|---|\n")
         for c in cross:
-            fh.write(f"| {c['min_rho']:.4f} | `{c['dropped']}` | {c['dropped_fam']} | "
+            fh.write(f"| {c['score']:.4f} | {c['rule']} | `{c['dropped']}` | {c['dropped_fam']} | "
                      f"`{c['kept']}` | {c['kept_fam']} |\n")
     print(f"  -> {OUT/'dedupe2.json'}")
     print(f"  -> {OUT/'cross_family_review.md'}   {len(cross)} cross-family pairs to review")
