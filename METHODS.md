@@ -443,6 +443,11 @@ is reconstructible from the cheap basis at GBM R2 >= 0.997, four of them at 0.99
     VR1_DzZ 0.9992   VE2_DzZ 0.9990   VE2_Dzv 0.9990   VE2_Dzp 0.9988
     VR2_DzZ 0.9977   VR2_Dzv 0.9973
 
+and the two distance-matrix members, found by applying the same bar to the rest of the
+spectral block:
+
+    VE1_D   0.9999   VE2_D   0.9991
+
 They are all `VE*`/`VR*` -- the eigenvector-derived Barysz summaries -- which is the same
 failure mode as the six adjacency `VE/VR_A` columns above, and for the same reason: an
 eigenvector summary of a molecular graph is a branching statistic, and the heteroatom weighting
@@ -450,7 +455,12 @@ that is supposed to distinguish the Barysz matrix from plain topology does not s
 `SpAbs_*`, `SpDiam_*`, `SpMAD_*` and `SM1_*` members are kept: they sit at 0.95-0.99 and one,
 `SM1_DzZ` at 0.687, carries substantial independent information.
 
-Total: **30 columns**, taking the set from 1,327 survivors to **1,297**. The 20 timed columns
+Dropping `VE1_D`/`VE2_D` has a structural payoff beyond the two columns: they were the last
+consumers of the leading **eigenvector**, so the inverse-iteration solve and its `lu_small.h`
+`dgetf2`/`dgetrs` factorisation leave the spectral kernel altogether. Every retained spectral
+column is an eigen*value* aggregate, which the existing `sytd2`/`sterf` path already produces.
+
+Total: **32 columns**, taking the set from 1,327 survivors to **1,295**. The 20 timed columns
 account for ~138 us/molecule; the ten Barysz columns are eigenvector reductions computed inside
 the shared spectral kernel, so their saving is the inverse-iteration work they no longer force,
 not a separable per-column figure.
