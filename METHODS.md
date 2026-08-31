@@ -500,3 +500,158 @@ weighting is what ought to add information, and for the `VE*`/`VR*` eigenvector-
 it evidently does not. Acted on: the ten `VE*`/`VR*` members at GBM R2 >= 0.997 are dropped (listed in 5.2). The 20
 retained Barysz columns are the `SpAbs`/`SpDiam`/`SpMAD`/`SM1` summaries, which are spectral
 *aggregates* rather than eigenvector reductions and are not reconstructible to the same degree.
+
+---
+
+## 6. Cost work after the triage
+
+Section 5 removed columns. This section removes *work*, and it is separated because the two
+have different consequences: a dropped column changes what the package answers, an optimisation
+should not. Where an optimisation does change an answer, the size of the change is stated.
+
+Baseline and result, both measured at the corpus median stratum (25-35 heavy atoms, 1,200
+molecules, min of 5, quiet machine):
+
+| stage | before | after |
+|---|---:|---:|
+| SMILES parsing (RDKit) | 84.0 | 78.3 |
+| boundary extraction (python) | 215.9 | **70.2** |
+| C++ descriptor compute | 464.4 | 434.6 |
+| ECFP + overhead | 50.1 | 40.2 |
+| **end-to-end** | **814.4** | **623.3** |
+
+**-23%, with 1,374 columns still emitted.** None of the 228 newly implemented descriptors is
+wired yet, so this is the shipping set getting cheaper, not a smaller set.
+
+### 6.1 The hydrogen-added pickle, deleted
+
+The largest single win, and it was hiding in the boundary rather than in the arithmetic.
+
+`extract_pickles` built a *second* molecule per input: `Chem.AddHs`, a second
+`ComputeGasteigerCharges`, a second `ToBinary`. Measured at 16.5 + 15.0 + 22.3 = **53.8 us/mol,
+34% of the whole python boundary** -- and it existed for the Autocorrelation family alone.
+
+All of it is derivable from the heavy molecule. Verified BEFORE implementing, over 3,677
+molecules including `cpp/hard.smi`:
+
+* `AddHs` appends hydrogens *after* the heavy atoms, in heavy-atom order, nH each, and leaves
+  every atom's `GetTotalNumHs()` at 0 -- **0 mismatches** in atomic number, formal charge, nH or
+  the bond list.
+* a heavy atom's mordred `c` on the AddHs molecule is its own `_GasteigerCharge` (its
+  `_GasteigerHCharge` is 0 once hydrogens are explicit), and each hydrogen's is the parent's
+  `_GasteigerHCharge` split over its hydrogen count -- worst difference **1.67e-16**.
+
+`molpickle.h` now splits the two halves of mordred's getter apart as `ac_own` / `ac_h`;
+`bindings.cpp` builds the graph and feeds both Autocorrelation and constit's RNCG/RPCG.
+Removing the second pickle also removes its C++ parse, so the boundary fell 215.9 -> 70.2, more
+than the 53.8 the python steps alone accounted for.
+
+**Cost in exactness: 54 of 1,374 columns move by at most 2.665e-15** -- the 52 charge-weighted
+autocorrelation columns plus RNCG and RPCG. The NaN pattern is identical and the other 1,320
+columns are bit-unchanged. The difference is the division `qh/nH` against RDKit's own
+per-hydrogen charge: floating point, not chemistry.
+
+A side effect worth recording: Autocorrelation's measured cost fell from 23.1 to 6.8 us/mol,
+because most of what leave-one-out attributed to it was the second pickle's parse. Its true
+cost was 76.9 us/mol for 648 columns, not 23.1.
+
+### 6.2 SPS moved to C++, and the stereo boundary with it
+
+`_potential_stereo` -- RDKit's new perception, driven from python -- existed for one column.
+`src/hume_core/sps.h` ports the perception itself (`FindStereo.cpp`'s `runCleanup`, `new_canon`'s
+`rankFragmentAtoms`, `hanoiSort`, and the legacy CIP ranking) and is bit-identical to
+`Chem.SpacialScore.SPS` on 6,600 corpus molecules through the shipping path. `extract_pickles`
+now runs with `stereo=False`: 213.7 -> 156.5 us/mol, before 6.1 took it to 70.2.
+
+`constit.h` keeps the column's slot and `Inputs::stereoAtom` / `stereoBond` are always null.
+The `stereo_a` / `stereo_b` arguments remain in the C++ signature, passed empty.
+
+One wiring bug is worth recording because of how it presented. The boundary's `bond_s` is
+`_extract.py`'s `_EZ` encoding (E/TRANS -> +1, Z/CIS -> -1, none -> 0); `sps.h` wants RDKit's raw
+`BondStereo` ordinal (NONE=0, ANY=1, Z=2, E=3). Passing it through unconverted read +1 as
+STEREOANY, and showed up as **one molecule in 4,000** with SPS off by 1.256 -- almost always
+right, because most bonds carry no stereo.
+
+### 6.3 The E-state accumulation order
+
+`rdkit/Chem/EState/EState.py` accumulates the pair deltas into a **zero** vector and adds the
+intrinsic state at the end (`res = accum + Is`); `hume_blocks.h`'s `estate_from` seeded
+`S[i] = I[i]` and accumulated into it. Algebraically identical, different rounding, and 40
+columns read that vector -- `MaxEStateIndex` and friends plus the 79 `S<t>` typer sums.
+
+With RDKit's order, over 1,800 corpus molecules:
+
+    MaxEStateIndex      252/800 -> 1800/1800 bit-identical
+    MinEStateIndex      142/800 -> 1800/1800
+    MaxAbsEStateIndex   252/800 -> 1800/1800
+    MinAbsEStateIndex    61/800 -> 1800/1800
+
+This is a pure accuracy gain, not a cost change. It is recorded here because it was found,
+withdrawn on a bad measurement, and reinstated: the withdrawal was based on a probe run against
+a **stale installed binary**. `cmake --build` writes into `build/`; only `uv pip install -e .`
+copies the module into the venv. Any timing or exactness claim in this repo must be made after
+the install step, not after the build step.
+
+### 6.4 Spectral: one Barysz spectrum, no eigenvector
+
+Covered in 5.2/5.3 as column drops; the work removed is the point here. 264.2 -> 193.5 us/mol
+at the median molecule, for 29 of 65 columns. Five Barysz eigensolves collapse to one because
+`SpAbs`/`SpDiam`/`SpMAD` are 0.982-0.999 correlated across the six property weightings, and the
+inverse-iteration solve leaves entirely because nothing consumes the leading eigenvector.
+
+### 6.5 BCUT: an accepted approximation, not yet implemented
+
+BCUT is the single most expensive item anywhere in the package -- **163.3 us/mol for 20 columns**,
+78% of what remains in the spectral family. It is also the one expensive family that provably
+earns its place: median GBM R2 0.656 against the cheap basis with **nothing above 0.97**, and
+pairwise |r| between its weightings of 0.14-0.18 (min 0.003), against 0.98-0.99 for Barysz.
+Dropping it is not on the table; making it cheaper is.
+
+The Burden matrix decomposes as `B = 0.001*J + S + D` -- rank-1 plus sparse plus diagonal --
+because the 0.001 background is dense and uniform and only the bond entries and the diagonal
+depart from it. Confirmed on a 32-atom molecule: exactly `2 x nbonds` off-diagonal entries
+differ from the background. A matvec is then `O(n + nb)` rather than `O(n^2)`: `Jv = (sum v) * 1`.
+That is **9.8x fewer operations per matvec at n=32**, which is what makes Lanczos worth
+revisiting -- the earlier negative result used dense matvecs and was measuring the wrong thing.
+
+**It is not bit-exact, and that is a deliberate, authorised departure.** Measured against
+`eigvalsh`:
+
+| n | iterations | \|d lambda_lo\| | \|d lambda_hi\| | bit-identical |
+|---:|---:|---:|---:|---|
+| 28 | 28 | 1.3e-15 | 3.8e-15 | no |
+| 64 | 20 | 1.2e-13 | **4.5e-07** | no |
+| 64 | 40 | 0.0 | 1.8e-15 | no |
+
+Converged, it agrees to ~1e-15; under-iterated at large n it can be as far off as **4.5e-07**.
+Every other divergence in this document is from an **ill-posed** definition, where the reference
+implementation does not answer a function of the molecule. This one is different: the definition
+is well-posed and we would be trading accuracy for speed. That trade was put to the project owner
+explicitly and accepted at the 1e-7 level. It should ship behind the existing `BCUT_SOLVER`
+switch, with full reorthogonalisation and an iteration count set from n rather than fixed, and
+the realistic gain is 3-6x on 163 us rather than the 9.8x the matvec count suggests.
+
+### 6.6 What is slowest now
+
+C++ compute is 434.6 us of the 623.3 (70%). Leave-one-out attribution within it:
+
+| family | us/mol | share of C++ |
+|---|---:|---:|
+| blocks (mandatory) | 115.0 | 26.4% |
+| chi | 46.7 | 10.7% |
+| infocontent | 45.1 | 10.4% |
+| constit | 19.3 | 4.4% |
+| pathcount | 8.8 | 2.0% |
+| autocorr | 6.8 | 1.6% |
+
+Leave-one-out sums to well under the total because the families share work; the residual is that
+shared part, principally the distance matrix and the ring perception.
+
+Two observations for whatever is done next. `blocks` is **O(n^2)-dominated**, not O(n^3):
+across the five strata us/n^2 is flat at 143-259 while us/n and us/n^3 each vary about 9x, so
+the distance matrix and the per-pair passes over it dominate, and the eigensolves do not -- a
+full dense eigensolve at n=29 is ~18 us against blocks' 128. And `chi` and `infocontent` are each
+about **half reconstructible** from the eleven cheap families (20 of 40 and 21 of 40 sampled
+columns above GBM R2 0.97, against 13 of 40 for `blocks`), so they are the next candidates for
+the section 5 treatment -- with the caveat that neither cuts proportionally, because both
+enumerate once and read many columns off the result.
