@@ -44,6 +44,7 @@
 #include "molpickle.h"
 #include "pathcount.h"
 #include "rdkcore.h"
+#include <thread>
 #include "sps.h"
 #include "counts_ext.h"
 #include "estate_ext.h"
@@ -1312,7 +1313,7 @@ static unsigned optional_mask(const py::object &optional) {
 static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff, ArrI ring_ptr,
                                             ArrI ring_at, py::sequence h_pickles, ArrI stereo_a,
                                             ArrI stereo_b, py::object families,
-                                            py::object optional) {
+                                            py::object optional, int n_threads) {
   Blobs b = borrow(pickles);
   // `h_pickles` IS ACCEPTED AND IGNORED. It used to carry Chem.AddHs + a second
   // ComputeGasteigerCharges + a second ToBinary, 53.8 us/mol for one family; all_row() now
@@ -1364,16 +1365,45 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
           " atoms / " + std::to_string(f.bond_off[nm]) + " bonds)");
     const int *SA = have_stereo ? stereo_a.data() : nullptr;
     const int *SB = have_stereo ? stereo_b.data() : nullptr;
-    AllWork W;
-    for (ssize_t k = 0; k < nm; k++) {
-      const int r0 = RM[k], nr = RM[k + 1] - r0;
-      all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
-              f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
-              f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
-              need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
-              need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
-              f.chg_ok[k], SA, SB, fams, opts,
-              O + (ssize_t)k * N_ALL_COLS);
+    // THE ROW LOOP IS EMBARRASSINGLY PARALLEL AND WAS RUNNING ON ONE CORE.
+    // Every iteration reads shared const arrays and writes its own disjoint N_ALL_COLS slice of
+    // the output; the only mutable state is AllWork, so one per thread is the whole change. The
+    // scratch that lives at namespace scope in hume_blocks.h is already `static thread_local`,
+    // which is what makes this safe rather than merely plausible -- somebody anticipated this.
+    //
+    // The GIL is already released around this block, so python threads are not involved.
+    // `threads` <= 0 means "one per hardware thread"; 1 restores the serial loop exactly.
+    auto worker = [&](ssize_t lo, ssize_t hi) {
+      AllWork W;
+      for (ssize_t k = lo; k < hi; k++) {
+        const int r0 = RM[k], nr = RM[k + 1] - r0;
+        all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
+                f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
+                f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
+                need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
+                need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
+                f.chg_ok[k], SA, SB, fams, opts,
+                O + (ssize_t)k * N_ALL_COLS);
+      }
+    };
+    int nt = n_threads;
+    if (nt <= 0) nt = (int)std::thread::hardware_concurrency();
+    if (nt < 1) nt = 1;
+    if (nt > nm) nt = (int)nm;
+    if (nt <= 1 || nm < 8) {
+      worker(0, nm);
+    } else {
+      // Contiguous blocks rather than a stride: molecules of similar size sit together in a
+      // typical batch, so blocks balance about as well as interleaving and keep each thread's
+      // output writes in its own cache lines.
+      std::vector<std::thread> ts;
+      ts.reserve(nt);
+      const ssize_t chunk = (nm + nt - 1) / nt;
+      for (int t = 0; t < nt; t++) {
+        const ssize_t lo = (ssize_t)t * chunk, hi = std::min(nm, lo + chunk);
+        if (lo < hi) ts.emplace_back(worker, lo, hi);
+      }
+      for (auto &th : ts) th.join();
     }
   }
   return out;
@@ -1524,7 +1554,7 @@ PYBIND11_MODULE(_core, mod) {
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"), py::arg("stereo_a"),
           py::arg("stereo_b"), py::arg("families") = py::none(),
-          py::arg("optional") = py::none(),
+          py::arg("optional") = py::none(), py::arg("threads") = 0,
           "Every natively computed column for a batch of ToBinary() blobs, as "
           "(n_mol, N_ALL_COLS). Pickle-only: RingCount needs the SSSR ring lists, which are in "
           "the pickle and not in the extract() boundary arrays. `stereo_a` / `stereo_b` are "
