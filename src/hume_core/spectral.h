@@ -451,7 +451,11 @@ inline void eval_matrix(const Mol &m, const double *M, bool want_vec, Attrs &a, 
   a.spmad = topomisc::npPairwiseSum(S.tmp.data(), n) / (double)n;  // SpAD / A
 
   if (!want_vec) return;
+#ifdef SPECTRAL_NO_EIGVEC
+  return;   // VE*/VR* dropped: the leading eigenvector has no consumer
+#else
   if (!leading_vector(M, n, a.spmax, S.vec, S.B, S.ipiv)) return;
+#endif
   const double *v = S.vec.data();
 
   for (int i = 0; i < n; i++) S.tmp[i] = std::fabs(v[i]);
