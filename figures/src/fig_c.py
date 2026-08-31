@@ -139,6 +139,9 @@ def main() -> None:
     _HW = _cost_hardware(d["cost"])
     # how far above the runner-up a point must sit before the axis is cut for it
     TOP_GAP = 2.0
+    # empty axis above the cut, as a fraction of the plotted range, so the
+    # out-of-range marker and its value are not crammed against the frame
+    CUT_HEADROOM = 0.34
     tasks, arm_keys = d["tasks"], A.order(d["arms"])
     rec = {(r["task"], r["arm"]): r for r in d["records"]}
 
@@ -213,8 +216,15 @@ def main() -> None:
         if len(tops) >= 2 and tops[1][0] > 0 and tops[0][0] > TOP_GAP * tops[1][0]:
             cut_i = tops[0][1]
             lo = min(y - e for y, e in zip(ys, es))
-            cut_top = tops[1][0] + 0.18 * (tops[1][0] - lo)
-            ax.set_ylim(lo - 0.18 * (tops[1][0] - lo), cut_top)
+            span = tops[1][0] - lo
+            # THE CUT AND THE TOP OF THE AXIS ARE NOT THE SAME PLACE (Leif). Drawing the
+            # out-of-range marker AT the axis top pinned it against the frame with its value
+            # label wedged between the triangle and the panel title. The data is cut at
+            # `cut_top`; the axis then continues HEADROOM above it, which is empty space the
+            # triangle and its number sit in. Nothing is plotted in that band, so it costs
+            # nothing to read and buys the marker somewhere to be.
+            cut_top = tops[1][0] + 0.18 * span
+            ax.set_ylim(lo - 0.18 * span, cut_top + CUT_HEADROOM * span)
 
         for j, (x, y, e, a) in enumerate(zip(xs, ys, es, ks)):
             if j == cut_i:
@@ -252,9 +262,12 @@ def main() -> None:
                         # dissolved into the panel background.
                         markeredgecolor=STYLE["ink"], markeredgewidth=0.7)
         if cut_i is not None:
-            # two short diagonals on the left spine: the conventional "this axis is cut" mark
-            for dy in (-0.012, 0.012):
-                ax.plot([0, 0.022], [1.0 + dy - 0.012, 1.0 + dy + 0.012],
+            # two short diagonals on the left spine AT THE CUT, not at the top of the frame --
+            # the mark says "the axis is discontinuous here", and here is the cut.
+            y0, y1 = ax.get_ylim()
+            fy = (cut_top - y0) / (y1 - y0)
+            for dy in (-0.013, 0.013):
+                ax.plot([0, 0.022], [fy + dy - 0.013, fy + dy + 0.013],
                         transform=ax.transAxes, color=STYLE["ink"], lw=0.9,
                         clip_on=False, zorder=7)
         label_sets.append(list(zip(xs, ys, ks)))
