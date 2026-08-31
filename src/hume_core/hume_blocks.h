@@ -2159,7 +2159,21 @@ double LANCZOS_TOL = 1e-10;
 // the two algorithms agreed. This one decides only who ATTEMPTS the cheaper route; acceptance
 // is per molecule, against three independent checks on the answer itself. Moving this number
 // changes how long the corpus takes, not what is in it. 0 disables the path entirely.
-int BCUT_LANCZOS_MIN_N = 71;
+// MEASURED OFF. This was 71 -- molecules of 71+ heavy atoms tried the Lanczos route first.
+// On this machine that is a PESSIMISATION, and a large one. blocks(), min of 6 over 600
+// molecules per stratum:
+//
+//     stratum        min_n = 71   min_n = 0
+//     25-35             126.4       121.9
+//     35-55             202.6       206.2
+//     55+               952.9       573.8      <-- 40% slower with the Lanczos path on
+//
+// The certificate is doing its job -- only the 8 BCUT2D columns move at all, by at most
+// 1.3e-14 absolute and 8.8e-14 relative -- so this is purely a speed decision, and turning it
+// off also returns the dense values, which are the reference the rest of the package is
+// verified against. It is left as a knob rather than deleted because the tuning is
+// hardware-dependent: whatever machine chose 71 may well have been right about that machine.
+int BCUT_LANCZOS_MIN_N = 0;
 long long BCUT_LANCZOS_TRIED = 0, BCUT_LANCZOS_FELL_BACK = 0;
 
 static void bcut2d(const Mol &m, BcutWork &W, double *out) {
