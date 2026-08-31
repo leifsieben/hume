@@ -116,6 +116,13 @@ floor moves — but it is gated on two things outside your control: **pybind11 s
 C API**, and **RDKit publishing a wheel for it**. Until RDKit does, a `mol-hume` wheel for that
 version installs and then cannot import anything useful, so there is no point shipping first.
 
+**And a third thing: cibuildwheel has to know the interpreter exists.** This is the trap.
+`build = "... cp314-*"` on cibuildwheel 2.21.3 produced cp311, cp312 and cp313, exited 0, and
+showed a green tick — it does not error when asked for an interpreter it has never heard of, it
+just quietly builds fewer wheels. That is why `wheels.yml` has a `verify` job asserting the full
+product of platform × interpreter, and why `publish` depends on it. **Bump the cibuildwheel
+action version when adding an interpreter**, and trust the assertion rather than the tick.
+
 Dropping an old version is the same edit. `requires-python = ">=3.11"` today.
 
 ---

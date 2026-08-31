@@ -49,8 +49,13 @@ is ready, that is what step 1's "pending publisher" does.
 
 3. **Dry run the whole matrix**, without publishing:
    Actions → wheels → Run workflow → `publish_to: none`. Every wheel is tested on the machine
-   that built it, and the sdist job builds the sdist back into a wheel and runs the suite
-   against it.
+   that built it; the sdist job builds the sdist back into a wheel and runs the suite against
+   it; and the `verify` job asserts that every platform × interpreter combination is actually
+   present. That last one exists because cibuildwheel silently builds fewer wheels when it does
+   not recognise an interpreter — the first full run produced no cp314 and reported success.
+
+   The one wheel that is built but **not** tested is macOS x86_64: it is cross-compiled from the
+   arm64 runner and cannot be executed there. `CIBW_TEST_SKIP` names it explicitly.
 
 4. **TestPyPI.** Actions → wheels → Run workflow → `publish_to: testpypi`. Then install it
    somewhere clean and check it actually works:
