@@ -386,11 +386,14 @@ def main(paths):
     # NO HATCH ENTRY ANY MORE. It meant "this bar is a CPU number standing in for a GPU one",
     # which only existed because the four-panel version drew every arm on both budgets. Each arm
     # now appears once, on the hardware it is deployed on, so nothing stands in for anything.
-    # ncol=2 (Leif). At four columns the legend row was WIDER THAN THE PANELS and
+    # ncol=5, i.e. TWO ROWS for nine arms (Leif). Matplotlib's ncol counts COLUMNS, so a
+    # two-row legend is ncol=ceil(n/2) and not ncol=2 -- ncol=2 gives two columns and
+    # five rows, which is the tall narrow block this replaced. At four columns the
+    # legend row was WIDER THAN THE PANELS and
     # savefig("tight")
     # grew the canvas to it, so the plate rendered 6% past the A4 text block and LaTeX would
     # scale every font on it down to fit.
-    fig.legend(handles=handles, loc="lower center", ncol=2, frameon=False,
+    fig.legend(handles=handles, loc="lower center", ncol=5, frameon=False,
                fontsize=FS["legend"], bbox_to_anchor=(0.5, -0.16), handletextpad=0.6,
                columnspacing=1.4, labelspacing=0.35)
     fig.tight_layout()
