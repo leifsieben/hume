@@ -380,7 +380,50 @@ DATASETS = ["ames", "aqsoldb", "bioavail", "cycpept_pampa", "cyp2d6_inh", "esol"
             "hia", "ld50_zhu", "lipophilicity", "pb_ames", "pb_bbb", "pb_cyp2c9", "pb_cyp2d6",
             "pb_cyp3a4", "pb_hum_mic_cl", "pb_logd", "pb_mou_mic_cl", "pb_ppb",
             "pb_rat_mic_cl", "pb_water_sol", "photoswitch", "qm8", "qm9", "qm9_gap",
-            "qmugs_gap", "rascore", "vdss_lombardo"]
+            "qmugs_gap", "rascore", "vdss_lombardo",
+    # SEVEN MORE CLASSIFICATION SETS. The grid had six, two of them under 700 molecules, and the
+    # one place a learned representation showed a consistent edge over both HUME and the
+    # descriptor union was classification -- CheMeleon beat both on bioavail, hia and pb_ames and
+    # nowhere else. Six datasets is a thin basis for that conclusion in either direction.
+    #
+    # All seven were checked for MOLECULE OVERLAP against what is already in the grid before
+    # being added; the largest is herg at 13.4% and the rest are under 2%. bbbp was rejected at
+    # 78.2% overlap with pb_bbb, clintox at 93.6% positives, cbs at 0.4% positives, and litpcba
+    # at 2.8M molecules.
+    "bace",            #  1,513, 45.7% positive -- BACE-1 inhibition (local loader)
+    "hiv",             # 41,127,  3.5% -- HIV replication (local loader)
+    "herg",            #    655, 68.9% -- hERG cardiotoxicity
+    "wong_hepg2",      # 39,101,  8.5% -- human liver cytotoxicity
+    "wong_imr90",      # 39,074,  8.7% -- human fibroblast
+    "wong_hskmc",      # 39,115,  3.8% -- skeletal muscle
+    "wong_saureus",    # 39,121,  1.3% -- antibacterial
+]
+
+
+#: DATASETS THAT LIVE IN THE LAKE BUT HAVE NO SPEC IN IT.
+#:
+#: `eval/dev/moleculenet_legacy/` holds the MoleculeNet classification benchmarks as plain CSVs,
+#: and chempfn's spec table does not register bace or hiv at all -- the four it does register
+#: there (tox21, sider, toxcast, muv) point `relpath` at a FILE while its loader globs
+#: `relpath/*.csv`, so they resolve to zero files. That is a bug in a repo that is not ours and
+#: we do not touch it; we read the two single-label files we want, ourselves, here.
+#:
+#: bbbp is deliberately ABSENT: 78.2% of its molecules are already in pb_bbb, so adding it would
+#: double-count blood-brain barrier and quietly reweight the classification panel. clintox is
+#: absent too, at 93.6% positive -- about 19 negatives per test fold, where AUROC is mostly noise.
+LOCAL_DATASETS = {
+    "bace": dict(relpath="eval/dev/moleculenet_legacy/bace.csv",
+                 smiles_col="mol", label_col="Class", task="binary"),
+    "hiv":  dict(relpath="eval/dev/moleculenet_legacy/hiv.csv",
+                 smiles_col="smiles", label_col="HIV_active", task="binary"),
+}
+
+
+class _LocalSpec:
+    """Enough of chempfn's DatasetSpec for the two fields the runner reads off it."""
+
+    def __init__(self, name, task):
+        self.name, self.task, self.role = name, task, "LOCAL"
 
 
 def load_ds(name):
@@ -398,6 +441,29 @@ def load_ds(name):
     stays theirs and only the byte-level read is ours.
     """
     import csv as _csv
+    if name in LOCAL_DATASETS:
+        from chempfn.data.lake import lake_root
+        import os as _os
+        cfg = LOCAL_DATASETS[name]
+        path = _os.path.join(str(lake_root()), cfg["relpath"])
+        smis, ys = [], []
+        with open(path, newline="", encoding="utf-8", errors="replace") as fh:
+            for row in _csv.DictReader(fh):
+                sm, lab = row.get(cfg["smiles_col"]), row.get(cfg["label_col"])
+                if not sm or lab in (None, "", "None"):
+                    continue
+                try:
+                    v = float(lab)
+                except ValueError:
+                    continue
+                smis.append(sm); ys.append(v)
+        if not smis:
+            raise RuntimeError(
+                f"{name}: no usable rows from {path} using smiles_col="
+                f"{cfg['smiles_col']!r} label_col={cfg['label_col']!r}; the file's header is "
+                f"the thing to check")
+        return {"name": name, "smiles": smis, "y": ys,
+                "task": LOCAL_DATASETS[name]["task"]}
     from chempfn.data.lake import spec, _csv_files
     sp = spec(name)
     smis, ys = [], []
@@ -415,6 +481,26 @@ def load_ds(name):
     if not smis:
         raise RuntimeError(f"{name}: no usable rows from {[str(x) for x in _csv_files(sp)]}")
     return {"name": name, "smiles": smis, "y": ys, "task": sp.task}
+
+
+#: DATASETS WE USE DESPITE A NON-DEV ROLE, NAMED ONE BY ONE.
+#:
+#: The DEV/LOCKED split is CHEMPFN'S held-out discipline, not ours -- it exists to stop that
+#: project's model selection from touching its own test set. HUME is a featurizer benchmark: it
+#: fits a fresh XGBoost per fold per dataset and selects nothing across them, so a dataset being
+#: LOCKED over there says nothing about whether measuring a representation on it here is sound.
+#: (Leif, asked directly: "locked doesn't matter for us, that's for the chempfn project".)
+#:
+#: The guard stays for everything NOT on this list. A blanket `role != DEV` bypass would also
+#: silently pull in TEST and RETIRED datasets -- `krishnan` is retired with a data-quality note
+#: attached -- and the point of an allowlist is that each entry was looked at.
+ALLOW_NON_DEV = {
+    "herg",            #    655, 68.9% positive -- hERG cardiotoxicity, standard endpoint
+    "wong_hepg2",      # 39,101,  8.5% -- human liver cytotoxicity
+    "wong_imr90",      # 39,074,  8.7% -- human fibroblast
+    "wong_hskmc",      # 39,115,  3.8% -- skeletal muscle
+    "wong_saureus",    # 39,121,  1.3% -- antibacterial
+}
 
 
 def run(arm_names, datasets, out_path, folds_k=5, seed=0):
@@ -458,9 +544,10 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
 
     records, t0 = [], time.time()
     for ds in datasets:
-        sp = spec(ds)
-        if sp.role != "DEV":
-            print(f"  SKIP {ds}: role {sp.role}, not DEV -- refusing to touch it", flush=True)
+        sp = (_LocalSpec(ds, LOCAL_DATASETS[ds]["task"]) if ds in LOCAL_DATASETS
+              else spec(ds))
+        if sp.role not in ("DEV", "LOCAL") and ds not in ALLOW_NON_DEV:
+            print(f"  SKIP {ds}: role {sp.role}, not DEV and not in ALLOW_NON_DEV", flush=True)
             continue
         d = load_ds(ds)
         smis, y = list(d["smiles"]), np.asarray(d["y"], dtype=np.float64)

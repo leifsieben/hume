@@ -43,7 +43,8 @@ TASKS = {
                                 "vdss_lombardo", "ld50_zhu", "cycpept_pampa",
                                 "pb_cyp2c9", "pb_cyp2d6", "pb_cyp3a4"]),
     "classif":  ("Classification", ["ames", "pb_ames", "cyp2d6_inh", "bioavail", "hia",
-                                    "pb_bbb"]),
+                                    "pb_bbb", "bace", "hiv", "herg", "wong_hepg2",
+                                    "wong_imr90", "wong_hskmc", "wong_saureus"]),
     "quantum":  ("Quantum energy", ["qm8", "qm9", "qm9_gap", "qmugs_gap"]),
 }
 # GROUPED BY METRIC FIRST, endpoint second, and the assertion below enforces it. The obvious
