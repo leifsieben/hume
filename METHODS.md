@@ -599,37 +599,56 @@ at the median molecule, for 29 of 65 columns. Five Barysz eigensolves collapse t
 `SpAbs`/`SpDiam`/`SpMAD` are 0.982-0.999 correlated across the six property weightings, and the
 inverse-iteration solve leaves entirely because nothing consumes the leading eigenvector.
 
-### 6.5 BCUT: an accepted approximation, not yet implemented
+### 6.5 BCUT: the approximation was authorised, implemented, measured, and rejected
 
-BCUT is the single most expensive item anywhere in the package -- **163.3 us/mol for 20 columns**,
-78% of what remains in the spectral family. It is also the one expensive family that provably
-earns its place: median GBM R2 0.656 against the cheap basis with **nothing above 0.97**, and
-pairwise |r| between its weightings of 0.14-0.18 (min 0.003), against 0.98-0.99 for Barysz.
-Dropping it is not on the table; making it cheaper is.
+BCUT is the single most expensive item anywhere in the package -- **163.3 us/mol for 20
+columns**, 78% of what remains in the spectral family. It is also the one expensive family that
+provably earns its place: median GBM R2 0.656 against the cheap basis with **nothing above
+0.97**, and pairwise |r| between its weightings of 0.14-0.18 (min 0.003), against 0.98-0.99 for
+Barysz. Dropping it was never on the table; making it cheaper was.
 
-The Burden matrix decomposes as `B = 0.001*J + S + D` -- rank-1 plus sparse plus diagonal --
-because the 0.001 background is dense and uniform and only the bond entries and the diagonal
-depart from it. Confirmed on a 32-atom molecule: exactly `2 x nbonds` off-diagonal entries
-differ from the background. A matvec is then `O(n + nb)` rather than `O(n^2)`: `Jv = (sum v) * 1`.
-That is **9.8x fewer operations per matvec at n=32**, which is what makes Lanczos worth
-revisiting -- the earlier negative result used dense matvecs and was measuring the wrong thing.
+The proposal was to exploit the Burden matrix's structure. It is dense only because its
+background is a uniform 0.001, and a uniform background is rank one:
 
-**It is not bit-exact, and that is a deliberate, authorised departure.** Measured against
-`eigvalsh`:
+    B = 0.001 * J  +  S  +  D        J all-ones, S the bond corrections, D the property diagonal
 
-| n | iterations | \|d lambda_lo\| | \|d lambda_hi\| | bit-identical |
-|---:|---:|---:|---:|---|
-| 28 | 28 | 1.3e-15 | 3.8e-15 | no |
-| 64 | 20 | 1.2e-13 | **4.5e-07** | no |
-| 64 | 40 | 0.0 | 1.8e-15 | no |
+so a matvec needs no matrix: `(Jx)_i = sum(x)` is one reduction, `S` has `2*nb` non-zeros, `D`
+is diagonal. **9.8x fewer operations per product at n=32, measured.** On that basis the earlier
+negative Lanczos result recorded in this repository was judged to have used dense matvecs and to
+have been measuring the wrong thing, and the trade -- a well-posed definition approximated for
+speed, unlike every other divergence in this document -- was put to the project owner and
+authorised at the 1e-7 level.
 
-Converged, it agrees to ~1e-15; under-iterated at large n it can be as far off as **4.5e-07**.
-Every other divergence in this document is from an **ill-posed** definition, where the reference
-implementation does not answer a function of the molecule. This one is different: the definition
-is well-posed and we would be trading accuracy for speed. That trade was put to the project owner
-explicitly and accepted at the 1e-7 level. It should ship behind the existing `BCUT_SOLVER`
-switch, with full reorthogonalisation and an iteration count set from n rather than fixed, and
-the realistic gain is 3-6x on 163 us rather than the 9.8x the matvec count suggests.
+**It was then implemented and it does not work.** Measured over the 20,000-molecule corpus,
+median us/mol:
+
+| stratum | dense sytd2/sterf | structured Lanczos | speedup |
+|---|---:|---:|---:|
+| 0-15 | 20.8 | 29.3 | 0.71x |
+| 15-25 | 93.6 | 157.2 | 0.60x |
+| 25-35 | 172.0 | 323.5 | 0.53x |
+| 35-55 | 287.2 | 628.2 | 0.46x |
+| 55+ | 856.8 | 2331.0 | 0.37x |
+
+Slower at every size, and **getting worse with size** -- the opposite of the prediction. The
+accuracy does not redeem it either: 99.44% of BCUT cells land within 1e-9 relative, but the
+worst is **6.06e-01**, a 60% error on some molecules, far outside the authorised 1e-7.
+
+The reason is that **the matvec was never the cost.** Full reorthogonalisation is, at
+`O(n*k^2)`, and it cannot be dropped -- without it the basis loses orthogonality and Lanczos
+returns spurious copies of the extremal eigenvalue, which is a wrong BCUT with no symptom. For
+extremal eigenvalues `k` must approach `n` at molecular sizes, so the reorthogonalisation costs
+as much as the tridiagonalisation it was meant to replace, with worse constants than a tuned
+`sytd2`/`sterf`. The 9.8x figure was real and irrelevant.
+
+The implementation is kept behind `-DBCUT_LANCZOS` with this result written above it, so the
+next person to have the idea can re-run it in one command rather than re-deriving it. **BCUT
+keeps the dense path and its 163 us/mol stands.**
+
+This is the fifth time in this work that a conclusion already recorded in the codebase was
+re-derived and found to have been right the first time -- after the `BCUT_SOLVER` switch, the
+`-ffp-contract` question, `vsa_bins.h`'s second E-state copy, and `eigen_small.h` itself. The
+pattern is worth naming: grep for the decision before measuring it.
 
 ### 6.6 What is slowest now
 

@@ -178,6 +178,7 @@ struct Mol {
 //! molecule, which is the trap BcutWork and hume_eig::Work both document.
 struct Scratch {
   std::vector<double> M, B, prop, ev, tmp, vec, fw;
+  std::vector<double> lz_q, lz_a, lz_b, lz_z, lz_d, lz_e, lz_diag;  // BCUT_LANCZOS only
   std::vector<int> ipiv, q, comp;
   hume_eig::Work eig;
   void ensure(int n) {
@@ -351,6 +352,105 @@ inline bool spectrum(const double *M, int n, std::vector<double> &ev, hume_eig::
 //! function-local static inside an inline function, which is one object per program without
 //! putting a global in a header. verify_spectral.py prints it.
 inline long long &shift_retries() { static long long n = 0; return n; }
+
+
+// ---------------------------------------------------------------------------------------------
+// BCUT VIA STRUCTURED LANCZOS -- IMPLEMENTED, MEASURED, AND REJECTED. Kept behind
+// -DBCUT_LANCZOS so the sixth person to have this idea can re-run it in one command instead of
+// re-deriving it. It is SLOWER THAN THE DENSE PATH AT EVERY MOLECULAR SIZE and less accurate.
+//
+// The idea was sound on paper. The Burden matrix is dense only because its background is a
+// uniform 0.001, and a uniform background is rank one:
+//
+//     B = 0.001 * J  +  S  +  D          J all-ones, S the bond corrections, D the property
+//
+// so a matvec needs no matrix at all -- (Jx)_i = sum(x) is one reduction, S has 2*nb non-zeros,
+// D is diagonal. That is 9.8x fewer operations per product at n=32, measured. The conclusion
+// drawn from that -- that the earlier negative Lanczos result in this repository had used dense
+// matvecs and was measuring the wrong thing -- WAS WRONG.
+//
+// THE MATVEC IS NOT THE COST. Full reorthogonalisation is, at O(n*k^2), and it cannot be
+// dropped: without it the basis loses orthogonality and Lanczos returns spurious copies of the
+// extremal eigenvalue, which is a wrong BCUT with no symptom. For extremal eigenvalues k has to
+// approach n at these sizes, so the reorthogonalisation costs as much as the tridiagonalisation
+// it was supposed to replace, with worse constants than a tuned sytd2/sterf.
+//
+// MEASURED over the 20,000-molecule corpus, median us/mol, dense vs this:
+//
+//     stratum        dense   lanczos   speedup
+//     0-15            20.8      29.3     0.71x
+//     15-25           93.6     157.2     0.60x
+//     25-35          172.0     323.5     0.53x
+//     35-55          287.2     628.2     0.46x
+//     55+            856.8    2331.0     0.37x
+//
+// It gets WORSE with size, which is the opposite of the prediction. And the accuracy does not
+// even buy the trade: 99.44% of BCUT cells land within 1e-9 relative, but the worst is
+// 6.06e-01 -- a 60% error on some molecules, far outside the 1e-7 that was authorised.
+//
+// So BCUT keeps the dense sytd2/sterf path, and its 163 us/mol stands.
+inline bool extremal_lanczos(const Mol &m, const double *diag, int n, double *lo, double *hi,
+                             Scratch &S) {
+  if (n <= 0) return false;
+  if (n <= 8) return false;                        // dense is cheaper and exact; caller falls back
+  const int kmax = std::min(n, 30 + n / 2);
+  S.lz_q.assign((std::size_t)(kmax + 1) * n, 0.0);
+  S.lz_a.assign(kmax, 0.0);
+  S.lz_b.assign(kmax, 0.0);
+  S.lz_z.assign(n, 0.0);
+  double *Q = S.lz_q.data(), *z = S.lz_z.data();
+  const double inv = 1.0 / std::sqrt((double)n);
+  for (int i = 0; i < n; i++) Q[i] = inv;
+  double beta = 0.0;
+  int k = 0;
+  for (; k < kmax; k++) {
+    const double *q = Q + (std::size_t)k * n;
+    // z = B q, structured: 0.001*(sum q) on every row, minus the 0.001 the diagonal and the
+    // bond slots do not carry, plus the bond values and the property diagonal.
+    double sum = 0.0;
+    for (int i = 0; i < n; i++) sum += q[i];
+    for (int i = 0; i < n; i++) z[i] = 0.001 * (sum - q[i]) + diag[i] * q[i];
+    for (int b = 0; b < m.nb; b++) {
+      const int u = m.bu[b], v = m.bv[b];
+      double bw = m.bord[b] / 10.0;
+      if ((int)m.adj[u].size() == 1 || (int)m.adj[v].size() == 1) bw += 0.01;
+      const double w = bw - 0.001;
+      z[u] += w * q[v];
+      z[v] += w * q[u];
+    }
+    double al = 0.0;
+    for (int i = 0; i < n; i++) al += q[i] * z[i];
+    S.lz_a[k] = al;
+    if (k > 0) {
+      const double *qm = Q + (std::size_t)(k - 1) * n;
+      for (int i = 0; i < n; i++) z[i] -= al * q[i] + beta * qm[i];
+    } else {
+      for (int i = 0; i < n; i++) z[i] -= al * q[i];
+    }
+    for (int pass = 0; pass < 2; pass++)
+      for (int j = 0; j <= k; j++) {
+        const double *qj = Q + (std::size_t)j * n;
+        double d = 0.0;
+        for (int i = 0; i < n; i++) d += qj[i] * z[i];
+        for (int i = 0; i < n; i++) z[i] -= d * qj[i];
+      }
+    double nz = 0.0;
+    for (int i = 0; i < n; i++) nz += z[i] * z[i];
+    nz = std::sqrt(nz);
+    if (nz < 1e-13) { k++; break; }
+    beta = nz;
+    S.lz_b[k] = beta;
+    double *qn = Q + (std::size_t)(k + 1) * n;
+    const double r = 1.0 / beta;
+    for (int i = 0; i < n; i++) qn[i] = z[i] * r;
+  }
+  if (k < 2) return false;
+  // the tridiagonal's extremes, with the same sterf the dense path uses
+  S.lz_d.assign(S.lz_a.begin(), S.lz_a.begin() + k);
+  S.lz_e.assign(k, 0.0);
+  for (int j = 0; j + 1 < k; j++) S.lz_e[j] = S.lz_b[j];
+  return hume_eig::sterf_min_max(k, S.lz_d.data(), S.lz_e.data(), lo, hi);
+}
 
 inline bool leading_vector(const double *M, int n, double lam, std::vector<double> &v,
                            std::vector<double> &Bs, std::vector<int> &ipiv) {
@@ -621,7 +721,15 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
       // Only the two extremes are wanted, which is exactly what eigen_small's one entry point
       // returns -- the same call BCUT2D makes. Fact 3: mordred asks dgeev for the whole
       // unsymmetric spectrum instead; the difference is measured in NOTES_spectral.md.
+#ifdef BCUT_LANCZOS
+      // the property diagonal, gathered out of the strided weight table
+      S.lz_diag.resize(n);
+      for (int i = 0; i < n; i++) S.lz_diag[i] = w[(std::size_t)i * NW + sl.q];
+      if (!extremal_lanczos(m, S.lz_diag.data(), n, &lo, &hi, S))
+        if (!hume_eig::extremal(M, n, &lo, &hi, S.eig)) continue;
+#else
       if (!hume_eig::extremal(M, n, &lo, &hi, S.eig)) continue;
+#endif
       if (sl.hi >= 0) out[sl.hi] = hi;             // np.sort(ev)[::-1][0]
       if (sl.lo >= 0) out[sl.lo] = lo;             // np.sort(ev)[::-1][-1]
     }
