@@ -10,6 +10,7 @@ First release.
 - `columns`, `additional_descriptors`, `on_error`, `threads`, `fingerprint`, `fp_radius`,
   `fp_size`, `optional`, `batch_size`.
 - `mol_hume` is an alias for `molhume`.
+- BSD 3-Clause, matching rdkit and mordred.
 - Verified against RDKit 2025.9.2 and Mordred 1.2.0 over a 42,000-molecule corpus: 167/186
   RDKit and 412/968 Mordred columns bit-identical, 99.99% and 99.23% of values within 1e-9.
   Divergences are enumerated in `METHODS.md`.

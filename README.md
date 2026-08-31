@@ -94,3 +94,25 @@ install with `-c constraints.txt` or a bare editable install will silently upgra
 runs in seconds against a committed fixture; the full exactness verifications against RDKit and
 Mordred are the root-level `verify_*.py`, which need the corpus and a second environment. See
 `tests/README.md`.
+
+## Acknowledgments
+
+`mol-hume` reproduces descriptors first defined and published by two projects, and would not
+exist without either:
+
+- **[RDKit](https://www.rdkit.org/)** — Greg Landrum and contributors. RDKit parses the molecule
+  and supplies every perceived atom and bond property this library computes from, and 186 of the
+  emitted columns reproduce RDKit descriptor definitions. Several parameter tables here are
+  derived from published RDKit values, including the Crippen logP/MR atom-type contributions and
+  the Hall-Kier alpha table. BSD 3-Clause.
+- **[Mordred](https://github.com/mordred-descriptor/mordred)** — Hirotomo Moriwaki et al.,
+  *J. Cheminform.* **10**, 4 (2018). 968 of the emitted columns reproduce Mordred definitions.
+  BSD 3-Clause.
+
+Where this library's values differ from either, the difference is deliberate and documented:
+those are cases where the upstream definition depends on atom numbering or on a Kekule choice
+and so has no single correct answer. Every one is listed with a measurement in `METHODS.md`.
+
+## License
+
+BSD 3-Clause. See `LICENSE`.
