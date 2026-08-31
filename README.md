@@ -123,6 +123,23 @@ No musl, no 32-bit, no PyPy — RDKit publishes none of those. The extension lin
 runtime: no BLAS, no RDKit library, and no NumPy ABI, so one wheel works across NumPy 1.x
 and 2.x.
 
+### Values are not bit-identical across architectures
+
+This matters if you are comparing outputs between machines, and not at all if you are fitting a
+model. The exactness numbers above were measured on **macOS arm64 with clang**. The same source
+on x86-64 moves the last bits: 594 of the 1,269 columns under gcc, 595 under MSVC, with a
+maximum disagreement of **1.1e-14 of each column's range**. Nothing structural changes — the
+NaN pattern is identical on all three.
+
+That is not a bug that a build flag removes. The library reproduces upstream floating-point
+*behavior*, so a different libm's `log` and a different FMA decision are part of the result. CI
+measures this on every platform (`tools/platform_drift.py`) and the test suite asserts a bound
+on it, exactly rather than approximately on the reference platform.
+
+Beware per-value relative error when you compare: several columns are differences that cancel
+to near zero (the centered autocorrelations, `Cyclicity`, `DeltaMean`), where a last-bit wobble
+reads as a relative error of 27. Compare against each column's range.
+
 ## Development
 
 ```bash

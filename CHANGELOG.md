@@ -20,6 +20,12 @@ First release.
   RDKit and 412/968 Mordred columns bit-identical, 99.99% and 99.23% of values within 1e-9.
   Divergences are enumerated in `METHODS.md`.
 
+- Wheels for CPython 3.11-3.14 on Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows.
+- Values are bit-identical across RDKit releases in the supported range, but **not across
+  architectures**: the exactness numbers are from macOS arm64/clang, and x86-64 moves 594
+  columns (gcc) or 595 (MSVC) by at most 1.1e-14 of each column's range. NaN patterns are
+  identical everywhere. See "Values are not bit-identical across architectures" in the README.
+
 ### Regenerating the test fixture
 
 `tests/data/fixture_expected.npz` records what this build produces. When a descriptor value

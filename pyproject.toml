@@ -138,7 +138,9 @@ build-dir = "build/{wheel_tag}"
 [tool.cibuildwheel]
 build = "cp311-* cp312-* cp313-* cp314-*"
 skip = ["*-musllinux*", "*_i686", "pp*"]
-build-frontend = "build[uv]"
+# NO build-frontend = "build[uv]". uv is not on the macOS or Windows runners, and cibuildwheel
+# asserts "uv not found" before it builds anything -- a fast frontend is not worth a matrix that
+# only works on Linux. The default frontend is fine; the build is CMake either way.
 # Run the real suite on every wheel, on the machine that built it. The fixture comparison is
 # exact, so this is also the measurement of whether gcc and MSVC agree with the clang the
 # exactness numbers were taken on -- see the ffp-contract note in CMakeLists.txt.

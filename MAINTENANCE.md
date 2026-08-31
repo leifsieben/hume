@@ -151,10 +151,30 @@ and that makes the compiler part of the specification.
 
 **Do not treat those flags as tuning.** If you change them, values move.
 
-`tests/test_regression.py` is the guard: it compares exactly, so running it on each platform in
-CI *is* the measurement of whether the three toolchains agree. Keep it exact. If a platform
-genuinely cannot match, record the tolerance and the reason next to it rather than loosening the
-comparison everywhere.
+### What that actually costs, measured
+
+Those flags remove the *avoidable* divergence. They do not make the platforms identical, and CI
+says by how much:
+
+| | columns bit-identical | worst difference / column range |
+| --- | --- | --- |
+| macOS arm64, clang — the reference | 1269 / 1269 | 0 |
+| Linux x86-64, gcc | 675 / 1269 | 1.1e-14 |
+| Windows x86-64, MSVC | 674 / 1269 | 1.1e-14 |
+
+NaN patterns are identical everywhere, which is the part that would indicate a logic difference.
+The residue is libm and FMA: not removable, and not worth removing.
+
+`tests/test_regression.py` therefore compares **exactly on the fixture's own platform** and
+within `rtol=1e-9` of each column's range elsewhere — about 10^5 of headroom. Keep the exact
+tier exact: it is what makes an intended change visible.
+
+**Do not use per-cell relative error to judge this.** Several columns cancel to near zero — the
+centered autocorrelations (ATSC/AATSC/MATS), `Cyclicity`, `DeltaMean`, `DeltaMax`. `RATSC1_m`
+disagrees by 1.4e-12 against a true value near 5e-14, which is a per-cell relative error of
+**27**, and by that metric 28 columns look catastrophically broken when nothing is wrong. This
+cost a CI round trip to work out. `tools/platform_drift.py` prints both numbers and labels the
+misleading one.
 
 Related: `src/hume_core/u128.h` exists because MSVC has no `unsigned __int128`, and
 `tests/cpp/test_u128.cpp` differentially tests the fallback against the native type in one

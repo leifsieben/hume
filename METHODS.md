@@ -710,6 +710,27 @@ the 31 (element, hybridisation) pairs the training corpora contained (see the no
 in `hume_blocks.h`); these elements are outside it. On the 99.7% of the corpus that is organic,
 those four columns are exact.
 
+### 7.2b Every exactness number in this section is for one architecture
+
+Measured on **macOS arm64 with clang**, which is the machine the corpus runs were done on. The
+same source compiled for x86-64 does not reproduce them bit for bit: **594 of the 1,269 emitted
+columns move under gcc and 595 under MSVC**, with a worst disagreement of **1.1e-14 of the
+column's own range**. NaN patterns are identical on all three, so nothing structural differs.
+
+This is not a defect and not something a flag removes. Section 4's whole argument is that these
+implementations reproduce upstream floating-point *behaviour* rather than upstream mathematics --
+which makes the libm and the FMA decisions part of the specification, and those differ between
+architectures. `CMakeLists.txt` pins the one thing that is controllable (`-ffp-contract=on`,
+because gcc otherwise contracts across statements and would walk through the deliberate
+expression splitting in `constit.h`); the remainder is arithmetic.
+
+Read a claim of "bit-identical" here as bit-identical **to RDKit and mordred running on the same
+machine**, which is the only comparison that can be made: the reference implementations are
+subject to the same effect. A cross-machine comparison of this library's own outputs should use
+each column's dynamic range, not per-value relative error -- several columns cancel to near zero
+(the centered autocorrelations, `Cyclicity`, `DeltaMean`), where a last-bit difference reads as a
+relative error above 1. CI measures this on all three platforms on every run.
+
 ### 7.3 Against mordred
 
 | | |
