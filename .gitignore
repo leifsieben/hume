@@ -164,3 +164,12 @@ cpp/constit_meta.json
 
 # cpp/verify_ac.py resumable mordred reference cache (427 MB memmap + its key)
 cpp/.ac_ref_cache.*
+
+# per-agent build trees from the descriptor implementation work; each holds a compiled
+# driver plus its dumped corpus. Reproducible from verify_<group>.py.
+build_counts/
+build_estate/
+build_eta/
+build_misc/
+build_spectral/
+build_sps/
