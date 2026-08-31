@@ -107,11 +107,26 @@ ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred", 
 #: were being used interchangeably. Both stay measured, and the legend says which is drawn.
 COST_ONLY = {"ecfp", "minimol"}
 
-#: WHICH HARDWARE EACH ARM IS ACTUALLY DEPLOYED ON. Learned embeddings have a forward pass and
-#: are run on the GPU box; fingerprints and descriptor blocks have none and are run on CPU.
-#: Every arm is plotted once, on its own side -- see the note in main().
-GPU_ARMS = {"chemberta", "chemberta_mtr", "chemberta_mlm", "chemeleon", "chemprop",
-            "minimol", "molformer"}
+#: WHICH HARDWARE EACH ARM IS PLOTTED ON: THE ONE IT IS FASTEST ON, DECIDED BY MEASUREMENT.
+#:
+#: This used to be a hand-written set of "the learned embeddings", on the assumption that a
+#: model with a forward pass belongs on a GPU. That assumption is WRONG for chemprop and the
+#: measurement says so plainly -- 140.1 us/mol on the 16-vCPU CPU box against 604.2 on the
+#: 1-GPU-4-vCPU box, a GPU "speedup" of 0.23x. Its graph featurisation is CPU-bound, so trading
+#: twelve vCPUs for a GPU costs more than the GPU returns. Plotting it on the GPU side showed
+#: chemprop in its WORST configuration and called that its cost.
+#:
+#: chemberta (3.03x) and chemeleon (2.76x) do gain from the GPU and stay there. Nothing is
+#: assumed from the architecture; `native()` reads both measurements and picks the faster.
+def native(runs, arm):
+    v = {}
+    for bud in ("cpu", "gpu"):
+        b = best(runs, arm, bud)
+        if b is not None:
+            v[bud] = b["us_per_mol"]
+    if not v:
+        return None
+    return min(v, key=v.get)
 HATCH = "///"
 
 
@@ -293,19 +308,27 @@ def main(paths):
     # fingerprints on CPU, learned embeddings on GPU -- and the two groups sit side by side in
     # one axis, separated by a rule. The axis is then a straight ranking: what does one billion
     # molecules cost, on the box you would really use.
-    NATIVE = {a: ("gpu" if a in GPU_ARMS else "cpu") for a in ORDER}
+    NATIVE = {a: native(runs, a) for a in ORDER}
     fig, axes = plt.subplots(1, 2, figsize=(STYLE["col2"], 2.9))
-    for ax, kind, ttl in ((axes[0], "hours", "a  Time per billion molecules"),
+    for ax, kind, ttl in ((axes[0], "hours", "a  Featurisation time"),
                           (axes[1], "usd", "b  Cost per billion molecules")):
         items = []
         for a in ORDER:
-            bud = NATIVE[a]
+            bud = NATIVE.get(a)
+            if bud is None:
+                continue
             rows = [r for r in cells(runs, bud) if r[0] == a]
             if not rows:
                 continue
             _a, prof, cop = rows[0]
             h = _hours_for_target(prof)
-            items.append((a, bud, h if kind == "hours" else h * prof["usd_per_hour_ondemand"], cop))
+            # us/MOLECULE, not hours-per-billion. The two are the same measurement (us/mol =
+            # hours * 3.6) but the per-molecule form is the unit figure C's cost axis already
+            # uses, so the two plates can be read against each other without arithmetic, and it
+            # does not imply anyone runs a billion molecules. Cost stays per billion: dollars
+            # per molecule is unreadably small, and cost is the hardware-neutral axis.
+            items.append((a, bud, prof["us_per_mol"] if kind == "hours"
+                          else h * prof["usd_per_hour_ondemand"], cop))
         if not items:
             mark_empty(ax, "no measurements"); continue
         items.sort(key=lambda t: (0 if t[1] == "cpu" else 1, t[2]))
@@ -313,12 +336,15 @@ def main(paths):
         gap = 0.0
         for i, (a, bud, v, cop) in enumerate(items):
             if i and items[i - 1][1] == "cpu" and bud == "gpu":
-                gap = 0.9                      # the rule between the two hardware groups
+                gap = 1.6                      # the rule between the two hardware groups; wide
+                                               # enough that the GPU group's label,
+                                               # centred over only two bars, does not
+                                               # start on top of the rule
             xs.append(i + gap)
         for x, (a, bud, v, cop) in zip(xs, items):
             ax.bar(x, v, width=0.78, color=colour(a), edgecolor=STYLE["ink"], lw=0.6,
                    hatch=(HATCH if cop else None), zorder=3)
-            ax.text(x, v, (_hours(v) if kind == "hours" else _usd(v)), ha="center", va="bottom",
+            ax.text(x, v, (f"{v:,.0f}" if kind == "hours" else _usd(v)), ha="center", va="bottom",
                     rotation=90, fontsize=FS["annot"], color=STYLE["ink"], zorder=4)
         ncpu = sum(1 for _a, b, _v, _c in items if b == "cpu")
         if 0 < ncpu < len(items):
@@ -328,7 +354,7 @@ def main(paths):
         ax.set_xticklabels([LABEL[a].split(" (")[0] for a, _b, _v, _c in items],
                            rotation=38, ha="right", fontsize=FS["tick"])
         ax.set_yscale("log")
-        ax.set_ylabel(("hours" if kind == "hours" else "USD") + " per billion molecules",
+        ax.set_ylabel(("\u00b5s per molecule" if kind == "hours" else "USD per billion molecules"),
                       fontsize=FS["label"])
         ax.set_title(ttl, fontsize=FS["title"], fontweight="bold", loc="left", pad=4)
         ax.margins(y=0.34)
