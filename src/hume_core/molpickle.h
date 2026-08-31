@@ -333,6 +333,17 @@ struct Sink {
   // chg_ok is NOT applied. mordred maps a non-finite weight to a dead 54-column block, which is
   // what autocorr.h's isfinite screen does, and zeroing here would hide it.
   double *ac_charge = nullptr;
+  // OPTIONAL, and the two halves of `ac_charge` kept apart, because SYNTHESISING THE H-ADDED
+  // GRAPH needs them separately. On the AddHs molecule a heavy atom's `c` is its own
+  // `_GasteigerCharge` (its `_GasteigerHCharge` is 0 there), and each explicit hydrogen's `c` is
+  // the parent's `_GasteigerHCharge` divided by its hydrogen count. Both are recoverable from
+  // the HEAVY pickle alone -- verified against a real AddHs + ComputeGasteigerCharges over 3,677
+  // molecules including cpp/hard.smi: 0 mismatches in z, formal charge, nH and the bond list,
+  // worst charge difference 1.67e-16. That is what lets the second pickle go away entirely.
+  // Both carry mordred's conditional, exactly as `ac_charge` does: 0.0 when there is no
+  // `_GasteigerHCharge` property at all.
+  double *ac_own = nullptr;    // the atom's own charge
+  double *ac_h = nullptr;      // the summed charge of its implicit hydrogens
 };
 
 inline void peek_sizes(const std::uint8_t *buf, std::size_t len, int &n_atoms, int &n_bonds) {
@@ -610,6 +621,8 @@ inline int parse(const std::uint8_t *buf, std::size_t len, int n_atoms, int n_bo
           // mordred's getter, conditional and all. `got_hcharge` is HasProp; the sum only
           // happens when it is true.
           if (out.ac_charge) out.ac_charge[i] = got_hcharge ? q_raw + q_h : 0.0;
+          if (out.ac_own) out.ac_own[i] = got_hcharge ? q_raw : 0.0;
+          if (out.ac_h) out.ac_h[i] = got_hcharge ? q_h : 0.0;
         }
         if (r.pos() != end) throw Error("atom-property block length disagrees with its content");
         if (r.u8() != T_ENDPROPS) throw Error("expected ENDPROPS after the atom properties");

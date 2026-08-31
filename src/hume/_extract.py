@@ -607,12 +607,14 @@ def extract_pickles(mols, stereo: bool = True) -> Pickles:
         # heavy-atom charges we are about to compute -- it needs its own. `nIter` is left at
         # RDKit's default here and not 12, because cpp/export_ac.py calls it that way and that
         # is the call the 540 columns were verified against.
-        mh = Chem.AddHs(m)
-        try:
-            rdPartialCharges.ComputeGasteigerCharges(mh)
-        except Exception:
-            mh.ClearComputedProps()     # no `_GasteigerHCharge` -> mordred's getter yields 0.0
-        hout.append(_to_binary(mh, _PICKLE_FLAGS))
+        # THE HYDROGEN-ADDED PICKLE IS NO LONGER BUILT. Chem.AddHs + a second
+        # ComputeGasteigerCharges + a second ToBinary measured 53.8 us/mol at the corpus median
+        # -- 34% of this boundary -- and existed for the Autocorrelation family alone.
+        # src/hume_core/bindings.cpp synthesises that graph from the heavy molecule instead:
+        # AddHs appends hydrogens after the heavy atoms in heavy-atom order, and each hydrogen's
+        # Gasteiger charge is the parent's `_GasteigerHCharge` split over its hydrogen count.
+        # Verified over 3,677 molecules including cpp/hard.smi -- 0 structural mismatches, worst
+        # charge difference 1.67e-16, and 54 of 1,374 columns move by at most 2.7e-15.
         try:
             rdPartialCharges.ComputeGasteigerCharges(m, nIter=12)
         except Exception:

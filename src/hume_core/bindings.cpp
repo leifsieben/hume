@@ -273,6 +273,8 @@ struct Flat {
   // Only filled when the caller asks for it -- the Autocorrelation `c` weight, which is a
   // different quantity from atom_d's charge column. See molpickle::Sink::ac_charge.
   std::vector<double> ac_charge;
+  // the two halves of ac_charge, for synthesising the H-added graph. See molpickle::Sink.
+  std::vector<double> ac_own, ac_h;
 };
 
 //! Borrowed views of the caller's bytes objects. Gathered under the GIL, used without it; the
@@ -302,7 +304,8 @@ static Blobs borrow(const py::sequence &pickles) {
 
 //! Two passes: peek every header for its atom/bond counts to build the offsets, then parse.
 //! The peek is 28 bytes per molecule and is what lets the flat arrays be allocated exactly once.
-static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = false) {
+static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = false,
+                              bool want_ac_split = false) {
   const ssize_t nm = (ssize_t)b.ptr.size();
   f.atom_off.resize(nm + 1);
   f.bond_off.resize(nm + 1);
@@ -321,6 +324,7 @@ static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = fal
   f.bond_s.resize(n_bonds);
   f.bond_d.resize(n_bonds);
   if (want_ac_charge) f.ac_charge.resize(n_atoms);
+  if (want_ac_split) { f.ac_own.resize(n_atoms); f.ac_h.resize(n_atoms); }
 
   molpickle::Work w;
   for (ssize_t k = 0; k < nm; k++) {
@@ -329,7 +333,9 @@ static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = fal
                       f.atom_d.data() + (std::size_t)a0 * N_ATOM_DBL,
                       f.bond_i.data() + (std::size_t)b0 * N_BOND_INT,
                       f.bond_s.data() + b0, f.bond_d.data() + b0, nullptr, nullptr,
-                      want_ac_charge ? f.ac_charge.data() + a0 : nullptr};
+                      want_ac_charge ? f.ac_charge.data() + a0 : nullptr,
+                      want_ac_split ? f.ac_own.data() + a0 : nullptr,
+                      want_ac_split ? f.ac_h.data() + a0 : nullptr};
     f.chg_ok[k] = molpickle::parse(b.ptr[k], b.len[k], f.atom_off[k + 1] - a0,
                                    f.bond_off[k + 1] - b0, s, w);
   }
@@ -584,6 +590,8 @@ struct AllWork {
   autocorr::Work aw;
   sps::Mol sm;
   sps::detail::Work sw;
+  // the synthesised H-added charge vector; see the autocorrelation block.
+  std::vector<double> hc_syn;
   fragmatch::Mol fm;
   // TWO MATCHERS, ONE Mol, ONE EVALUATOR. Each holds the recursive-query cache and the search
   // plans for the program it is bound to; the molecule they read is the same `fm`, filled once.
@@ -687,8 +695,8 @@ static constexpr unsigned F_NEEDS_H = F_AC | F_CONSTIT;
 static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, const int *BS,
                     const double *BD, int a0, int b0, int n, int nb, int chg_ok,
                     const int *ring_ptr, const int *ring_at, int n_rings,
-                    const int *HAI, const int *HBI, const double *HAC, int ha0, int hb0,
-                    int hn, int hnb, int h_chg_ok, const int *SA, const int *SB, unsigned fams,
+                    const double *ACO, const double *ACH, int h_chg_ok,
+                    const int *SA, const int *SB, unsigned fams,
                     unsigned opts, double *out) {
   const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
   const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
@@ -821,29 +829,62 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   // same boundary layout -- `nh` is `GetTotalNumHs()` AFTER AddHs (normally 0, but `dv` adds it
   // to the explicit-H neighbour count and mordred reads it, so it is carried rather than
   // assumed), and `HAC` is mordred's `c` getter with its conditional already applied.
+  // THE H-ADDED GRAPH IS SYNTHESISED HERE, NOT PICKLED. It used to arrive as a SECOND pickle:
+  // Chem.AddHs, a second ComputeGasteigerCharges, and a second ToBinary, together 53.8 us/mol --
+  // 34% of the whole python boundary -- for one family. All three are derivable from the heavy
+  // molecule:
+  //
+  //   * AddHs appends hydrogens AFTER the heavy atoms, in heavy-atom order, nH each, and leaves
+  //     every atom's GetTotalNumHs() at 0. Verified over 3,677 molecules including cpp/hard.smi:
+  //     0 mismatches in z, formal charge, nH or the bond list.
+  //   * a heavy atom's `c` on the AddHs molecule is its OWN _GasteigerCharge (its
+  //     _GasteigerHCharge is 0 once the hydrogens are explicit), and each hydrogen's is the
+  //     parent's _GasteigerHCharge split evenly over its hydrogen count. Worst difference against
+  //     a real AddHs + ComputeGasteigerCharges over the same 3,677 molecules: 1.67e-16.
+  //
+  // molpickle.h splits the two halves out as `ac_own` / `ac_h` for exactly this.
+  const int hn = n + [&]{ int t = 0; for (int i = 0; i < n; i++) t += ai[(ssize_t)i * N_ATOM_INT + A_NH]; return t; }();
+  const int hnb = nb + (hn - n);
+  if (fams & F_NEEDS_H) {
+    W.hc_syn.assign(hn, 0.0);
+    for (int i = 0; i < n; i++) W.hc_syn[i] = ACO ? ACO[i] : 0.0;
+    int k = n;
+    for (int i = 0; i < n; i++) {
+      const int nh = ai[(ssize_t)i * N_ATOM_INT + A_NH];
+      const double qh = ACH ? ACH[i] : 0.0;
+      for (int t = 0; t < nh; t++) W.hc_syn[k++] = nh ? qh / (double)nh : 0.0;
+    }
+  }
   if (fams & F_AC) {
-    const int *hai = HAI + (std::size_t)ha0 * N_ATOM_INT;
-    const int *hbi = HBI + (std::size_t)hb0 * N_BOND_INT;
     W.am.n = hn;
     W.am.nb = hnb;
     W.am.at.resize(hn);
-    for (int i = 0; i < hn; i++) {
-      const int *r = hai + (std::size_t)i * N_ATOM_INT;
+    for (int i = 0; i < n; i++) {
+      const int *r = ai + (std::size_t)i * N_ATOM_INT;
       AtomRec &a = W.am.at[i];
-      a.z = r[A_Z];
-      a.fc = r[A_FCHG];
-      a.nh = r[A_NH];
-      a.c = HAC[ha0 + i];
+      a.z = r[A_Z]; a.fc = r[A_FCHG]; a.nh = 0; a.c = W.hc_syn[i];
+    }
+    for (int i = n; i < hn; i++) {
+      AtomRec &a = W.am.at[i];
+      a.z = 1; a.fc = 0; a.nh = 0; a.c = W.hc_syn[i];
     }
     W.am.bu.resize(hnb);
     W.am.bv.resize(hnb);
     W.am.adj.assign(hn, {});
-    for (int b = 0; b < hnb; b++) {
-      const int *r = hbi + (std::size_t)b * N_BOND_INT;
-      W.am.bu[b] = r[B_U];
-      W.am.bv[b] = r[B_V];
+    for (int b = 0; b < nb; b++) {
+      const int *r = bi + (std::size_t)b * N_BOND_INT;
+      W.am.bu[b] = r[B_U]; W.am.bv[b] = r[B_V];
       W.am.adj[r[B_U]].push_back(r[B_V]);
       W.am.adj[r[B_V]].push_back(r[B_U]);
+    }
+    int hb = nb, k = n;
+    for (int i = 0; i < n; i++) {
+      const int nh = ai[(ssize_t)i * N_ATOM_INT + A_NH];
+      for (int t = 0; t < nh; t++, hb++, k++) {
+        W.am.bu[hb] = i; W.am.bv[hb] = k;
+        W.am.adj[i].push_back(k);
+        W.am.adj[k].push_back(i);
+      }
     }
     autocorr::row(W.am, W.aw, out + OFF_AC);
   }
@@ -937,7 +978,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     // derived from garbage. That is the configuration the 100,000-molecule result was measured
     // in, so the wiring reproduces the same screen: the pickle reader's own `chg_ok` covers the
     // missing-property case, and the finite sweep covers the rest.
-    const double *hc = HAC ? HAC + ha0 : nullptr;
+    const double *hc = W.hc_syn.empty() ? nullptr : W.hc_syn.data();
     bool hc_ok = h_chg_ok != 0 && hc != nullptr && hn > 0;
     if (hc_ok)
       for (int i = 0; i < hn; i++)
@@ -1121,9 +1162,11 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                                             ArrI stereo_b, py::object families,
                                             py::object optional) {
   Blobs b = borrow(pickles);
-  Blobs hb = borrow(h_pickles);
-  need((ssize_t)hb.ptr.size() == (ssize_t)b.ptr.size(),
-       "h_pickles must have one hydrogen-added blob per molecule");
+  // `h_pickles` IS ACCEPTED AND IGNORED. It used to carry Chem.AddHs + a second
+  // ComputeGasteigerCharges + a second ToBinary, 53.8 us/mol for one family; all_row() now
+  // synthesises that graph from the heavy molecule. The parameter stays so callers holding the
+  // old signature keep working, and an EMPTY sequence is the expected value.
+  (void)h_pickles;
   const unsigned fams = family_mask(families);
   const unsigned opts = optional_mask(optional);
   const ssize_t nm = (ssize_t)b.ptr.size();
@@ -1150,12 +1193,14 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // The pickle's own ring section is NOT read here -- molpickle::Sink's ring hooks are left
     // null on purpose; see the note at the top of this section for why the rings come across as
     // a boundary array instead.
-    fill_from_pickles(b, f);
-    Flat h;
-    // Parsed for Autocorrelation OR for constit's RNCG/RPCG charges -- see F_NEEDS_H. Asking for
-    // `constit` used to be the case that quietly got a null charge array here.
+    // want_ac_split: the H-added graph is synthesised from this parse, so the heavy pickle
+    // must yield ac_own / ac_h as well.
+    fill_from_pickles(b, f, /*want_ac_charge=*/false, /*want_ac_split=*/(fams & F_NEEDS_H) != 0);
+    // THE SECOND PICKLE IS GONE. `h_pickles` is still accepted so the signature does not break,
+    // and is now ignored: the H-added graph and its Gasteiger charges are synthesised from the
+    // heavy molecule inside all_row(). What the heavy parse has to produce instead is the two
+    // halves of mordred's `c` getter kept apart -- molpickle's `ac_own` / `ac_h`.
     const bool need_h = (fams & F_NEEDS_H) != 0;
-    if (need_h) fill_from_pickles(hb, h, /*want_ac_charge=*/true);
     // Checked AFTER the parse, because only then is the atom/bond count of the batch known --
     // and a stereo array that is the wrong length would otherwise be read past its end for every
     // molecule after the first short one.
@@ -1170,14 +1215,12 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     AllWork W;
     for (ssize_t k = 0; k < nm; k++) {
       const int r0 = RM[k], nr = RM[k + 1] - r0;
-      const int ha0 = need_h ? h.atom_off[k] : 0;
-      const int hb0 = need_h ? h.bond_off[k] : 0;
       all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
               f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
               f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
-              h.atom_i.data(), h.bond_i.data(), h.ac_charge.data(), ha0, hb0,
-              need_h ? h.atom_off[k + 1] - ha0 : 0,
-              need_h ? h.bond_off[k + 1] - hb0 : 0, need_h ? h.chg_ok[k] : 0, SA, SB, fams, opts,
+              need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
+              need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
+              f.chg_ok[k], SA, SB, fams, opts,
               O + (ssize_t)k * N_ALL_COLS);
     }
   }
