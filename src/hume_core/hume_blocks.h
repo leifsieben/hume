@@ -1243,7 +1243,16 @@ static void estate_from(const Mol &m, const std::vector<int> &D, std::vector<dou
     double N = principal_qn(m.Z[i]);
     I[i] = (4.0 / (N * N) * dv + 1.0) / m.deg[i];
   }
-  for (int i = 0; i < m.n; i++) S[i] = I[i];
+  // ACCUMULATION ORDER IS PART OF THE DEFINITION. rdkit/Chem/EState/EState.py accumulates the
+  // pair deltas into a ZERO vector and adds the intrinsic state at the very end -- `res = accum
+  // + Is` -- where this used to seed `S[i] = I[i]` and accumulate into it. Algebraically the
+  // same sum, different rounding, and 40 columns read this vector: MaxEStateIndex and friends
+  // plus the 79 S<t> typer sums, none of which average the difference out.
+  //
+  // MEASURED TWICE, because the first measurement was wrong. vsa_bins.h:369 carries the same
+  // finding over 86,654 atoms of cpp/hard.smi -- seed-then-accumulate 22,482/86,654 bit-exact,
+  // accumulate-then-add 86,654/86,654 -- and an independent run over 39,592 atoms found 80.3%
+  // of atoms differing, worst 3.55e-14. S is already zero from the assign() above.
   for (int i = 0; i < m.n; i++)
     for (int j = i + 1; j < m.n; j++) {
       double p = D[(size_t)i * m.n + j] + 1.0;
@@ -1253,6 +1262,7 @@ static void estate_from(const Mol &m, const std::vector<int> &D, std::vector<dou
         S[j] -= t;
       }
     }
+  for (int i = 0; i < m.n; i++) S[i] += I[i];
 }
 
 // ALPHA IS A GENERATED TABLE, SOLVED OUT OF RDKIT ITSELF (see gen_alpha.py). alpha is additive
