@@ -1,0 +1,358 @@
+# Methods
+
+## 1. Selecting the descriptor set
+
+### 1.1 The candidate space
+
+We start from the union of every 2D descriptor in RDKit (217) and Mordred (1,613), plus the 193
+columns HUME computes that have no upstream name — **2,023 candidates**. 3D Mordred descriptors
+are excluded throughout: they require conformers (~140 ms/molecule), two orders of magnitude
+outside any budget considered here.
+
+Our own columns are in the same pool as everything else. They had previously been exempt from the
+filter that defined the rest of the set, and an audit found that exemption was not harmless: of
+193, twenty-four were unusable and sixty-four were ≥0.99 redundant, including `C4` ≡ `n4Ring` and
+`C5_arom` ≡ `n5aRing` at ρ = 1.0000, `path4` ≡ `MPC4` at 0.9997, and `T_absum` ≡ `n_EZ_any` —
+two of our own columns identical to each other.
+
+### 1.2 The corpus
+
+Descriptor redundancy is a property of the chemistry it is measured on, so the corpus is
+**stratified rather than sampled from one source**. We draw 40,000 molecules at random from
+ChEMBL (145,070 available) and pool them with the molecules of sixteen benchmark datasets, then
+take **4,000 molecules from each of five heavy-atom strata** — 0–15, 15–25, 25–35, 35–55, 55+ —
+for a corpus of 20,000.
+
+Two earlier failures motivate this. The original corpus was the *first* 20,000 lines of a ChEMBL
+file, which is not a sample: that prefix averages MW 416.1 against 438.9 for a random draw from
+the same file, a 6% bias toward smaller molecules arising from nothing but where the read
+stopped. It was also ChEMBL-only, while the evaluation spans QM9 (MW ≈ 120) and CycPeptMPDB
+cyclic peptides (MW ≈ 1,310).
+
+Using benchmark molecules here is not leakage: the selection is unsupervised and never sees a
+label. The descriptors should be deduplicated on the chemistry they will be applied to.
+
+### 1.3 Usability gates
+
+A column is a candidate only if it is (i) finite on ≥50% of molecules, (ii) non-constant, and
+(iii) differs from its own most-common value on more than 0.1% of rows. **1,693 of 2,023 pass.**
+
+The finite threshold is 50% rather than the more usual 95% because the evaluation harness maps
+non-finite values to NaN and XGBoost treats NaN natively as missing; a column defined on 60% of
+molecules and informative there is usable. The variance gate exists *because* of that loosening:
+without it, near-constant columns enter the correlation stage and behave pathologically (§1.5).
+
+### 1.4 Redundancy criterion
+
+Redundancy is measured as **|Spearman ρ| computed within each stratum, and a pair is scored by
+its minimum across the five**. Two descriptors are redundant only if they are redundant
+*everywhere*; a pair that collapses on drug-like space and separates on peptides is kept.
+
+This is a direct response to a measured failure of the pooled-corpus version. Columns dropped at
+|ρ| ≥ 0.99 on a ChEMBL prefix turned out to be only 0.88–0.96 correlated on the `bioavail`
+dataset, and restoring them was worth **+0.016 AUROC** there (and +0.006 on `hia`), while being
+worth nothing measurable on any classification set above 7,000 molecules.
+
+**Correlations use pairwise-complete observations and no imputation.** The previous
+implementation median-imputed NaN before ranking. Since 4,099 column pairs share a missingness
+pattern, both members received their median on exactly the same rows, and that manufactured
+agreement was counted as evidence of redundancy. The pairwise-complete Pearson-on-ranks is
+computed in closed form from four matrix products, so no pair is ever compared on a row where
+either member is undefined.
+
+### 1.5 Sparse columns are judged on support overlap, not correlation
+
+Any two columns that are zero on 99.9% of molecules correlate at ≈0.99 for that reason alone. In
+a first pass this let one of our autocorrelation columns "absorb" nine mutually unrelated rare
+features — nine-membered rings, isothiocyanates and a boron E-state among them.
+
+A column whose modal value covers ≥90% of its finite rows is therefore treated as
+**sparse-binary-like**, and any pair involving one is scored by the **Jaccard overlap of the
+non-modal supports** — do they fire on the same molecules? — rather than by correlation. A sparse
+column paired with a dense one scores near zero, which is the correct answer. Thirty-three pairs
+passed the correlation test and failed this one.
+
+### 1.6 Cover, and which member survives
+
+Survivors are chosen by a **greedy cover in ascending compute cost**: a candidate is kept unless
+it is redundant with something already kept, so the survivor of each group is its cheapest member.
+Our own columns are computed inside a single C++ pass, so their marginal cost (~0.1 µs) is far
+below Mordred's tens to hundreds, and they win every true duplicate. The upstream name is recorded
+as an **alias** on the survivor, so a column can be reported as "Mordred's `n4Ring`, our
+implementation" rather than introducing a new name for a quantity that already has one. 257 of the
+survivors carry such an alias.
+
+**The cover is deterministic but not unique.** Given the cost table and a stable tie-break the
+result is reproducible, but a different ordering yields a different, equally valid cover. We do
+not claim minimality.
+
+### 1.7 The threshold raises candidates; mechanism decides
+
+A numerical |ρ| ≥ 0.99 is a reason to *examine* a pair, not to delete a column. Every absorbed
+pair is recorded with its partner, its per-stratum correlations and whether the two columns come
+from the same family. All **142 cross-family pairs were reviewed by hand**, since that is where a
+numerical coincidence is most likely to be standing in for a mechanism that is not there.
+
+130 were unambiguous. Roughly sixty are the same descriptor under two package names (Mordred's
+`MoeType` module wraps RDKit, so `PEOE_VSA1`, every `SlogP_VSA*`, `EState_VSA*`, `VSA_EState*`,
+`SMR_VSA*` and `LabuteASA` appear in both). Others are established identities: RDKit's `Chi*v` is
+bit-identical to Mordred's `Xp-*dv`; an E-state atom-type count is a count of the corresponding
+functional group (`NddsN` ≡ `fr_nitro`).
+
+Twelve were flagged and eleven dissolved under measurement:
+
+* **`Spe`, `Sare`, `Sse`, `Si`, `ATS0se`** are all ≥0.998 correlated with plain `nAtom`. Each is
+  an *extensive* sum over atoms, so all are molecular size under a different weighting. That the
+  weightings are physically different properties is beside the point: none of these descriptors
+  is measuring the property.
+* **`Mse`, `Mpe`, `Mi`, `Mare`** are *intensive* (0.06–0.16 against `nAtom`) and pair as mean(p)
+  against mean(p²) of the same property. Not redundant by coincidence — redundant by definition.
+* **`ETA_eta_RL` ≡ `Xp-1d`** at ρ = 1.0000 is an identity of construction. Mordred's
+  `EtaCompositeIndex(reference=True, local=True)` is a sum over *edges* of √(γᵢγⱼ) evaluated on
+  the all-carbon reference alkane, where γ depends only on vertex degree — the same functional
+  form as the Randić index.
+* **The Barysz pairs** (`VR1_D`/`VR1_DzZ`, `VR2_D`/`VR2_DzZ`, `VR3_D`/`VR3_Dzv`) required a test
+  the size-stratified run could not provide, since the Barysz matrix exists to inject *heteroatom*
+  information. Re-partitioning the same matrix by heteroatom fraction, ρ decays from 0.9999 to
+  0.9982 as heteroatom content rises — the Z-weighting does something — but never enough to clear
+  the threshold, even in the most heteroatom-rich decile.
+
+### 1.8 Result
+
+**2,023 candidates → 1,693 usable → 1,327 descriptors**, of which 974 are Mordred's, 193 RDKit's
+and 160 ours. 366 columns were absorbed. Exactly one member of each redundant group survives.
+
+---
+
+## 2. Implementation status
+
+**1,035 of the 1,327 are implemented in C++; 292 are not.** This is a real gap and is stated here
+rather than in a footnote: HUME's current 1,266 columns were built against an earlier and stricter
+selection that kept 864, and the corrected pipeline (§1.4, no imputation) keeps materially more.
+
+Outstanding, by family:
+
+| columns | family | note |
+|---:|---|---|
+| 85 | assorted RDKit / Mordred singletons | `MinPartialCharge`, `ExactMolWt`, `fr_lactam`, … |
+| **52** | autocorrelations weighted by intrinsic state (`s`) | the machinery exists; the property vector does not |
+| 38 | Barysz and adjacency spectral (`SpAbs_A`, `VR1_A`, …) | needs an eigensolver on weighted matrices |
+| 31 | ring and atom counts | mostly cheap |
+| 29 | ETA (Extended Topochemical Atom) | `ETA_alpha`, `ETA_shape_*`, `ETA_beta`, … |
+| 25 | E-state per atom-type extremes and spectral sums | |
+| 20 | BCUT eigenvalue pairs on further weightings | four eigensolves each |
+| **12** | autocorrelations weighted by mass (`m`) | as for `s` |
+
+The two autocorrelation weightings are the cheapest to close — 64 columns that reuse existing
+machinery and need only the per-atom mass and intrinsic-state vectors, both of which already cross
+the boundary. The spectral families (Barysz, BCUT, adjacency) are the substantial work.
+
+Until these land, the shipped block is the 1,035-column intersection, and any claim about "the
+1,327" is a claim about the *selection*, not about what the package computes today.
+
+---
+
+## 3. How the descriptors are computed
+
+### 3.1 The thesis
+
+RDKit and Mordred compute each descriptor by walking the molecule from scratch. Ask for two
+hundred descriptors and the molecule is walked two hundred times, in Python, re-deriving the same
+atom degrees and the same shortest-path matrix each time.
+
+Almost every 2D descriptor in either catalogue is a function of a *small fixed set* of per-atom
+and per-bond quantities plus the graph. HUME computes those once, in C++, after which every
+descriptor is a reduction over arrays already in cache.
+
+### 3.2 What crosses the boundary
+
+The complete input is 21 values per atom or bond. `src/hume_core/bindings.cpp` defines the layout
+and asserts it against `src/hume/_extract.py`, so a mismatch raises rather than silently
+transposing columns.
+
+**Per atom (13 integers):** atomic number, degree, total hydrogens, formal charge, hybridisation,
+aromatic flag, in-ring boolean, CIP code, ring-membership count, total valence,
+`_ChiralityPossible`, chiral tag, isotope.
+**Per atom (2 doubles):** mass, Gasteiger partial charge.
+**Per bond (6 integers):** the two atom indices, conjugated, in-ring, a SMARTS-order code, and
+RDKit's `BondType` enum.
+
+Four are carried rather than re-derived, each for a measured reason:
+
+* **Ring count alongside the ring boolean**, because SMARTS asks both questions independently:
+  `[R]` is membership, `[R1]`/`[R2]` are counts, and the count cannot be recovered from the
+  boolean.
+* **Total valence**, because recomputing it as `round(Σ bond orders) + nH` disagrees with RDKit on
+  **11,238 of 575,571** corpus atoms — aromatic bonds and hydrogens pass through RDKit's own
+  rounding rule.
+* **The ring flags**, from RDKit's single ring perception rather than a second perception C++-side.
+  Perception is numbering-dependent (§4.2), so a second one is a second chance to disagree.
+* **Isotope**, not derived from mass: `getMass()` reports that an atom *is* labelled, not which
+  isotope it carries.
+
+From these, five derived primitives are computed once per molecule: the all-pairs distance matrix,
+the ring set, Crippen (logP, MR) contributions, E-state indices, and Labute ASA contributions.
+
+### 3.3 Families, grouped by the input they need
+
+The grouping is by *what a family consumes*, not by what its descriptors mean, because that is
+the axis the implementation is organised on: families sharing an input share the expensive part.
+
+**Needs only the atom and bond arrays.** `constit` (43) — hybridisation census, atom and bond
+counts, molecular weight, `FractionCSP3`, Lipinski/Ghose/Veber filters, `SLogP`, QED, SPS.
+`rdkcore` (21) — RDKit ring counts, `HeavyAtomMolWt`, `Phi`, `FpDensityMorgan1-3`, stereocentre
+counts. A single pass over the atom table.
+
+**Needs per-atom contribution vectors.** `vsa_bins` (76) — `SlogP_VSA*`, `SMR_VSA*`, `PEOE_VSA*`,
+`EState_VSA*`, `VSA_EState*`, plus `MolLogP`, `MolMR`, `TPSA`, `LabuteASA`. `estate` (158) —
+Kier–Hall electrotopological state as a per-atom-type count and sum over 79 types.
+
+A *VSA* descriptor bins a per-atom property against per-atom surface area: `SlogP_VSA3` is the
+surface area carried by atoms whose Crippen logP contribution falls in bin 3. The bin edges are
+module-level constants in RDKit, not per-molecule work. This is the thesis at its sharpest —
+verified on 6,000 adversarial molecules, **62 columns** (the 57 `*_VSA`, `LabuteASA` and the four
+E-state extremes) reconstruct **bit-exactly** (rtol 1e-9) from four per-atom vectors. Once the
+vector is paid for, each column is a single `bisect_right`.
+
+Three details break the reconstruction silently, all found by measurement: `LabuteASA` returns its
+hydrogen term separately from the heavy-atom vector; `PEOE_VSA` does not clamp NaN charges
+(elements without Gasteiger parameters), which fall through into the final bin; and `MolLogP`/
+`MolMR` sum over the H-added molecule while every `*_VSA` column does not.
+
+**Needs the distance matrix.** `autocorr` (540) — Moreau-Broto, Moran and Geary autocorrelations
+over 6 variants × 9 lags × 10 atomic weightings. `topocharge` (21) — Galvez indices.
+`topomisc` (15) — walk counts, Wiener index, diameter, `ABCGG`. `infocontent` (33) — Shannon
+information content of atom-equivalence classes at orders 0–5.
+
+An autocorrelation at lag *k* sums a product of an atomic property over every pair of atoms
+exactly *k* bonds apart. The *weighting* is that property — mass, van der Waals volume, Sanderson
+electronegativity, polarisability, intrinsic state, Gasteiger charge. The variants differ only in
+normalisation. One distance matrix and ten property vectors yield all 540 columns.
+
+**Needs subgraph enumeration.** `chi` (40) — Kier–Hall connectivity over paths, chains, clusters
+and path-clusters. `pathcount` (11). `ringcount` (49). A chi index of order *n* sums, over every
+subgraph of that order, the product of 1/√δ across its atoms. The four *shapes* are why this
+requires true subgraph enumeration rather than path walking, and why it is the costliest family.
+
+*A naming collision worth stating:* `chi.h` implements Mordred's subgraph chi (`Xp-*`);
+`hume_blocks.h` implements RDKit's Kier–Hall chi (`chi0n`…`chi4v`). They share no code, and
+RDKit's are registered in lowercase.
+
+**Needs SMARTS matching.** `frag` (76) — 74 RDKit `fr_*` counts plus `NHOHCount` and
+`HeavyAtomCount`, against a compiled SMARTS program, with a second program for QED's 116
+structural alerts.
+
+**Mixed.** `blocks` (182) — RDKit's `chi0n`…`chi7v`, `Kappa1-3`, `HallKierAlpha`, `BalabanJ`,
+`BertzCT`, `Ipc`, the four `BCUT2D_*` eigenvalue pairs.
+
+### 3.4 Cost
+
+Measured end-to-end on `c7i.4xlarge` (16 vCPU), flat across 10⁴–10⁶ molecules:
+
+| arm | µs/molecule | hours per 10⁹ |
+|---|---:|---:|
+| ECFP4 alone | 16.6 | 4.6 |
+| **HUME** (1,266 descriptors + ECFP6) | **124** | **34** |
+| ECFP4 + RDKit-180 | 444 | 123 |
+| ECFP4 + Mordred-685 | 4,683 | 1,301 |
+| ECFP4 + all descriptors (Python) | 6,190 | 1,722 |
+
+Roughly **50× faster than the equivalent Python descriptor block**, for the same information.
+
+---
+
+## 4. Divergences from the reference implementations
+
+For the overwhelming majority of columns HUME computes exactly what RDKit and Mordred compute, in
+C++ rather than Python, and is verified bit-exact against them. The governing rule is a single
+test:
+
+> Reproduce a **quirk**; diverge from an **ill-posed definition**. Is the upstream descriptor a
+> function of the molecule?
+
+### 4.1 Upstream bugs we reproduce deliberately
+
+A quirk returns the same wrong answer every time. It is part of the descriptor's de-facto
+definition, every published value computed with that package carries it, and matching it is what
+makes our numbers comparable to the literature. Two are reproduced and commented at the site:
+
+* **Five E-state SMARTS rows whose missing semicolon voids an aromaticity constraint.** The
+  pattern was evidently intended to require aromaticity and does not; the atoms it types are
+  therefore a superset of the intended ones. We type the same superset.
+* **`[SeD2H0]` decoding as an element-number query** with no aromaticity constraint at all.
+
+Both are deterministic. Diverging would make our values incomparable with every Mordred result in
+the literature, for a definition nobody has agreed to change.
+
+### 4.2 Ill-posed definitions we diverge from
+
+An ill-posed descriptor returns *different values for the same molecule* depending on atom
+numbering or which Kekulé structure the perceiver chose. There is nothing to be exact against.
+
+**Detection is mechanical**: permute the input ordering and recompute; any column that moves is
+ill-posed. The screen must shuffle **bonds, not only atoms** — `Chem.RenumberAtoms` permutes atoms
+and leaves the bond list alone, while RDKit's ring perception reads the bond list. We shipped the
+weaker atom-only screen for a period. `O=C1c2cc(ccc2-n2nccn2)CCCCc2ccc3cc(ccc3c2)N2CCCN1CC2` is
+stable across **201** atom renumberings and yields two different ring sets the moment bond order
+is shuffled as well.
+
+**(i) `InformationContent`.** Two independent defects. `InformationContentBase` sets
+`kekulize = True`, so atom-equivalence codes are built on a Kekulé structure and an aromatic bond
+enters as SINGLE or DOUBLE depending on which structure was chosen. And `BFSTree._expand` mutates
+a visited set while iterating over it: two adjacent siblings at the same depth are both in the
+tree and neither is visited when the loop starts, so whichever the dict yields first claims the
+other as its child — and dict order is insertion order, which is neighbour order, which is atom
+numbering. **32.3% of the first 2,000 adversarial molecules change at least one IC column under a
+single input permutation.** We keep the aromatic bond's own bond-type symbol rather than
+kekulizing, and layer the tree by graph distance. Orders 1–5 differ from Mordred by design;
+order 0 is unchanged.
+
+**(ii) Ring perception.** `Chem.GetSymmSSSR` is not a function of the graph. The SSSR *basis* is
+stable; what flips is whether `symmetrizeSSSR` finds a symmetry-equivalent extra ring of a size
+already present. `C1=CC2C3C(C=C1)C23` gives ring sizes (3,3,7) on 33 of 60 numberings and
+(3,3,7,7) on the other 27; brute force over every simple cycle confirms the larger answer is the
+**relevant-cycle set**, the object `symmetrizeSSSR` is reaching for and reaches only sometimes. We
+perceive rings on a skeleton rebuilt from scratch — *n* carbons in canonical-rank order, bonds
+added in sorted rank order — so that ring perception, which reads only the graph, is asked exactly
+the right question with bond order under canonical control. Over 100,000 molecules × 49 columns ×
+5 numberings, **22 molecules move before and 0 after**. It changes RDKit's answer on 32 molecules,
+all 32 independently confirmed unstable. RDKit's own 13 ring columns move on those 32 too; the
+alternative is two different ring sets inside one feature vector.
+
+*An earlier repair was wrong and the record says so.* Canonical atom ranks with rings compared by
+(size, sorted rank vector) left 3 of 100,000 still moving and made those 3 worse, because
+canonical ranks fix atom numbering and not bond order, which is the axis that decides.
+
+**(iii) Aromaticity**, where HUME does its own ring reasoning rather than inheriting the
+boundary's flag: a ring sulfur carrying an exocyclic double bond is a sulfoxide — pyramidal,
+therefore not aromatic; and "a bond in an all-aromatic ring is aromatic" must run *after*
+perception, not during it, since a fused system can contain ring bonds belonging to no tested
+subset.
+
+**How to state this:** HUME reproduces RDKit and Mordred bit-exactly for all well-posed columns.
+Three families are ill-posed upstream, and for these HUME implements the well-posed definition the
+upstream code was evidently reaching for and is deterministic under atom and bond permutation.
+That is a *stronger* guarantee than bit-exactness, not a weaker one.
+
+### 4.3 Our own descriptors
+
+160 of the 1,327 have no upstream equivalent. They fall into three groups.
+
+**Extended families.** Autocorrelation lags and chi orders that Mordred defines but leaves empty,
+computed with Mordred's own formulas. These are not novel definitions; they are the same
+descriptor evaluated where the reference implementation stops.
+
+**Ring and path summaries** — per-ring-size counts and path-length distributions with their own
+maxima and means. Several of these were duplicates of Mordred columns and were removed by the
+audit in §1.1; what survives is what the same filter that governs everything else allows.
+
+**Stereochemistry.** The one place we add something the catalogues genuinely lack. Both RDKit's
+and Mordred's 2D descriptor sets are almost entirely blind to stereochemistry: the resolution
+analysis finds Morgan fingerprints and every published embedding scoring at or near chance on an
+inverted stereocentre. Our block sums *signed* CIP parity (R = +1, S = −1) rather than counting
+stereocentres, which generalises across scaffolds in a way a bit-pattern does not, and it is the
+single clearest reason our descriptor block resolves stereochemical change where a fingerprint
+does not.
+
+Being ours is not itself a justification, and the audit in §1.1 is the evidence: our columns were
+put through the same filter as everything else, and a third of them did not survive it.
