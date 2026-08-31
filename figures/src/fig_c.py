@@ -56,6 +56,7 @@ so a new arm is visibly unstyled rather than silently missing.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -112,6 +113,24 @@ def pareto(xs, ys):
                    ((xs[j] < xs[i]) or (ys[j] > ys[i])) for j in range(len(xs))):
             keep.append(i)
     return sorted(keep, key=lambda i: xs[i])
+
+
+#: Physical cores the cost axis was measured on. os.cpu_count() reports logical CPUs, which on
+#: this machine is 12 against 8 performance cores, and quoting the logical number would overstate
+#: the parallelism the measurement actually had.
+def _cores() -> int:
+    try:
+        import subprocess
+        out = subprocess.run(["sysctl", "-n", "hw.perflevel0.physicalcpu"],
+                             capture_output=True, text=True, timeout=2)
+        if out.returncode == 0 and out.stdout.strip().isdigit():
+            return int(out.stdout.strip())
+    except Exception:
+        pass
+    return os.cpu_count() or 1
+
+
+_NCORES = _cores()
 
 
 def main() -> None:
@@ -192,7 +211,12 @@ def main() -> None:
         # ONE shared x-label for the row. Four copies of a long label overprinted each other
         # into "featurisation cost (µs / molecule, lfeg)aturisation cost ...".
         if nrow > 1 or t_i == 0:
-            ax.set_xlabel("" if nrow == 1 else "featurisation cost (µs / molecule, log)",
+            # THE CORE COUNT BELONGS ON THIS AXIS, NOT IN A CAPTION. HUME's row loop is
+            # threaded, so µs/molecule is a function of how many cores it was measured on --
+            # 279 µs on 8 performance cores against 690 µs on one. A cost axis without the
+            # hardware on it is not a measurement anyone can reproduce or compare against.
+            ax.set_xlabel("" if nrow == 1 else
+                          f"featurisation cost (µs / molecule, log; {_NCORES} cores)",
                           fontsize=FS["label"])
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.

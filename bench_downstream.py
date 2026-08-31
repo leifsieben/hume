@@ -24,7 +24,9 @@ whose units differ by two orders of magnitude is arithmetic on incommensurables.
 from __future__ import annotations
 
 import argparse, json, os, sys, time
+import json
 import numpy as np
+from pathlib import Path
 
 CHEMPFN = os.environ.get("CHEMPFN_SRC", "/Users/lsieben/VSCode/ChemPFN")
 sys.path.insert(0, CHEMPFN)
@@ -127,8 +129,21 @@ def f_mordred_desc(smis):
         return np.load(out_f)
 
 
-def f_hume(smis):
-    """ECFP + every descriptor HUME computes, including our own. One arm, no variants."""
+#: The 185 columns wired after the deduplication -- counts_ext, estate_ext, eta, spectral and
+#: misc_ext, minus the 43 the cost triage dropped. `hume_no_new` masks exactly these, so the pair
+#: (hume_no_new, hume_all_desc) isolates what they are worth downstream.
+_NEW_COLS = None
+
+
+def _hume_block(smis, drop_new: bool):
+    """ECFP + HUME's descriptors. `drop_new` masks the 185 post-dedup columns.
+
+    `optional=` NO LONGER ASKS FOR qed. The column was dropped in the cost triage because it
+    shipped 100% NaN -- its 116 structural alerts are OPT_QED and off by default -- so requesting
+    it now buys 69.3 us/mol of alert matching for a column that is not emitted. AvgIpc is still
+    requested: it is emitted, and it is not reconstructible (GBM R2 0.889 from the cheap basis).
+    """
+    global _NEW_COLS
     import hume
     from rdkit import Chem
     mols, keep = [], []
@@ -136,10 +151,30 @@ def f_hume(smis):
         m = Chem.MolFromSmiles(s)
         if m is not None:
             mols.append(m); keep.append(i)
-    fp, X, _ = hume.featurize_all_from_mols(mols, optional=("qed", "AvgIpc"))
+    fp, X, cols = hume.featurize_all_from_mols(mols, optional=("AvgIpc",))
+    if drop_new:
+        if _NEW_COLS is None:
+            _NEW_COLS = set(json.loads(
+                Path("results/dedupe2/new_columns.json").read_text()))
+        mask = np.array([c not in _NEW_COLS for c in cols], dtype=bool)
+        if mask.sum() == len(cols):
+            raise RuntimeError(
+                "hume_no_new: results/dedupe2/new_columns.json masked 0 of "
+                f"{len(cols)} columns; the ablation would be identical to hume_all_desc")
+        X = X[:, mask]
     out = np.full((len(smis), X.shape[1] + fp.shape[1]), np.nan, np.float32)
     out[keep] = np.hstack([X, fp]).astype(np.float32)
     return out
+
+
+def f_hume(smis):
+    """ECFP + every descriptor HUME computes, including our own. One arm, no variants."""
+    return _hume_block(smis, drop_new=False)
+
+
+def f_hume_no_new(smis):
+    """HUME WITHOUT the 185 columns wired after the deduplication."""
+    return _hume_block(smis, drop_new=True)
 
 
 #: Per-dataset memo for feature BLOCKS. Cleared at the top of every dataset, so it never holds
@@ -309,6 +344,8 @@ ARMS = {
     "ecfp_all_desc":   _cat(B_ECFP, B_RDKIT, B_MORD),
     "desc":            _cat(B_RDKIT, B_MORD),
     "hume":            f_hume,
+    "hume_all_desc":   f_hume,          # same block; named for the ablation pair
+    "hume_no_new":     f_hume_no_new,
     "chemberta_mtr":   B_LEARNED["chemberta_mtr"],
     "chemberta_mlm":   B_LEARNED["chemberta_mlm"],
     "minimol":         B_LEARNED["minimol"],

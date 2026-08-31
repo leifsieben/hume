@@ -105,6 +105,12 @@ ORDER = ["ecfp_r2", "rdkit_desc", "mordred_desc", "mordred", "hume",
 #: baseline Figures A, B and C actually run; r=3 is the radius HUME carries INTERNALLY and the two
 #: were being used interchangeably. Both stay measured, and the legend says which is drawn.
 COST_ONLY = {"ecfp", "minimol"}
+
+#: WHICH HARDWARE EACH ARM IS ACTUALLY DEPLOYED ON. Learned embeddings have a forward pass and
+#: are run on the GPU box; fingerprints and descriptor blocks have none and are run on CPU.
+#: Every arm is plotted once, on its own side -- see the note in main().
+GPU_ARMS = {"chemberta", "chemberta_mtr", "chemberta_mlm", "chemeleon", "chemprop",
+            "minimol", "molformer"}
 HATCH = "///"
 
 
@@ -279,37 +285,60 @@ def main(paths):
         if dropped:
             print(f"  not flat within {FLAT_TOL:.0%} on {bud}, so not extrapolated: {dropped}")
 
-    # FOUR FRAMES, ONE ROW, sized to the A4 text block: time then cost, CPU then GPU (Leif).
-    # The plate is WIDE AND SHORT on purpose -- it is the last figure in the set and the page
-    # budget is horizontal, not vertical.
-    fig, axes = plt.subplots(1, 4, figsize=(STYLE["col2"], 2.75))
-    # THE CPU AND GPU FRAMES OF EACH PAIR SHARE ONE Y-AXIS. The whole question the pair asks is
-    # "does the hardware help?", and two independently scaled log axes answer it wrong -- 803h
-    # and 291h drew at nearly the same height. Sharing also frees the width that a second set of
-    # tick labels and a second axis title were taking, which is what pushed the plate 6% past the
-    # A4 text block.
-    for a1, a2 in ((axes[0], axes[1]), (axes[2], axes[3])):
-        a2.sharey(a1)
-    spec = [("cpu", "hours", "a  Time, CPU"), ("gpu", "hours", "b  Time, GPU"),
-            ("cpu", "usd", "c  Cost, CPU"), ("gpu", "usd", "d  Cost, GPU")]
-    for i, (ax, (bud, kind, ttl)) in enumerate(zip(axes, spec)):
-        rows = cells(runs, bud)
-        if not rows:
-            mark_empty(ax, f"no {bud} measurements")
-            continue
-        hrs = [_hours_for_target(p) for _a, p, _c in rows]
-        vals = (hrs if kind == "hours" else
-                [h * p["usd_per_hour_ondemand"] for h, (_a, p, _c) in zip(hrs, rows)])
-        _bars(ax, rows, vals, _hours if kind == "hours" else _usd)
-        if i % 2 == 0:
-            ax.set_ylabel(("hours" if kind == "hours" else "USD") + " per 1e9 molecules",
-                          fontsize=FS["label"])
-        else:
-            ax.tick_params(axis="y", labelleft=False)
+    # TWO FRAMES, NOT FOUR, AND EACH ARM APPEARS EXACTLY ONCE (Leif). The four-panel version
+    # drew every arm on both hardware budgets, which meant reading the same descriptor number
+    # twice and inviting the comparison "HUME on a GPU box" that nobody would ever run. Instead
+    # each arm is shown on the hardware it is actually deployed on -- descriptors and
+    # fingerprints on CPU, learned embeddings on GPU -- and the two groups sit side by side in
+    # one axis, separated by a rule. The axis is then a straight ranking: what does one billion
+    # molecules cost, on the box you would really use.
+    NATIVE = {a: ("gpu" if a in GPU_ARMS else "cpu") for a in ORDER}
+    fig, axes = plt.subplots(1, 2, figsize=(STYLE["col2"], 2.9))
+    for ax, kind, ttl in ((axes[0], "hours", "a  Time per 10\u2079 molecules"),
+                          (axes[1], "usd", "b  Cost per 10\u2079 molecules")):
+        items = []
+        for a in ORDER:
+            bud = NATIVE[a]
+            rows = [r for r in cells(runs, bud) if r[0] == a]
+            if not rows:
+                continue
+            _a, prof, cop = rows[0]
+            h = _hours_for_target(prof)
+            items.append((a, bud, h if kind == "hours" else h * prof["usd_per_hour_ondemand"], cop))
+        if not items:
+            mark_empty(ax, "no measurements"); continue
+        items.sort(key=lambda t: (0 if t[1] == "cpu" else 1, t[2]))
+        xs = []
+        gap = 0.0
+        for i, (a, bud, v, cop) in enumerate(items):
+            if i and items[i - 1][1] == "cpu" and bud == "gpu":
+                gap = 0.9                      # the rule between the two hardware groups
+            xs.append(i + gap)
+        for x, (a, bud, v, cop) in zip(xs, items):
+            ax.bar(x, v, width=0.78, color=colour(a), edgecolor=STYLE["ink"], lw=0.6,
+                   hatch=(HATCH if cop else None), zorder=3)
+            ax.text(x, v, (_hours(v) if kind == "hours" else _usd(v)), ha="center", va="bottom",
+                    rotation=90, fontsize=FS["value"], color=STYLE["ink"], zorder=4)
+        ncpu = sum(1 for _a, b, _v, _c in items if b == "cpu")
+        if 0 < ncpu < len(items):
+            ax.axvline((xs[ncpu - 1] + xs[ncpu]) / 2.0, color=STYLE["ink"], lw=0.7,
+                       ls=(0, (2, 2)), zorder=2)
+        ax.set_xticks(xs)
+        ax.set_xticklabels([LABEL[a].split(" (")[0] for a, _b, _v, _c in items],
+                           rotation=38, ha="right", fontsize=FS["tick"])
+        ax.set_yscale("log")
+        ax.set_ylabel(("hours" if kind == "hours" else "USD") + " per 10\u2079 molecules",
+                      fontsize=FS["label"])
         ax.set_title(ttl, fontsize=FS["title"], fontweight="bold", loc="left", pad=4)
-    for a1, a2 in ((axes[0], axes[1]), (axes[2], axes[3])):
-        top = max(a1.get_ylim()[1], a2.get_ylim()[1])
-        a1.set_ylim(top=top)
+        ax.margins(y=0.28)
+        # the two hardware groups, named on the axis rather than in a caption
+        if 0 < ncpu < len(items):
+            ax.text(np.mean(xs[:ncpu]), 1.0, BUDGET_LABEL["cpu"], transform=
+                    ax.get_xaxis_transform(), ha="center", va="bottom",
+                    fontsize=FS["tick"], color=STYLE["ink"])
+            ax.text(np.mean(xs[ncpu:]), 1.0, BUDGET_LABEL["gpu"], transform=
+                    ax.get_xaxis_transform(), ha="center", va="bottom",
+                    fontsize=FS["tick"], color=STYLE["ink"])
 
     handles = [Patch(facecolor=colour(a), edgecolor=STYLE["ink"], lw=0.6, label=LABEL[a])
                for a in ORDER if any(by(runs, arm=a))]
