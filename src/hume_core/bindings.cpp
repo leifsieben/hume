@@ -48,6 +48,7 @@
 #include <mutex>
 #include <exception>
 #include "sps.h"
+#include "emit_filter.h"
 #include "counts_ext.h"
 #include "estate_ext.h"
 #include "eta.h"
@@ -527,7 +528,8 @@ enum {
   OFF_ETA        = OFF_ESTATE_EXT + N_ESTATE_EXT_COLS,
   OFF_SPECTRAL   = OFF_ETA + N_ETA_COLS,
   OFF_MISC       = OFF_SPECTRAL + N_SPECTRAL_COLS,
-  N_ALL_COLS     = OFF_MISC + N_MISC_COLS,
+  N_ROW_COLS     = OFF_MISC + N_MISC_COLS,   // every column COMPUTED
+  N_ALL_COLS     = N_EMIT_COLS,              // every column EMITTED (see emit_filter.h)
 };
 
 // B_CODE -> the bond-order number `fragmatch` compares against, which is RDKit's Bond::BondType
@@ -762,7 +764,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
   const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
-  for (int c = 0; c < N_ALL_COLS; c++) out[c] = 0.0;
+  for (int c = 0; c < N_ROW_COLS; c++) out[c] = 0.0;
 
   // ---- the 182 blocks, and the EState index the S* columns need ----
   fill_hume_mol(W.m, W.c, W.cur, AI, AD, BI, BS, BD, a0, b0, n, nb, chg_ok);
@@ -1383,6 +1385,8 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     auto worker = [&](ssize_t lo, ssize_t hi) {
       try {
       AllWork W;
+      // one full-width scratch row per thread; the output slice holds only the emitted columns
+      std::vector<double> row((std::size_t)N_ROW_COLS);
       for (ssize_t k = lo; k < hi; k++) {
         const int r0 = RM[k], nr = RM[k + 1] - r0;
         all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
@@ -1391,7 +1395,9 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                 need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
                 need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
                 f.chg_ok[k], SA, SB, fams, opts,
-                O + (ssize_t)k * N_ALL_COLS);
+                row.data());
+        double *dst = O + (ssize_t)k * N_ALL_COLS;
+        for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
       }
       } catch (...) {
         std::lock_guard<std::mutex> g(errmu);
@@ -1426,7 +1432,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
 //! number is which. The first HUME_NBLOCK_COLS are NOT here -- they are named in
 //! src/hume/_columns.py, which is generated from the same modules cpp/verify_hume.py checks --
 //! so this returns the tail and src/hume/__init__.py concatenates.
-static py::list all_column_names_tail() {
+static py::list all_column_names_tail_full() {
   py::list out;
   for (int i = 0; i < vsabin::N_COLS; i++) out.append(py::str(vsabin::col_name(i)));
   for (int t = 0; t < N_ESTATE_TYPES; t++)
@@ -1462,6 +1468,22 @@ static py::list all_column_names_tail() {
   for (int c = 0; c < eta::N_COLS; c++) out.append(py::str(eta::col_name(c)));
   for (int c = 0; c < N_SPECTRAL_COLS; c++) out.append(py::str(spectral::col_name(KEEP_SPECTRAL[c])));
   for (int c = 0; c < N_MISC_COLS; c++) out.append(py::str(miscext::col_name(KEEP_MISC[c])));
+  return out;
+}
+
+
+//! The emitted tail: the full computed tail with the deduplicated columns removed.
+//!
+//! EMIT_KEEP indexes the WHOLE row, block columns included, but this function returns only the
+//! part after them -- so an index below HUME_NBLOCK_COLS belongs to a block column and is not
+//! this function's to yield. src/hume/_columns.py filters the block names with the same table.
+static py::list all_column_names_tail() {
+  py::list full = all_column_names_tail_full();
+  py::list out;
+  for (int c = 0; c < N_EMIT_COLS; c++) {
+    const int j = EMIT_KEEP[c];
+    if (j >= HUME_NBLOCK_COLS) out.append(full[j - HUME_NBLOCK_COLS]);
+  }
   return out;
 }
 
@@ -1548,6 +1570,18 @@ PYBIND11_MODULE(_core, mod) {
   // more importantly, for what is not: Autocorrelation's tenth weight `Z` (52 columns) and the
   // three ill-posed InformationContent columns.
   mod.attr("N_ALL_COLS") = (int)N_ALL_COLS;
+  mod.attr("N_ROW_COLS") = (int)N_ROW_COLS;
+  // THE EMIT TABLE, EXPOSED, so python filters the BLOCK names with the same list the C++
+  // filters the values with. src/hume/_columns.py names all HUME_NBLOCK_COLS block columns and
+  // the tail comes from all_column_names_tail_full(); ALL_COLUMNS is those two concatenated and
+  // then indexed by this. Two filters would be two chances to disagree.
+  {
+    py::list k;
+    for (int c = 0; c < N_EMIT_COLS; c++) k.append(EMIT_KEEP[c]);
+    mod.attr("EMIT_KEEP") = k;
+  }
+  mod.def("all_column_names_tail_full", &all_column_names_tail_full,
+          "Every computed tail column name, before the deduplication filter.");
   mod.attr("ALL_OFFSETS") = py::dict(
       py::arg("blocks") = (int)OFF_BLOCKS, py::arg("vsa") = (int)OFF_VSA,
       py::arg("estate") = (int)OFF_ESTATE, py::arg("ringcount") = (int)OFF_RING,

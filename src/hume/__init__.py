@@ -38,7 +38,14 @@ assert _core.N_COLS == N_COLS, (
 # by _columns.py (generated from the same modules cpp/verify_hume.py checks); the rest are named
 # by the C++ that decides their order, so the package cannot disagree with the extension about
 # which number is which. FAMILY_OFFSETS says where each family starts.
-ALL_COLUMNS: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail())
+# ONE FILTER, APPLIED ONCE, OVER BOTH HALVES. The C++ computes N_ROW_COLS columns and emits the
+# subset `_core.EMIT_KEEP` names; the block half of that row is COLUMNS and the tail half is
+# all_column_names_tail_full(). Building ALL_COLUMNS by indexing the concatenation with the same
+# table is what keeps the names and the values in step -- filtering each half separately would be
+# two chances to disagree, and the assertion below would only catch a length mismatch, not a
+# misalignment.
+_ALL_ROW_NAMES: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail_full())
+ALL_COLUMNS: tuple[str, ...] = tuple(_ALL_ROW_NAMES[i] for i in _core.EMIT_KEEP)
 
 # NAMED BUT NOT YET COMPUTED. A column here appears in ALL_COLUMNS and in the output array and
 # is NaN on every molecule, because it is blocked on a boundary field that does not exist yet.
