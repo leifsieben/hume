@@ -73,6 +73,7 @@ except Exception:
 
 LABEL = {
     "ecfp_r2":   "ECFP4 r2-2048 (the floor)",
+    "descriptastorus": "descriptastorus (200 desc)",
     "hume":      f"HUME ({_HUME_NDESC} desc + ECFP)",
     "chemprop":  "chemprop D-MPNN (300x3)",
     "chemberta": "ChemBERTa-2 (3M)",
@@ -93,7 +94,7 @@ ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
 # Bar order, matching arms.py's ARM_ORDER: cheapest classical first, then HUME, then graph, then
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
-ORDER = ["ecfp_r2", "rdkit_desc", "mordred_desc", "mordred", "hume",
+ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred", "hume",
          "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than

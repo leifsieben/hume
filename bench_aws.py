@@ -94,11 +94,19 @@ def _init_hume():
 
 
 def _run_hume(job):
+    """`threads=1` IS DELIBERATE AND IS NOT LEAVING PERFORMANCE ON THE TABLE.
+
+    hume.featurize_all now threads its row loop, one worker per hardware thread by default.
+    This harness ALREADY runs one process per vCPU, so the box is saturated before the
+    featuriser sees it -- leaving threads=0 would give 16 processes x 12 threads and spend the
+    run in the scheduler. The in-process threading is for a single-process caller; here the
+    parallelism is at the process level and threads=1 is the honest configuration.
+    """
     shard, bs = job
     import numpy as np, hume
     tot = 0.0
     for lo in range(0, len(shard), bs):
-        fp, X, _ = hume.featurize_all(shard[lo:lo + bs])
+        fp, X, _ = hume.featurize_all(shard[lo:lo + bs], threads=1)
         tot += float(np.nansum(X[:, ::197])) + float(fp[:, ::13].sum())
     return tot
 
@@ -200,6 +208,39 @@ def _run_desc_block(job, want_rdkit, want_mordred):
 
 def _run_rdkit_desc(job):
     return _run_desc_block(job, True, False)
+
+
+_DSTORUS = None
+
+
+def _init_descriptastorus():
+    _quiet()
+    global _DSTORUS
+    from descriptastorus.descriptors import rdDescriptors
+    _DSTORUS = rdDescriptors.RDKit2D()
+
+
+def _run_descriptastorus(job):
+    """descriptastorus RDKit2D -- 200 columns, the tuned bulk wrapper around RDKit's descriptors.
+
+    `processMol` rather than `process`: the latter re-parses the SMILES it is handed, and this
+    harness has the molecule already. Measured locally over 2,000 molecules, RDKit's own
+    Descriptors._descList is 4938 us/mol, descriptastorus `process` 4322 and `processMol` 3147 --
+    so the fair number for "a fast descriptor implementation" is the one that is not paying for
+    a parse the caller already did.
+    """
+    shard, bs = job
+    from rdkit import Chem
+    tot = 0.0
+    for lo in range(0, len(shard), bs):
+        for s in shard[lo:lo + bs]:
+            m = Chem.MolFromSmiles(s)
+            if m is None:
+                continue
+            row = _DSTORUS.processMol(m, s)
+            if row:
+                tot += float(row[1] or 0.0)
+    return tot
 
 
 def _run_mordred_desc(job):
@@ -348,6 +389,7 @@ ARMS = {
     "chemeleon": (_init_chemeleon, _run_chemeleon, [64, 256, 1024]),
     "chemprop":  (_init_chemprop,  _run_chemprop,  [256, 1024, 4096]),
     "rdkit_desc":   (_init_mordred, _run_rdkit_desc,   [4096]),
+    "descriptastorus": (_init_descriptastorus, _run_descriptastorus, [4096]),
     "mordred_desc": (_init_mordred, _run_mordred_desc, [4096]),
     "minimol":      (_init_minimol, _run_minimol,      [128, 512, 2048]),
 }
