@@ -6,3 +6,11 @@ COST_PER_HOUR=1.5188   # c7i.4xlarge 0.7140 + g6.xlarge 0.8048, us-east-1 on-dem
 BACKSTOP=shutdown -h +240 armed in user-data; InstanceInitiatedShutdownBehavior=terminate
 GPU_INSTANCE=i-0172a4cab9777e6ee
 CPU_INSTANCE=i-0990f4993c5a25215
+
+# scale-benchmark rerun for figure D, launched 2026-08-31T16:10:27Z
+SCALE_CPU_INSTANCE=i-06039ca4e5a997591
+SCALE_ARMS=hume descriptastorus rdkit_desc
+SCALE_BACKSTOP=shutdown -h +180, InstanceInitiatedShutdownBehavior=terminate
+SCALE_LOG=s3://hume-bench-use1-075120018132/logs/i-06039ca4e5a997591.log
+SCALE_STATUS=s3://hume-bench-use1-075120018132/status/i-06039ca4e5a997591.{DONE,FAILED}.json
+SCALE_RESULTS=s3://hume-bench-use1-075120018132/results/i-06039ca4e5a997591/
