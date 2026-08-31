@@ -301,34 +301,46 @@ def main(paths):
         if dropped:
             print(f"  not flat within {FLAT_TOL:.0%} on {bud}, so not extrapolated: {dropped}")
 
-    # TWO FRAMES, NOT FOUR, AND EACH ARM APPEARS EXACTLY ONCE (Leif). The four-panel version
-    # drew every arm on both hardware budgets, which meant reading the same descriptor number
-    # twice and inviting the comparison "HUME on a GPU box" that nobody would ever run. Instead
-    # each arm is shown on the hardware it is actually deployed on -- descriptors and
-    # fingerprints on CPU, learned embeddings on GPU -- and the two groups sit side by side in
-    # one axis, separated by a rule. The axis is then a straight ranking: what does one billion
-    # molecules cost, on the box you would really use.
-    NATIVE = {a: native(runs, a) for a in ORDER}
+    # TWO FRAMES, AND AN ARM IS DRAWN ONCE PER HARDWARE IT WAS ACTUALLY MEASURED ON.
+    #
+    # The four-panel original drew EVERY arm on BOTH budgets, including a "HUME on a GPU box"
+    # number that was really its CPU number copied across -- a comparison nobody would run, and
+    # the same descriptor figure read twice. Collapsing that to one bar per arm fixed the
+    # duplication but hid something worth seeing: the GNNs are the only arms with a real choice
+    # of hardware, and for one of them the choice goes the other way.
+    #
+    #     arm         16 vCPU, no GPU    1 GPU + 4 vCPU    GPU speedup
+    #     chemberta        340.4 us          112.5 us          3.03x
+    #     chemeleon       2892.5 us         1046.7 us          2.76x
+    #     chemprop         140.1 us          604.2 us          0.23x
+    #
+    # chemprop's graph featurisation is CPU-bound, so trading twelve vCPUs for a GPU costs more
+    # than the GPU returns. Showing it on one side only would be picking a winner for the reader
+    # off-plate; showing both sides makes the starvation visible and lets the 4-vCPU box be
+    # judged as what it is.
+    #
+    # So: an arm with measurements on both budgets appears in both groups. An arm with only one
+    # -- every fingerprint and descriptor block, none of which has a forward pass to put on a
+    # device -- appears once, on the CPU side. Nothing is copied between budgets any more, which
+    # is why the hatch that used to mean "this is a CPU number in a GPU panel" is gone.
     fig, axes = plt.subplots(1, 2, figsize=(STYLE["col2"], 2.9))
     for ax, kind, ttl in ((axes[0], "hours", "a  Featurisation time"),
                           (axes[1], "usd", "b  Cost per billion molecules")):
         items = []
         for a in ORDER:
-            bud = NATIVE.get(a)
-            if bud is None:
-                continue
-            rows = [r for r in cells(runs, bud) if r[0] == a]
-            if not rows:
-                continue
-            _a, prof, cop = rows[0]
-            h = _hours_for_target(prof)
+            for bud in ("cpu", "gpu"):
+                rows = [r for r in cells(runs, bud) if r[0] == a and not r[2]]
+                if not rows:
+                    continue
+                _a, prof, cop = rows[0]
+                h = _hours_for_target(prof)
             # us/MOLECULE, not hours-per-billion. The two are the same measurement (us/mol =
             # hours * 3.6) but the per-molecule form is the unit figure C's cost axis already
             # uses, so the two plates can be read against each other without arithmetic, and it
             # does not imply anyone runs a billion molecules. Cost stays per billion: dollars
             # per molecule is unreadably small, and cost is the hardware-neutral axis.
-            items.append((a, bud, prof["us_per_mol"] if kind == "hours"
-                          else h * prof["usd_per_hour_ondemand"], cop))
+                items.append((a, bud, prof["us_per_mol"] if kind == "hours"
+                              else h * prof["usd_per_hour_ondemand"], cop))
         if not items:
             mark_empty(ax, "no measurements"); continue
         items.sort(key=lambda t: (0 if t[1] == "cpu" else 1, t[2]))
