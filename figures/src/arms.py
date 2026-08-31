@@ -1,34 +1,34 @@
-"""Single source of truth for the HUME paper figures: arm nomenclature and colours.
+"""Single source of truth for the HUME paper figures: arm nomenclature and colors.
 
 Imported by every figure script under `figures/`. Nothing else in the repo defines an arm label
-or an arm colour -- never hard-code either in a figure script.
+or an arm color -- never hard-code either in a figure script.
 
 VISUAL CONTINUITY WITH THE CLIMB PAPER IS DELIBERATE (Leif 2026-08-26). The hue families and the
 exact hexes are CLIMB's, re-mapped onto HUME's semantic slots, so a model that appears in both
-papers keeps its colour across them:
+papers keeps its color across them:
 
     ECFP4        #8A5F1B   same amber as CLIMB's ECFP4 anchor
     Morgan r=3   #4E340B   same as CLIMB's R3FP
     ChemBERTa-2  #5C4A85   same as CLIMB's ChemBERTa-2
     MoLFormer    #8B7BB5   same as CLIMB's MoLFormer
 
-Colour scheme -- SEMANTIC SLOTS, not tastes:
+Color scheme -- SEMANTIC SLOTS, not tastes:
 
-    amber   classical featurisations: fingerprints and the descriptor block
+    amber   classical featurizations: fingerprints and the descriptor block
     crimson HUME, i.e. this paper's contribution
     violet  external chemical language models
     teal    external graph / GNN foundation models
     blue    the descriptor PROXY ladder (ridge -> GNN) -- figures C/D only
-    grey    controls
+    gray    controls
 
 Shades within a family run dark -> light, and every family also spans a distinct LIGHTNESS band
-so the figures survive greyscale printing. The hues themselves are CLIMB's CVD-nudged set: the
+so the figures survive grayscale printing. The hues themselves are CLIMB's CVD-nudged set: the
 plain orange/red/green triple is the one pairing deuteranopes cannot separate, so "red" here is
 a magenta-leaning crimson and "green" a bluish teal, both anchored on Okabe-Ito.
 
-EXACT vs PREDICTED IS A HATCH, NOT A HUE. `hume_core_predict` carries the SAME colour as
+EXACT vs PREDICTED IS A HATCH, NOT A HUE. `hume_core_predict` carries the SAME color as
 `hume_core` with a hatch over it. The paper's central comparison is a descriptor block computed
-exactly against the same block predicted by a proxy, and encoding that as two unrelated colours
+exactly against the same block predicted by a proxy, and encoding that as two unrelated colors
 would make the pair read as two unrelated arms; encoding it as a hatch says "same thing, cheaper
 route" at a glance and costs no hue. It also keeps the crimson family readable when all four
 HUME arms are drawn together.
@@ -36,7 +36,7 @@ HUME arms are drawn together.
 from __future__ import annotations
 
 # --------------------------------------------------------------------------------------------
-# colour families
+# color families
 # --------------------------------------------------------------------------------------------
 FAMILY_COLORS = {
     "anchor":  "#8A5F1B",   # gold    -- FINGERPRINTS, and fingerprint+descriptor combinations
@@ -45,16 +45,16 @@ FAMILY_COLORS = {
     "graph":   "#5B3D8F",   # purple  -- external graph foundation models
     "hume":    "#2A7F62",   # teal    -- this paper
     "proxy":   "#4E6273",   # slate   -- the descriptor proxy ladder (figures C/D only)
-    "control": "#8A8A8A",   # grey
+    "control": "#8A8A8A",   # gray
 }
 
-# ASSIGNMENT FIXED BY LEIF 2026-08-26: "a colour scheme for CLMs (red) and then one for GNNs
+# ASSIGNMENT FIXED BY LEIF 2026-08-26: "a color scheme for CLMs (red) and then one for GNNs
 # (purple), then descriptors are blue and fingerprints are gold as they are now."
 #
 # HUME MOVED TO TEAL AS A CONSEQUENCE, not as a preference. It held crimson, which under the new
 # scheme is the CLM family's hue -- and the two do co-occur (the final benchmark figure puts HUME
 # against every external baseline), so leaving it would have put this paper's own arm in the
-# colour of the models it is being compared against.
+# color of the models it is being compared against.
 #
 # Teal rather than a pure green: HUME sits beside the red CLM family, and red/green is precisely
 # the pairing a deuteranope cannot separate. A bluish green keeps the "distinct new thing"
@@ -66,7 +66,7 @@ FAMILY_COLORS = {
 # other in figures C/D, where no arm shares the axes.
 
 # WHY DESCRIPTORS-ALONE LEFT THE AMBER FAMILY (Leif 2026-08-26: "give descriptors a different
-# colour, they should only look similar to fingerprints if it's fp+desc, on their own they should
+# color, they should only look similar to fingerprints if it's fp+desc, on their own they should
 # be more distinct"). Amber now means "a fingerprint is in this arm". `desc` contains no
 # fingerprint at all, and Figure A shows it is not a paler version of one either -- it wins on
 # protonation (1.199 vs ECFP4's 0.811) and halogen swap (0.810 vs 0.353) while losing 2-3x on
@@ -79,11 +79,11 @@ FAMILY_COLORS = {
 SHADES = {
     # SIX ambers, not CLIMB's five: HUME's Figure B splits the descriptor block four ways
     # (all / RDKit-only / Mordred-only / none) and each split needs to be separable from the two
-    # bare fingerprints beside it. Roughly even lightness steps, so the family also prints grey.
+    # bare fingerprints beside it. Roughly even lightness steps, so the family also prints gray.
     # THE ONE DELIBERATE BREAK WITH CLIMB. CLIMB gives R3FP #4E340B, one step darker than its
     # ECFP4 #8A5F1B -- fine there, because fig_G drops R3FP and the two never sit side by side.
     # HUME's Figure A puts them adjacent in all thirteen panels and the radius comparison is a
-    # headline claim, so two dark browns a shade apart is not a colour scheme, it is a hazard.
+    # headline claim, so two dark browns a shade apart is not a color scheme, it is a hazard.
     # Morgan r=3 takes the LIGHT end of the same family instead: same amber, maximal lightness
     # separation, and the pair still reads as one family. ECFP4 keeps CLIMB's hex exactly.
     # THE THREE HUME DRAWS IN FIGURE A -- [0] ECFP4, [1] Morgan r=3, [5] descriptors alone --
@@ -126,8 +126,8 @@ SHADES = {
 # --------------------------------------------------------------------------------------------
 # key     -> the string used in every results file and every embedding npz stem
 # label   -> the ONLY string that may appear in a figure
-# family  -> colour family
-# color   -> exact colour
+# family  -> color family
+# color   -> exact color
 # hatch   -> bar hatch, or None. Reserved for "predicted rather than computed" (see module head).
 #
 # LABEL RULES, because these strings sit next to each other on a page:
@@ -139,18 +139,23 @@ SHADES = {
 #     elided where it does not ("+ descriptors" = both).
 #   * "predicted" spelled out. Never "pred", never "surrogate" -- the paper uses one word for
 #     this and a reader should not have to learn a second.
+# SHORT LABELS (Leif). "ECFP4 + descriptors", "ChemBERTa-2 (MTR)" and friends spent a third of
+# every legend on detail no comparison in this set turns on -- the radius, the pretraining
+# objective and the embedding width are in the methods, and repeating them on four plates made
+# the axes narrower without making any of them clearer. The keys are unchanged, so nothing that
+# reads a CSV or a results file has to know this happened.
 ARMS = {
-    # ---- classical featurisations (amber) ---------------------------------------------------
-    "ecfp": dict(label="ECFP4", family="anchor", color=SHADES["anchor"][0]),
+    # ---- classical featurizations (amber) ---------------------------------------------------
+    "ecfp": dict(label="ECFP", family="anchor", color=SHADES["anchor"][0]),
     "r3cfp": dict(label="Morgan r=3", family="anchor", color=SHADES["anchor"][1]),
     # r=4 extends the radius series. It sits between r=2 and r=3 in the amber family rather than
-    # taking a new colour: the three are one variable, and Figure A puts them adjacent in every
+    # taking a new color: the three are one variable, and Figure A puts them adjacent in every
     # panel, so they must read as a series and not as three unrelated arms.
     "r4cfp": dict(label="Morgan r=4", family="anchor", color=SHADES["anchor"][5]),
-    "ecfp_all_desc": dict(label="ECFP4 + descriptors", family="anchor",
+    "ecfp_all_desc": dict(label="ECFP + all desc", family="anchor",
                           color=SHADES["anchor"][2]),
-    "ecfp_rdkit_desc": dict(label="ECFP4 + RDKit", family="anchor", color=SHADES["anchor"][3]),
-    "ecfp_mordred_desc": dict(label="ECFP4 + Mordred", family="anchor",
+    "ecfp_rdkit_desc": dict(label="ECFP + RDKit", family="anchor", color=SHADES["anchor"][3]),
+    "ecfp_mordred_desc": dict(label="ECFP + Mordred", family="anchor",
                               color=SHADES["anchor"][4]),
     # Its OWN family -- no fingerprint in this arm. See the note above FAMILY_COLORS.
     "desc": dict(label="RDKit + Mordred", family="desc", color=SHADES["desc"][0]),
@@ -159,16 +164,16 @@ ARMS = {
     # contribution shrinks as the classical base gets more complete -- which needs the
     # intermediate rungs to exist as arms, not just the endpoints.
     "desc_rdkit": dict(label="RDKit only", family="desc", color=SHADES["desc"][1]),
-    # THE WITHIN-GROUP REFERENCE BAR. In Figure B colour means "which embedding was added" and
+    # THE WITHIN-GROUP REFERENCE BAR. In Figure B color means "which embedding was added" and
     # the group name means "to which classical block", so the block-alone bar must carry ONE
-    # colour across every group -- otherwise colour would mean two things in one panel. Neutral
-    # grey, because it is the thing everything beside it is measured against.
+    # color across every group -- otherwise color would mean two things in one panel. Neutral
+    # gray, because it is the thing everything beside it is measured against.
     "classical_base": dict(label="classical block alone", family="control",
                            color=SHADES["control"][0]),
     "desc_mordred": dict(label="Mordred only", family="desc", color=SHADES["desc"][2]),
 
     # ---- HUME (crimson) ---------------------------------------------------------------------
-    # The `_predict` arms share their exact counterpart's colour and add a hatch. See module head.
+    # The `_predict` arms share their exact counterpart's color and add a hatch. See module head.
     # THE HUME ARM. One arm, not a family (Leif 2026-08-28: "there is just one hume ... right
     # now its ecfp + all descriptors (incl our own) we compute full stop"). The `hume_core*`
     # entries below are an earlier factorisation that no figure draws any more; they are kept
@@ -181,10 +186,10 @@ ARMS = {
     # 43 the cost triage dropped. Same block, same model, same folds; the only difference is
     # those columns, so the gap between the two IS what they are worth. Lighter shade of the
     # same family, because it is the same method and not a competitor.
-    "hume_no_new": dict(label="HUME (no new desc)", family="hume", color=SHADES["hume"][1]),
+    "hume_no_new": dict(label="HUME no-new", family="hume", color=SHADES["hume"][1]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
-    # string. Grey, like every other control in the set.
+    # string. Gray, like every other control in the set.
     "notation": dict(label="SMILES characters", family="control", color="#9AA0A6"),
     "hume_core": dict(label="HUME core", family="hume", color=SHADES["hume"][1]),
     "hume_core_custom": dict(label="HUME core + blocks", family="hume", color=SHADES["hume"][0]),
@@ -195,7 +200,7 @@ ARMS = {
     # FIGURE C splits "predicted" by WHICH PROXY did the predicting, so the hatch carries the
     # proxy identity while the hue still says "this is HUME". Extending the hatch channel rather
     # than the hue keeps the module-head rule intact: hatch means "predicted rather than
-    # computed", and now also which route. The proxies keep their own colours in the `proxy`
+    # computed", and now also which route. The proxies keep their own colors in the `proxy`
     # family for figures that compare proxies to each other rather than to arms.
     "hume_predict_ridge": dict(label="HUME, ridge-predicted", family="hume",
                                color=SHADES["hume"][0], hatch="///"),
@@ -234,9 +239,9 @@ ARMS = {
     # "does supervising on descriptors make the embedding better?", run by the model's own
     # authors and reported as "our model is better" rather than as a statement about
     # descriptors. Figures B and C reinterpret it.
-    "chemberta_mlm": dict(label="ChemBERTa-2 (MLM)", family="clm", color=SHADES["clm"][1],
+    "chemberta_mlm": dict(label="ChemBERTa (MLM)", family="clm", color=SHADES["clm"][1],
                           hf="DeepChem/ChemBERTa-77M-MLM", desc_pretrained=False),
-    "chemberta_mtr": dict(label="ChemBERTa-2 (MTR)", family="clm", color=SHADES["clm"][0],
+    "chemberta_mtr": dict(label="ChemBERTa", family="clm", color=SHADES["clm"][0],
                           hf="DeepChem/ChemBERTa-77M-MTR", desc_pretrained=True),
     "molformer": dict(label="MoLFormer", family="clm", color=SHADES["clm"][4],
                       hf="ibm-research/MoLFormer-XL-both-10pct", desc_pretrained=False),
@@ -264,7 +269,7 @@ ARMS = {
                         hf="ibm-research/materials.selfies-ted", desc_pretrained=False),
 
     # ---- external graph foundation models (blue) --------------------------------------------
-    # `chemprop` is a randomly-initialised D-MPNN -- the architecture with NO pretraining. It is
+    # `chemprop` is a randomly-initialized D-MPNN -- the architecture with NO pretraining. It is
     # a CONTROL, not a pretrained comparator, and its label says so: an untrained encoder that
     # still responds to chemistry tells you how much of a graph model's sensitivity is
     # architectural rather than learned. CheMeleon is the same architecture pretrained, so the
@@ -278,7 +283,7 @@ ARMS = {
                       desc_pretrained=True),
     # Uni-Mol needs a CONFORMER, so it is the only arm here whose input is 3D. It stays in the
     # graph family (it is a geometry-aware graph transformer, not a string model) and the label
-    # carries the 3D rather than a sixth hue: a new colour family for one arm costs the reader
+    # carries the 3D rather than a sixth hue: a new color family for one arm costs the reader
     # more than a two-character suffix does. It is also the arm most likely to legitimately BEAT
     # descriptors on the QM panel, and the figure should show that rather than hide it.
     "unimol": dict(label="Uni-Mol (3D)", family="graph", color=SHADES["graph"][2],
@@ -373,7 +378,7 @@ def desc_pretrained(key: str):
 def bar_kw(key: str) -> dict:
     """Every visual property of one arm's bar, in one place.
 
-    Figures call this instead of assembling colour + hatch + edge themselves, so the three
+    Figures call this instead of assembling color + hatch + edge themselves, so the three
     channels cannot drift apart between Figure B and Figure C.
     """
     kw = dict(color=color(key))
@@ -389,7 +394,7 @@ def order(keys) -> list:
     """`keys` sorted into ARM_ORDER, with anything unregistered appended alphabetically.
 
     Unregistered arms are APPENDED rather than dropped: a figure drawn from whatever results
-    exist should show a new arm in an obvious place and in the default grey, so it is visible
+    exist should show a new arm in an obvious place and in the default gray, so it is visible
     that it needs registering -- not silently vanish from the plate.
     """
     known = [a for a in ARM_ORDER if a in set(keys)]

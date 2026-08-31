@@ -41,7 +41,7 @@ EXPORT_DIR = ROOT.parent / "figures_out"
 # ---------------------------------------------------------------------------------------------
 # ONE font, ONE size scale. These figures get combined into multi-panel layouts later, so every
 # script must use these exact point sizes -- never a local tweak like `fs_annot - 0.5`, which
-# would make one panel's text a different size from its neighbour's.
+# would make one panel's text a different size from its neighbor's.
 # ---------------------------------------------------------------------------------------------
 FONT = "Arial"                                  # pinned, no silent fallback to a different face
 FS = dict(
@@ -67,7 +67,7 @@ STYLE = dict(
     **{f"fs_{k}": v for k, v in FS.items()},   # STYLE["fs_title"] etc. stay available
 )
 
-# PANEL BACKGROUND TINTS. A tint marks a panel whose reading RULE differs from its neighbours',
+# PANEL BACKGROUND TINTS. A tint marks a panel whose reading RULE differs from its neighbors',
 # and nothing else -- never decoration. Two are defined because this paper's Figure A has two
 # such rules, and they must not be confusable with each other:
 #   TINT_CONTROL  warm  -- a HIGH bar is a FAILURE (same molecule, written two ways)
@@ -106,7 +106,7 @@ def install():
         "lines.linewidth": STYLE["lw"], "lines.markersize": STYLE["marker_size"],
         "hatch.linewidth": 0.35,          # fine dots, not fat blobs
         # Alpha is 1.0 and the COLOUR carries the lightness, so what you set is what you get. A
-        # 0.30 alpha on a light grey renders an effective ~#EFEFEF, i.e. gridlines invisible in
+        # 0.30 alpha on a light gray renders an effective ~#EFEFEF, i.e. gridlines invisible in
         # print -- the exact bug CLIMB fixed here.
         "axes.grid": False, "grid.color": STYLE["grid"], "grid.linewidth": 0.6, "grid.alpha": 1.0,
         "axes.axisbelow": True,

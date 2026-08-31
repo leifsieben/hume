@@ -1,4 +1,4 @@
-"""Figure D -- what it costs to featurise a billion molecules, measured rather than extrapolated.
+"""Figure D -- what it costs to featurize a billion molecules, measured rather than extrapolated.
 
     .venv/bin/python figures/src/fig_d.py [results/scale/*.json ...]
 
@@ -54,8 +54,8 @@ TARGET = 1e9
 FLAT_TOL = 0.25          # us/mol may move this much across decades and still be extrapolated
 SECONDS_PER_HOUR = 3600.0
 
-# Display names and colours. `arms.py` owns the paper's palette; anything it does not know about
-# gets a neutral grey rather than a new colour invented here, so the plate cannot drift from the
+# Display names and colors. `arms.py` owns the paper's palette; anything it does not know about
+# gets a neutral gray rather than a new color invented here, so the plate cannot drift from the
 # other figures.
 # THE KEYS HERE ARE THE ARM NAMES bench_aws.py WRITES, and an arm missing from this dict is
 # silently invisible in every panel -- which is exactly what happened on the first render with
@@ -71,21 +71,24 @@ try:
 except Exception:
     _HUME_NDESC = "1266?"
 
+# SHORT NAMES (Leif). The parenthetical dimensions used to live here -- "(2048x6)", "(3M)",
+# "(300x3)" -- and they cost a third of the axis width to say something no comparison on this
+# plate turns on. Every arm's size is in the paper's methods; the plate is about time and cost.
 LABEL = {
-    "ecfp_r2":   "ECFP4 r2-2048 (the floor)",
-    "descriptastorus": "descriptastorus (200 desc)",
-    "hume":      f"HUME ({_HUME_NDESC} desc + ECFP)",
-    "chemprop":  "chemprop D-MPNN (300x3)",
-    "chemberta": "ChemBERTa-2 (3M)",
-    "chemeleon": "CheMeleon D-MPNN (2048x6)",
-    "rdkit_desc":   "ECFP4 + RDKit-180",
-    "mordred_desc": "ECFP4 + Mordred-685",
-    "mordred":   "ECFP4 + all descriptors",
+    "ecfp_r2":   "ECFP",
+    "descriptastorus": "descriptastorus",
+    "hume":      "HUME",
+    "chemprop":  "Chemprop",
+    "chemberta": "ChemBERTa",
+    "chemeleon": "CheMeleon",
+    "rdkit_desc":   "ECFP + RDKit",
+    "mordred_desc": "ECFP + Mordred",
+    "mordred":   "ECFP + all desc",
 }
 # The palette key in arms.py, so this plate cannot drift from A, B and C. `mordred` here is
 # ECFP + RDKit-180 + mordred-685, which is the `ecfp_all_desc` arm elsewhere in the paper -- it
 # used to point at `ecfp_mordred_desc`, a DIFFERENT arm, and the same measurement was therefore
-# drawn in two colours across two figures.
+# drawn in two colors across two figures.
 ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
           "mordred": "ecfp_all_desc",
@@ -112,7 +115,7 @@ COST_ONLY = {"ecfp", "minimol"}
 #: This used to be a hand-written set of "the learned embeddings", on the assumption that a
 #: model with a forward pass belongs on a GPU. That assumption is WRONG for chemprop and the
 #: measurement says so plainly -- 140.1 us/mol on the 16-vCPU CPU box against 604.2 on the
-#: 1-GPU-4-vCPU box, a GPU "speedup" of 0.23x. Its graph featurisation is CPU-bound, so trading
+#: 1-GPU-4-vCPU box, a GPU "speedup" of 0.23x. Its graph featurization is CPU-bound, so trading
 #: twelve vCPUs for a GPU costs more than the GPU returns. Plotting it on the GPU side showed
 #: chemprop in its WORST configuration and called that its cost.
 #:
@@ -153,7 +156,7 @@ def _group_header(ax, groups):
             seen, start = bud, i
 
 
-def colour(arm: str) -> str:
+def color(arm: str) -> str:
     try:
         return A.color(ARMKEY.get(arm, arm))
     except Exception:
@@ -197,7 +200,7 @@ def check_known(runs):
     if unknown:
         raise SystemExit(
             f"fig_d: the results contain arm(s) {unknown} that are not in LABEL, so they would "
-            f"be silently omitted from every panel. Add them to LABEL/ARMKEY (and pick a colour "
+            f"be silently omitted from every panel. Add them to LABEL/ARMKEY (and pick a color "
             f"in arms.py) rather than letting the figure quietly under-report.")
 
 
@@ -256,7 +259,7 @@ def cells(runs, budget):
 def _bars(ax, rows, values, fmt):
     x = np.arange(len(rows))
     v = np.array(values, float)
-    ax.bar(x, v, width=0.72, color=[colour(a) for a, _p, _c in rows],
+    ax.bar(x, v, width=0.72, color=[color(a) for a, _p, _c in rows],
            edgecolor=STYLE["ink"], linewidth=0.45, zorder=3,
            hatch=[HATCH if c else None for _a, _p, c in rows])
     ax.set_yscale("log")
@@ -314,7 +317,7 @@ def main(paths):
     #     chemeleon       2892.5 us         1046.7 us          2.76x
     #     chemprop         140.1 us          604.2 us          0.23x
     #
-    # chemprop's graph featurisation is CPU-bound, so trading twelve vCPUs for a GPU costs more
+    # chemprop's graph featurization is CPU-bound, so trading twelve vCPUs for a GPU costs more
     # than the GPU returns. Showing it on one side only would be picking a winner for the reader
     # off-plate; showing both sides makes the starvation visible and lets the 4-vCPU box be
     # judged as what it is.
@@ -324,7 +327,7 @@ def main(paths):
     # device -- appears once, on the CPU side. Nothing is copied between budgets any more, which
     # is why the hatch that used to mean "this is a CPU number in a GPU panel" is gone.
     fig, axes = plt.subplots(1, 2, figsize=(STYLE["col2"], 2.9))
-    for ax, kind, ttl in ((axes[0], "hours", "a  Featurisation time"),
+    for ax, kind, ttl in ((axes[0], "hours", "a  Featurization time per molecule"),
                           (axes[1], "usd", "b  Cost per billion molecules")):
         items = []
         for a in ORDER:
@@ -350,13 +353,13 @@ def main(paths):
             if i and items[i - 1][1] == "cpu" and bud == "gpu":
                 gap = 1.6                      # the rule between the two hardware groups; wide
                                                # enough that the GPU group's label,
-                                               # centred over only two bars, does not
+                                               # centered over only two bars, does not
                                                # start on top of the rule
             xs.append(i + gap)
         for x, (a, bud, v, cop) in zip(xs, items):
-            ax.bar(x, v, width=0.78, color=colour(a), edgecolor=STYLE["ink"], lw=0.6,
+            ax.bar(x, v, width=0.78, color=color(a), edgecolor=STYLE["ink"], lw=0.6,
                    hatch=(HATCH if cop else None), zorder=3)
-            ax.text(x, v, (f"{v:,.0f}" if kind == "hours" else _usd(v)), ha="center", va="bottom",
+            ax.text(x, v, (f"{v:,.0f} \u00b5s" if kind == "hours" else _usd(v)), ha="center", va="bottom",
                     rotation=90, fontsize=FS["annot"], color=STYLE["ink"], zorder=4)
         ncpu = sum(1 for _a, b, _v, _c in items if b == "cpu")
         if 0 < ncpu < len(items):
@@ -378,7 +381,7 @@ def main(paths):
                 ax.text(xpos, 0.965, BUDGET_LABEL[key], transform=ax.get_xaxis_transform(),
                         ha="center", va="top", fontsize=FS["tick"], color=STYLE["ink"])
 
-    handles = [Patch(facecolor=colour(a), edgecolor=STYLE["ink"], lw=0.6, label=LABEL[a])
+    handles = [Patch(facecolor=color(a), edgecolor=STYLE["ink"], lw=0.6, label=LABEL[a])
                for a in ORDER if any(by(runs, arm=a))]
     # NO HATCH ENTRY ANY MORE. It meant "this bar is a CPU number standing in for a GPU one",
     # which only existed because the four-panel version drew every arm on both budgets. Each arm

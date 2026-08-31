@@ -6,7 +6,7 @@ THE ARGUMENT, and why this is a scatter and not a bar chart.
 
 The paper makes two claims that a bar chart can only carry one of:
 
-    1. a classical featurisation plus descriptors matches or beats every learned embedding;
+    1. a classical featurization plus descriptors matches or beats every learned embedding;
     2. HUME reaches essentially that performance for a fraction of the cost.
 
 Claim 2 is about the x-axis. Drawing bars of accuracy and putting the timings in a caption
@@ -20,7 +20,7 @@ cheaper. The dashed line is the Pareto frontier: an arm below-and-right of it is
 i.e. something else is both better and cheaper. The claim of the paper is that HUME sits ON
 that frontier at the cheap end, and that the learned embeddings sit below and to the right.
 
-WHY THE X-POSITIONS ARE IDENTICAL ACROSS PANELS. Cost is a property of the featurisation, not
+WHY THE X-POSITIONS ARE IDENTICAL ACROSS PANELS. Cost is a property of the featurization, not
 of the task, so an arm sits at the same x in all four panels. That is a feature: it lets the
 reader see whether the frontier's SHAPE is stable across task families, which is the real
 question behind "should this be the default representation".
@@ -33,7 +33,7 @@ reconstruct. It is drawn like everything else, and if it wins there the figure s
 COST MUST BE MEASURED, NOT CITED. Every number on the x-axis has to come from this machine,
 one molecule at a time, including the DL arms' forward passes. A throughput figure quoted from
 a model's own paper is measured on different hardware at a different batch size and is not
-comparable to a per-molecule C++ featuriser. `cost.measured_on` is required per arm for exactly
+comparable to a per-molecule C++ featurizer. `cost.measured_on` is required per arm for exactly
 this reason, and the axis label states the batch convention.
 
 THE HEAD IS A RESULT, NOT A CONSTANT. Each arm is fitted with its best head rather than with
@@ -50,7 +50,7 @@ DATA CONTRACT -- results/figures/figC/results.json:
      "records": [{"task": ..., "arm": ..., "head": str,
                   "mean": float, "sem": float, "n_folds": int}, ...]}
 
-Arm keys must exist in figures/arms.py; an unregistered key draws in default grey on purpose,
+Arm keys must exist in figures/arms.py; an unregistered key draws in default gray on purpose,
 so a new arm is visibly unstyled rather than silently missing.
 """
 from __future__ import annotations
@@ -221,14 +221,14 @@ def main() -> None:
         # while labelling it with the metric's own name, was the source of a misreading of our
         # own plate.
         # ONE shared x-label for the row. Four copies of a long label overprinted each other
-        # into "featurisation cost (µs / molecule, lfeg)aturisation cost ...".
+        # into "featurization cost (µs / molecule, lfeg)aturisation cost ...".
         if nrow > 1 or t_i == 0:
             # THE CORE COUNT BELONGS ON THIS AXIS, NOT IN A CAPTION. HUME's row loop is
             # threaded, so µs/molecule is a function of how many cores it was measured on --
             # 279 µs on 8 performance cores against 690 µs on one. A cost axis without the
             # hardware on it is not a measurement anyone can reproduce or compare against.
             ax.set_xlabel("" if nrow == 1 else
-                          f"featurisation cost (µs / molecule, log; {_HW})",
+                          f"featurization cost (µs / molecule, log; {_HW})",
                           fontsize=FS["label"])
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.
@@ -259,7 +259,7 @@ def main() -> None:
     # Order follows arms.ARM_ORDER -- classical, then HUME, then graph models, then string
     # models -- so the key reads in the same left-to-right order as every other figure.
     if nrow == 1:
-        fig.supxlabel(f"featurisation cost (µs / molecule, log; {_HW})",
+        fig.supxlabel(f"featurization cost (µs / molecule, log; {_HW})",
                       fontsize=FS["label"], y=0.175)
     from matplotlib.lines import Line2D
     handles = []
@@ -269,7 +269,7 @@ def main() -> None:
                               color=kw["color"], label=A.short_label(a),
                               markeredgecolor=STYLE["ink"], markeredgewidth=0.7))
     if nrow == 1:
-        fig.supxlabel(f"featurisation cost (µs / molecule, log; {_HW})",
+        fig.supxlabel(f"featurization cost (µs / molecule, log; {_HW})",
                       fontsize=FS["label"], y=0.175)
     lax = fig.add_axes([0.005, 0.005, 0.99, 0.135 if nrow == 1 else 0.055])
     lax.axis("off")

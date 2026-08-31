@@ -21,7 +21,7 @@ free parameter, is scale-free, and asks the question a tree ensemble actually as
 coordinate, or a combination, that separates A from A' CONSISTENTLY.
 
 THE AXIS STARTS AT 0.5 BECAUSE 0.5 IS THE NULL. Below-chance is noise around it, not a
-direction, so cells at or under 0.5 are drawn at the floor and labelled. The null is NOT shaded
+direction, so cells at or under 0.5 are drawn at the floor and labeled. The null is NOT shaded
 (Leif 2026-08-28) -- a band across every panel reads as a confidence interval on the bars, which
 it is not.
 
@@ -191,8 +191,8 @@ def _panel(ax, armlist, cells, mode, klass, title):
     ax.errorbar(x, shown, yerr=np.vstack([shown - lo, hi - shown]), fmt="none", ecolor=INK,
                 elinewidth=0.55, capsize=1.3, capthick=0.55, zorder=4)
 
-    # A CELL AT THE FLOOR IS LABELLED, and the two reasons a cell can sit there are labelled
-    # DIFFERENTLY. An unlabelled flat baseline is indistinguishable from an arm that was never
+    # A CELL AT THE FLOOR IS LABELLED, and the two reasons a cell can sit there are labeled
+    # DIFFERENTLY. An unlabeled flat baseline is indistinguishable from an arm that was never
     # drawn, and "cannot possibly differ" is not the same finding as "no consistent signature".
     for xi, m_, d_ in zip(x, mu, dg):
         if not np.isfinite(m_):

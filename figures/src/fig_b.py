@@ -1,4 +1,4 @@
-"""Figure B -- is a learned embedding redundant to a classical featurisation?
+"""Figure B -- is a learned embedding redundant to a classical featurization?
 
     .venv/bin/python figures/src/fig_b.py [results.json]
 
@@ -30,9 +30,9 @@ AN ERROR METRIC THE RATIO IS INVERTED (100*ref/v) so that "taller" means "better
 plotting the raw ratio for an error would make the worst arm the tallest bar in half the plate.
 
 READING RULE, one sentence: an embedding redundant to a classical block leaves its bar level
-with the grey block-alone bar beside it.
+with the gray block-alone bar beside it.
 
-WHAT WOULD FALSIFY IT. A bar that clears the grey reference in its own group, on a task that
+WHAT WOULD FALSIFY IT. A bar that clears the gray reference in its own group, on a task that
 discriminates, by more than its own spread -- i.e. information the descriptors genuinely lack.
 Uni-Mol on the QM panel is the arm most likely to do this, because a conformer carries geometry
 no 2D descriptor block can reconstruct. It is drawn like everything else.
@@ -55,7 +55,7 @@ DATA CONTRACT -- results/figures/figB/results.json:
                   "mean": float, "sem": float, "n_folds": int}, ...]}
 
 `add: null` is the block alone. A cell absent from `records` is drawn as a dashed empty slot
-labelled "not run" -- never omitted, because a missing bar and a bar at the axis floor look
+labeled "not run" -- never omitted, because a missing bar and a bar at the axis floor look
 identical and here they mean opposite things.
 """
 from __future__ import annotations
@@ -74,7 +74,7 @@ from style import (FS, STYLE, check_font, mark_empty, row_ncol,           # noqa
 
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "results" / "figures" / "figB" / "results.json"
-BASE_KEY = "classical_base"        # the block-alone bar's arm key (one colour in every group)
+BASE_KEY = "classical_base"        # the block-alone bar's arm key (one color in every group)
 
 #: Tick labels for the base groups. Deliberately SHORTER than arms.py's labels: three of them
 #: share a quarter-width panel, where the full names overprint each other.
@@ -212,9 +212,9 @@ def main() -> None:
 
         # A PER-GROUP REFERENCE TICK at that group's own block-alone height. The figure's
         # primary question -- does this embedding beat the block it was added to -- is a LOCAL
-        # comparison, and without this the reader has to judge it by eye against a grey bar
+        # comparison, and without this the reader has to judge it by eye against a gray bar
         # several bars away. The global 100% line answers a different question (does it beat the
-        # best classical featurisation we have), and both are worth having.
+        # best classical featurization we have), and both are worth having.
         ax.axhline(0.0, ls=(0, (2, 2)), lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=1)
         ax.set_xticks(centres)
         ax.set_xticklabels([A.short_label(b) for b in bases],

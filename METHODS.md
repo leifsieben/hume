@@ -160,7 +160,7 @@ RDKit and Mordred compute each descriptor by walking the molecule from scratch. 
 hundred descriptors and the molecule is walked two hundred times, in Python, re-deriving the same
 atom degrees and the same shortest-path matrix each time.
 
-Almost every 2D descriptor in either catalogue is a function of a *small fixed set* of per-atom
+Almost every 2D descriptor in either catalog is a function of a *small fixed set* of per-atom
 and per-bond quantities plus the graph. HUME computes those once, in C++, after which every
 descriptor is a reduction over arrays already in cache.
 
@@ -187,7 +187,7 @@ Four are carried rather than re-derived, each for a measured reason:
   rounding rule.
 * **The ring flags**, from RDKit's single ring perception rather than a second perception C++-side.
   Perception is numbering-dependent (§4.2), so a second one is a second chance to disagree.
-* **Isotope**, not derived from mass: `getMass()` reports that an atom *is* labelled, not which
+* **Isotope**, not derived from mass: `getMass()` reports that an atom *is* labeled, not which
   isotope it carries.
 
 From these, five derived primitives are computed once per molecule: the all-pairs distance matrix,
@@ -196,7 +196,7 @@ the ring set, Crippen (logP, MR) contributions, E-state indices, and Labute ASA 
 ### 3.3 Families, grouped by the input they need
 
 The grouping is by *what a family consumes*, not by what its descriptors mean, because that is
-the axis the implementation is organised on: families sharing an input share the expensive part.
+the axis the implementation is organized on: families sharing an input share the expensive part.
 
 **Needs only the atom and bond arrays.** `constit` (43) — hybridisation census, atom and bond
 counts, molecular weight, `FractionCSP3`, Lipinski/Ghose/Veber filters, `SLogP`, QED, SPS.
@@ -301,7 +301,7 @@ is shuffled as well.
 enters as SINGLE or DOUBLE depending on which structure was chosen. And `BFSTree._expand` mutates
 a visited set while iterating over it: two adjacent siblings at the same depth are both in the
 tree and neither is visited when the loop starts, so whichever the dict yields first claims the
-other as its child — and dict order is insertion order, which is neighbour order, which is atom
+other as its child — and dict order is insertion order, which is neighbor order, which is atom
 numbering. **32.3% of the first 2,000 adversarial molecules change at least one IC column under a
 single input permutation.** We keep the aromatic bond's own bond-type symbol rather than
 kekulizing, and layer the tree by graph distance. Orders 1–5 differ from Mordred by design;
@@ -346,7 +346,7 @@ descriptor evaluated where the reference implementation stops.
 maxima and means. Several of these were duplicates of Mordred columns and were removed by the
 audit in §1.1; what survives is what the same filter that governs everything else allows.
 
-**Stereochemistry.** The one place we add something the catalogues genuinely lack. Both RDKit's
+**Stereochemistry.** The one place we add something the catalogs genuinely lack. Both RDKit's
 and Mordred's 2D descriptor sets are almost entirely blind to stereochemistry: the resolution
 analysis finds Morgan fingerprints and every published embedding scoring at or near chance on an
 inverted stereocentre. Our block sums *signed* CIP parity (R = +1, S = −1) rather than counting
@@ -506,8 +506,8 @@ retained Barysz columns are the `SpAbs`/`SpDiam`/`SpMAD`/`SM1` summaries, which 
 ## 6. Cost work after the triage
 
 Section 5 removed columns. This section removes *work*, and it is separated because the two
-have different consequences: a dropped column changes what the package answers, an optimisation
-should not. Where an optimisation does change an answer, the size of the change is stated.
+have different consequences: a dropped column changes what the package answers, an optimization
+should not. Where an optimization does change an answer, the size of the change is stated.
 
 Baseline and result, both measured at the corpus median stratum (25-35 heavy atoms, 1,200
 molecules, min of 5, quiet machine):
@@ -638,7 +638,7 @@ The reason is that **the matvec was never the cost.** Full reorthogonalisation i
 `O(n*k^2)`, and it cannot be dropped -- without it the basis loses orthogonality and Lanczos
 returns spurious copies of the extremal eigenvalue, which is a wrong BCUT with no symptom. For
 extremal eigenvalues `k` must approach `n` at molecular sizes, so the reorthogonalisation costs
-as much as the tridiagonalisation it was meant to replace, with worse constants than a tuned
+as much as the tridiagonalization it was meant to replace, with worse constants than a tuned
 `sytd2`/`sterf`. The 9.8x figure was real and irrelevant.
 
 The implementation is kept behind `-DBCUT_LANCZOS` with this result written above it, so the
@@ -723,12 +723,12 @@ those four columns are exact.
 | NaN disagreements | 41 |
 
 Bit-identity is the wrong headline against mordred and the 1e-9 figure is the right one: mordred
-sums in numpy, we sum in C++, and a centred autocorrelation subtracts a mean before summing. The
+sums in numpy, we sum in C++, and a centered autocorrelation subtracts a mean before summing. The
 87 columns below the 1e-9 bar are four groups, and only one of them is a divergence we chose:
 
-**65 centred and normalised autocorrelations** (`ATSC*` 21, `AATSC*` 22, `MATS*` 22). Floating
+**65 centered and normalized autocorrelations** (`ATSC*` 21, `AATSC*` 22, `MATS*` 22). Floating
 point, not arithmetic: they agree to 1e-9 on 98-99.97% of molecules and the disagreements are
-last-bit. The mean subtraction is what costs the bit-identity the uncentred `ATS*` columns keep.
+last-bit. The mean subtraction is what costs the bit-identity the uncentered `ATS*` columns keep.
 
 **20 information-content columns, orders 1-5** (`IC1-5`, `BIC1-5`, `MIC1-5`, `ZMIC1-5`), and this
 one is deliberate and was declared before it was measured. `infocontent.h:112` states "ORDERS 1-5
