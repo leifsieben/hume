@@ -101,6 +101,7 @@
 #ifndef HUME_MISC_EXT_H
 #define HUME_MISC_EXT_H
 
+#include "u128.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
@@ -1102,18 +1103,17 @@ struct MidWalk {
   // `w < lim` is an exact integer comparison -- so the difference is observable.  Written as
   // 5 * 2^64 + 7766279631452225536 because the value does not fit a 64-bit literal; the two
   // static_asserts below pin its decimal digits.
-  static constexpr unsigned __int128 LIM =
-      ((unsigned __int128)5 << 64) + (unsigned __int128)7766279631452225536ULL;
-  static_assert((uint64_t)(LIM / 10000000000ULL) == 9999999999ULL, "MidWalk::LIM high digits");
-  static_assert((uint64_t)(LIM % 10000000000ULL) == 9999983616ULL, "MidWalk::LIM low digits");
+  static constexpr hume::u128 LIM = hume::u128_make(5ULL, 7766279631452225536ULL);
+  static_assert(hume::u128_low(LIM / 10000000000ULL) == 9999999999ULL, "MidWalk::LIM high digits");
+  static_assert((LIM % 10000000000ULL) == 9999983616ULL, "MidWalk::LIM low digits");
 
-  void search(int u, unsigned __int128 acc) {
+  void search(int u, hume::u128 acc) {
     for (int k = m->start[u]; k < m->start[u + 1]; ++k) {
       const int v = m->nbr[k];
       if ((*visited)[v]) continue;
       (*visited)[v] = 1;
-      const unsigned __int128 nw = acc * (unsigned __int128)w[k];
-      id += 1.0 / std::sqrt((double)nw);
+      const hume::u128 nw = acc * (uint64_t)w[k];
+      id += 1.0 / std::sqrt(hume::to_double(nw));
       if (nw < LIM) search(v, nw);
       (*visited)[v] = 0;
     }
@@ -1665,7 +1665,7 @@ inline void compute(const Mol &m, Scratch &S, double *out,
       std::fill(S.visited.begin(), S.visited.end(), (uint8_t)0);
       S.visited[s] = 1;
       W.id = 0.0;
-      W.search(s, (unsigned __int128)1);
+      W.search(s, hume::u128(1));
       aid[s] = 1.0 + W.id / 2.0;
     }
     // any, hetero, C, N, O, X -- summed with the builtin sum in atom order, then averaged.

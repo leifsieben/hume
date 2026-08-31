@@ -28,9 +28,13 @@ from . import _core
 from ._columns import COLUMNS, N_COLS
 from ._extract import Batch, extract, extract_pickles
 
-__all__ = ["featurize_blocks", "featurize_blocks_from_mols", "featurize_all",
-           "featurize", "featurize_all_from_mols", "COLUMNS", "N_COLS", "ALL_COLUMNS", "N_ALL_COLS",
-           "FAMILY_OFFSETS"]
+__all__ = [
+    # the public API
+    "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
+    # lower level: the (fp, X, names) form, and the 178-column block on its own
+    "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
+    "COLUMNS", "N_COLS", "FAMILY_OFFSETS",
+]
 
 assert _core.N_COLS == N_COLS, (
     f"extension emits {_core.N_COLS} columns, _columns.py names {N_COLS}"
@@ -412,11 +416,41 @@ def _column_index(columns, additional_descriptors):
     return np.asarray([pos[c] for c in kept], dtype=np.intp), tuple(kept)
 
 
-def featurize(smiles: Iterable[str], *, standardize=_UNSET, threads: int = 0,
-              fingerprint: bool = True, fp_radius: int = 3, fp_size: int = 2048,
+def feature_names(*, fingerprint: bool = False, fp_size: int = 2048,
+                  additional_descriptors: bool = True, columns=None) -> tuple:
+    """The column names `featurize` produces for the same flags, in the same order.
+
+    `featurize` returns a bare array, because the names do not change from call to call and a
+    tuple whose third element is the same 1,269 strings every time is something a caller
+    unpacks and discards. Ask for them here when you need them -- a DataFrame, a model's
+    feature_names_in_, a plot axis::
+
+        X = molhume.featurize(smiles, standardize="none")
+        df = pandas.DataFrame(X, columns=molhume.feature_names())
+    """
+    _, names = _column_index(columns, additional_descriptors)
+    if fingerprint:
+        if int(fp_size) <= 0:
+            raise ValueError(f"fp_size must be positive, got {fp_size!r}")
+        names = names + tuple(f"ECFP_{i}" for i in range(int(fp_size)))
+    return names
+
+
+def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
+              fingerprint: bool = False, fp_radius: int = 3, fp_size: int = 2048,
               additional_descriptors: bool = True, columns=None, optional=None,
-              on_error: str = "nan", batch_size: int = 4096):
-    """SMILES -> ``(fp, X, names)``. The one entry point.
+              on_error: str = "nan", dtype=np.float64, batch_size: int = 4096) -> np.ndarray:
+    """SMILES -> one ``(n_molecules, n_features)`` array. The entry point.
+
+    Feed it straight to a model::
+
+        X = molhume.featurize(smiles, standardize="none")
+        xgboost.XGBRegressor().fit(X, y)
+
+    Column names are not returned, because they are the same on every call for a given set of
+    flags. `molhume.feature_names(...)` gives them for the same flags, in the same order.
+
+    Accepts SMILES strings or rdkit Mol objects; a Mol is used as given, which skips a parse.
 
     Parameters
     ----------
@@ -429,20 +463,30 @@ def featurize(smiles: Iterable[str], *, standardize=_UNSET, threads: int = 0,
     threads : int, default 0
         Workers for the descriptor block; 0 is one per hardware thread. Pass 1 if the caller is
         already parallel, or 16 processes x 12 threads will spend the run in the scheduler.
-    fingerprint : bool, default True
-        Whether to compute the ECFP at all. It is an output, not a descriptor, and costs about
-        30 us/molecule that cannot be threaded.
+    fingerprint : bool, default False
+        Append `fp_size` ECFP bit columns after the descriptors. Off by default: this is a
+        descriptor library, the bits are not descriptors, and folding 2,048 of them into the
+        same float64 matrix would make the default output mostly fingerprint by width and
+        nearly triple its memory. They go last, so descriptor column indices do not shift when
+        the flag changes.
     additional_descriptors : bool, default True
         Include the descriptors that are ours rather than RDKit's or Mordred's. This selects
         what is returned, not what is computed -- the block is monolithic, so turning it off
         narrows the output without making the run faster.
     columns : sequence of str, optional
-        Emit only these. Combined with `additional_descriptors` by AND.
+        Emit only these descriptors, in this order. Combined with `additional_descriptors` by
+        AND. Applies to descriptors only; fingerprint bits are appended after whatever it
+        selects.
     optional : sequence of str, optional
         Expensive columns to compute. Default: 'AvgIpc' on, 'qed' off.
     on_error : {'nan', 'raise', 'skip'}, default 'nan'
         What to do with a SMILES rdkit cannot parse. 'nan' keeps the row and fills it with NaN,
         so the output aligns with the input. 'skip' drops the row, so it does not.
+    dtype : default numpy.float64
+        Output dtype. float32 halves the memory and is what most gradient-boosting and neural
+        libraries convert to internally anyway; it costs about 7 significant digits, which
+        matters if you are comparing values against a reference and not if you are fitting a
+        model.
     """
     from rdkit import Chem
 
@@ -451,10 +495,19 @@ def featurize(smiles: Iterable[str], *, standardize=_UNSET, threads: int = 0,
             f"on_error={on_error!r} is not a choice. Use 'nan' (keep the row, fill with NaN), "
             "'raise', or 'skip' (drop the row, so the output no longer aligns with the input).")
 
-    smiles = list(smiles)
+    items = list(smiles)
     mols, bad = [], []
-    for i, s in enumerate(smiles):
-        m = Chem.MolFromSmiles(s) if s is not None else None
+    for i, s in enumerate(items):
+        if s is None:
+            m = None
+        elif isinstance(s, str):
+            m = Chem.MolFromSmiles(s)
+        elif isinstance(s, Chem.Mol):
+            m = s
+        else:
+            raise TypeError(
+                f"item {i} is a {type(s).__name__}; featurize takes SMILES strings or rdkit "
+                "Mol objects.")
         if m is None:
             bad.append(i)
             if on_error == "raise":
@@ -462,8 +515,8 @@ def featurize(smiles: Iterable[str], *, standardize=_UNSET, threads: int = 0,
         mols.append(m)
     if bad:
         warnings.warn(
-            f"{len(bad)} of {len(smiles)} SMILES did not parse "
-            f"(first at index {bad[0]}: {smiles[bad[0]]!r}); "
+            f"{len(bad)} of {len(items)} SMILES did not parse "
+            f"(first at index {bad[0]}: {items[bad[0]]!r}); "
             + ("their rows are NaN and the output still aligns with the input."
                if on_error == "nan" else
                "their rows were dropped, so the output no longer aligns with the input."),
@@ -480,12 +533,14 @@ def featurize(smiles: Iterable[str], *, standardize=_UNSET, threads: int = 0,
     idx, names = _column_index(columns, additional_descriptors)
     if idx is not None:
         X_g = X_g[:, idx]
+    if fingerprint:
+        X_g = np.hstack([X_g.astype(dtype, copy=False), fp_g.astype(dtype, copy=False)])
+    else:
+        X_g = X_g.astype(dtype, copy=False)
 
     if on_error == "skip" or not bad:
-        return fp_g, X_g, names
-    fp = np.zeros((len(smiles), fp_g.shape[1]), dtype=fp_g.dtype)
-    X = np.full((len(smiles), X_g.shape[1]), np.nan, dtype=np.float64)
+        return np.ascontiguousarray(X_g, dtype=dtype)
+    X = np.full((len(items), X_g.shape[1]), np.nan, dtype=dtype)
     if keep_rows:
-        fp[keep_rows] = fp_g
         X[keep_rows] = X_g
-    return fp, X, names
+    return X

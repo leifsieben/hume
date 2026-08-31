@@ -5,6 +5,9 @@
 # (`c++ -O3 -std=c++17 hume.cpp`) and matching it is what makes the bit-identity claim mean
 # something. It also costs nothing to leave out: on arm64 the two flags produce BYTE-IDENTICAL
 # object files for this source, re-checked after the BLAS removal -- see PACKAGING.md.
+#
+# This file is also what makes the wheels buildable off macOS at all; the per-toolchain flags
+# below are the whole of the difference between the three platforms.
 cmake_minimum_required(VERSION 3.15...3.31)
 project(hume_core LANGUAGES CXX)
 
@@ -15,8 +18,31 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(pybind11 CONFIG REQUIRED)
 
 pybind11_add_module(_core src/hume_core/bindings.cpp)
-target_compile_options(_core PRIVATE -O3)
 target_include_directories(_core PRIVATE src/hume_core)
+
+# OPTIMIZATION AND FLOATING-POINT CONTRACTION, per toolchain.
+#
+# -O3 is what the verification harness is built with (`c++ -O3 -std=c++17 hume.cpp`), and
+# matching it is what makes the bit-identity claim mean something. /O2 is its MSVC equivalent;
+# MSVC has no /O3. /bigobj because these headers put more than 2^16 sections in one object.
+#
+# ffp-contract is NOT a tuning knob here, it is part of the specification. constit.h writes
+# every `a + b * c` across two statements ON PURPOSE, because clang's default `on` contracts
+# within an expression but not across statements, and contracting would produce a more accurate
+# number than the python that is being reproduced -- measured: Vabc differs from mordred on 43
+# of 300 molecules, FilterItLogS on 74, qed on 240. hume_blocks.h documents the opposite case,
+# where `off` makes the resistance disagreement fifty times worse. The rule is to match the
+# reference, not to maximise accuracy, and both of those hold only at `on`.
+#
+# gcc defaults to `fast`, which contracts ACROSS statements and would walk straight through
+# constit.h's defense. It has to be said explicitly or Linux wheels are quietly not the same
+# library as macOS ones. MSVC's /fp:precise does not contract at all, which is the `off` case;
+# /fp:contract restores expression-level contraction.
+if(MSVC)
+  target_compile_options(_core PRIVATE /O2 /bigobj /fp:contract)
+else()
+  target_compile_options(_core PRIVATE -O3 -ffp-contract=on)
+endif()
 
 # NO BLAS, NO LAPACK, NO PLATFORM CHECK -- and that is the point of this file's history.
 #

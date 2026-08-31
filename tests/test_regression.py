@@ -12,16 +12,15 @@ import molhume
 
 @pytest.fixture(scope="module")
 def actual(smiles):
-    _, X, names = molhume.featurize(smiles, standardize="none")
-    return X, names
+    return molhume.featurize(smiles, standardize="none")
 
 
-def test_columns_match(actual, expected):
-    assert actual[1] == expected["names"]
+def test_columns_match(expected):
+    assert molhume.feature_names() == expected["names"]
 
 
 def test_values_match(actual, expected):
-    got, want = actual[0], expected["X"]
+    got, want = actual, expected["X"]
     assert got.shape == want.shape
     same_nan = np.isnan(got) == np.isnan(want)
     bad_nan = np.argwhere(~same_nan)

@@ -44,7 +44,8 @@ for lo, hi in STRATA:
 
 # Canonicalize so the committed SMILES are stable text, then featurize them as given.
 picked = [Chem.MolToSmiles(Chem.MolFromSmiles(s)) for s in picked]
-_, X, names = molhume.featurize(picked, standardize="none")
+X = molhume.featurize(picked, standardize="none")
+names = molhume.feature_names()
 assert names == molhume.ALL_COLUMNS, "fixture must cover every emitted column"
 
 with open("tests/data/fixture_smiles.txt", "w") as fh:

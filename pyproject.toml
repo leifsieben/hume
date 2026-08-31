@@ -66,5 +66,19 @@ constraint-dependencies = ["rdkit==2025.9.2", "numpy==2.4.6"]
 # CMakeLists.txt. src/mol_hume is a three-line alias so an underscore import also works.
 wheel.packages = ["src/molhume", "src/mol_hume"]
 minimum-version = "0.10"
+
+# WHAT THE SDIST HAS TO CONTAIN is not obvious from src/: hume_blocks.h and eight of its
+# siblings include generated tables from cpp/ by relative path (`#include "../../cpp/..."`), so
+# cpp/ is a build input, not research scaffolding, and dropping it makes the sdist unbuildable.
+# Everything below IS research scaffolding -- corpora, figures, benchmark outputs, the vendored
+# benchmark package -- and took the sdist to 19 MB.
+# An allowlist, not a denylist: this repo is a research monorepo whose root is 60 loose
+# analysis scripts, and a denylist would silently start shipping the next one somebody adds.
+sdist.exclude = ["*"]
+sdist.include = [
+  "/pyproject.toml", "/CMakeLists.txt", "/README.md", "/LICENSE", "/CHANGELOG.md",
+  "/METHODS.md", "/PACKAGING.md", "/constraints.txt",
+  "/src/**", "/cpp/*.h", "/docs/**", "/tests/**", "/tools/gen_fixture.py",
+]
 cmake.version = ">=3.15"
 build-dir = "build/{wheel_tag}"
