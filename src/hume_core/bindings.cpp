@@ -452,6 +452,14 @@ static constexpr int N_ESTATE_TYPES = estate_tbl::N_ROWS;   // 79 patterns -> 79
 // They cost nothing to compute (one multiply off an IC row that is built anyway), so this buys
 // 18 fewer dimensions, not microseconds.
 static constexpr int KEEP_IC[25] = {0, 1, 2, 3, 4, 5, 18, 19, 20, 21, 22, 23, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42};
+// constit emits every column but `qed`. QED's expensive half -- 116 structural alerts, 69.3
+// us/mol -- is OPT_QED and off by default, so the column shipped 100% NaN on every molecule: a
+// dead slot, not a cheap one. The project owner asked for QED excluded early in this work
+// ("combines descriptors into another descriptor and is very slow"); this is that, and the
+// computation is still reachable via optional=["qed"] for anyone who wants it.
+static constexpr int KEEP_CONSTIT_N = constit::N_COLS - 1;
+inline int keep_constit(int c) { return c < constit::C_QED ? c : c + 1; }
+
 static constexpr int KEEP_SPECTRAL[36] = {0, 1, 2, 3, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 41, 49, 50, 54, 59, 60, 61, 62};
 static constexpr int KEEP_MISC[67] = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80};
 
@@ -504,7 +512,7 @@ enum {
   // `TopoPSA`, `TPSA`, `PEOE_VSA11`, `SMR_VSA1` and `EState_VSA1` all come out of
   // vsabin::col_name() verbatim (checked at module load, below). Emitting them again would put
   // duplicate names in hume.ALL_COLUMNS, which is worse than the naming gap it would close.
-  OFF_ALIAS  = OFF_CONSTIT + constit::N_COLS,
+  OFF_ALIAS  = OFF_CONSTIT + KEEP_CONSTIT_N,
   N_ALIAS_COLS = 1,
   // The last of rdkit_core that is not a substructure count: 13 ring predicates, HeavyAtomMolWt,
   // FractionCSP3, Phi and the three Morgan fingerprint densities. It is LAST in the layout on
@@ -639,7 +647,7 @@ struct AllWork {
   miscext::Mol mxm;         miscext::Scratch mxs;
   estate_ext::Scratch exs;
   // Each header computes its full N_COLS into these, and only the kept slots are copied out.
-  std::vector<double> buf_spectral, buf_misc;
+  std::vector<double> buf_spectral, buf_misc, buf_constit;
   fragmatch::Mol fm;
   // TWO MATCHERS, ONE Mol, ONE EVALUATOR. Each holds the recursive-query cache and the search
   // plans for the program it is bound to; the molecule they read is the same `fm`, filled once.
@@ -1079,7 +1087,9 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     in.stereoAtom = nullptr;
     in.stereoBond = nullptr;
 
-    constit::compute(W.km, in, out + OFF_CONSTIT, out[OFF_VSA + vsabin::C_TPSA]);
+    W.buf_constit.assign(constit::N_COLS, std::nan(""));
+    constit::compute(W.km, in, W.buf_constit.data(), out[OFF_VSA + vsabin::C_TPSA]);
+    for (int c = 0; c < KEEP_CONSTIT_N; c++) out[OFF_CONSTIT + c] = W.buf_constit[keep_constit(c)];
   }
 
   // ---- aliases: a name, not a computation ----
@@ -1160,7 +1170,11 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     }
     for (int q = 0; q < n_rings; q++)
       W.sm.add_ring(ring_at + ring_ptr[q], ring_ptr[q + 1] - ring_ptr[q]);
-    sps::compute(W.sm, W.sw, out + OFF_CONSTIT + constit::C_SPS);
+    // C_SPS sits below C_QED, so its compacted index is unchanged; assert rather than assume.
+    static_assert(constit::C_SPS < constit::C_QED || constit::C_SPS > constit::C_QED,
+                  "C_SPS must not collide with the dropped qed slot");
+    sps::compute(W.sm, W.sw, out + OFF_CONSTIT +
+                 (constit::C_SPS < constit::C_QED ? constit::C_SPS : constit::C_SPS - 1));
   }
 
   // =============================================================================================
@@ -1393,7 +1407,7 @@ static py::list all_column_names_tail() {
   out.append(py::str("HeavyAtomCount"));
   for (int c = 0; c < chisub::N_COLS; c++) out.append(py::str(chisub::COLS[c].name));
   for (int c = 0; c < topomisc::N_COLS; c++) out.append(py::str(topomisc::COLS[c]));
-  for (int c = 0; c < constit::N_COLS; c++) out.append(py::str(constit::col_name(c)));
+  for (int c = 0; c < KEEP_CONSTIT_N; c++) out.append(py::str(constit::col_name(keep_constit(c))));
   // The alias block. `qed` and `SPS` above it are NaN today and are named anyway; so is this,
   // for the opposite reason -- it is a real value under a second name.
   out.append(py::str("SLogP"));
