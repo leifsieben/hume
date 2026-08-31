@@ -1,4 +1,4 @@
-# Build for src/hume/_core, the pybind11 extension around the verified blocks.
+# Build for src/molhume/_core, the pybind11 extension around the verified blocks.
 #
 # NO -march=native. It compiles for whatever core happens to be present, so the binary cannot
 # ship; plain -O3 is what the verification harness is built with
@@ -53,4 +53,4 @@ target_include_directories(_core PRIVATE src/hume_core)
 # include directory is needed here -- but they MUST be present in the sdist. Both are tracked by
 # git, which is what scikit-build-core uses to decide what an sdist contains.
 
-install(TARGETS _core DESTINATION hume)
+install(TARGETS _core DESTINATION molhume)

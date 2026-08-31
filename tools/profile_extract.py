@@ -37,7 +37,7 @@ gap is exactly the Crippen SMARTS pass being free from the second repetition onw
 component here therefore re-parses the molecules and times only what follows the parse, and
 c_crippen_rdkit additionally passes force=True.
 
-    .venv/bin/python src/hume/_profile_extract.py [n_mols]
+    .venv/bin/python tools/profile_extract.py [n_mols]
 """
 from __future__ import annotations
 
@@ -52,10 +52,10 @@ from rdkit.Chem import rdMolDescriptors, rdPartialCharges
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from hume._extract import _rings_csr, extract  # noqa: E402
+from molhume._extract import _rings_csr, extract  # noqa: E402
 
 RDLogger.DisableLog("rdApp.*")
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 _A = Chem.Atom
 
@@ -147,7 +147,7 @@ def c_crippen_rdkit(mols):
 
 def c_rings(mols):
     """The ring CSR, which extract() now also builds. It is NOT a read of RDKit properties: it
-    runs src/hume/_rings.py's gate on every molecule and its canonical re-perception on the ~20%
+    runs src/molhume/_rings.py's gate on every molecule and its canonical re-perception on the ~20%
     the gate fires on, so it belongs in the table on its own line rather than inside the residual.
     See the note on `Rings` in _extract.py for why the ring SET is carried at all."""
     _rings_csr(mols)

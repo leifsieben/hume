@@ -13,9 +13,10 @@ requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
 build-backend = "scikit_build_core.build"
 
 [project]
-name = "hume"
+name = "mol-hume"
 version = "0.1.0"
 description = "Verified molecular descriptor blocks, computed in C++"
+readme = "README.md"
 # >=3.11, not >=3.10: the pinned numpy 2.4.6 does not support 3.10, and uv warns that the two
 # disagree. Note mordred 1.2.0 needs 3.11 exactly (it imports `distutils`, removed in 3.12), so
 # the Mordred comparison env is 3.11 while the package itself is developed on 3.12.
@@ -25,6 +26,14 @@ requires-python = ">=3.11"
 # version-relative -- that belongs in `spec`, not in a hard pin that would fight the user's
 # environment. Verified bit-exact against rdkit 2025.9.2 / numpy 2.4.6.
 dependencies = ["numpy>=1.24", "rdkit>=2023.03"]
+
+[project.optional-dependencies]
+test = ["pytest>=7"]
+
+[tool.pytest.ini_options]
+# `tests/` only. The root holds verify_*.py, which are the slow exactness checks against RDKit
+# and Mordred -- they need the 42k corpus and a second environment, and are run by hand.
+testpaths = ["tests"]
 
 [tool.uv]
 # THE PIN, ENFORCED RATHER THAN DOCUMENTED. `constraints.txt` and the `-c` flag on the install
@@ -39,10 +48,10 @@ dependencies = ["numpy>=1.24", "rdkit>=2023.03"]
 constraint-dependencies = ["rdkit==2025.9.2", "numpy==2.4.6"]
 
 [tool.scikit-build]
-# The package is src/hume; src/hume_core is C++ only and is not installed. The extension lands
-# next to __init__.py as hume._core, per the install(TARGETS ... DESTINATION hume) in
-# CMakeLists.txt.
-wheel.packages = ["src/hume"]
+# The package is src/molhume; src/hume_core is C++ only and is not installed. The extension
+# lands next to __init__.py as molhume._core, per install(TARGETS ... DESTINATION molhume) in
+# CMakeLists.txt. src/mol_hume is a three-line alias so an underscore import also works.
+wheel.packages = ["src/molhume", "src/mol_hume"]
 minimum-version = "0.10"
 cmake.version = ">=3.15"
 build-dir = "build/{wheel_tag}"

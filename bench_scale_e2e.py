@@ -67,7 +67,7 @@ def load(n):
 
 # ---------------------------------------------------------------- worker-side stages
 def _init_hume():
-    import hume  # noqa: F401
+    import molhume  # noqa: F401
     from rdkit import RDLogger
     RDLogger.DisableLog("rdApp.*")
 

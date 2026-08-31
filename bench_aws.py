@@ -90,7 +90,7 @@ def _run_ecfp(job):
 
 def _init_hume():
     _quiet()
-    import hume  # noqa: F401
+    import molhume  # noqa: F401
 
 
 def _run_hume(job):

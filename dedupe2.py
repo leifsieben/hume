@@ -141,7 +141,7 @@ def compute():
     print(f"  Mordred {MD.shape} ({time.time()-t0:.0f}s)")
 
     t0 = time.time()
-    import hume
+    import molhume as hume
     hcols = list(hume.ALL_COLUMNS)
     parts = []
     for lo in range(0, len(smis), 2000):

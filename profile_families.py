@@ -12,9 +12,9 @@ timed separately because they are not descriptor families and are paid regardles
 import json, sys, time
 import numpy as np
 sys.path.insert(0, ".")
-import hume
-from hume._extract import extract_pickles
-import hume._core as core
+import molhume as hume
+from molhume._extract import extract_pickles
+import molhume._core as core
 from rdkit import Chem, RDLogger
 from rdkit.Chem import rdFingerprintGenerator as rfg
 RDLogger.DisableLog("rdApp.*")

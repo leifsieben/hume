@@ -226,7 +226,7 @@ def arm_hume(n_mols: int, n_reps: int) -> dict:
     in progress, and a step table that silently covers fewer columns than the baseline would be
     the most flattering possible error. `report` compares column counts and says so.
     """
-    import hume
+    import molhume as hume
     from hume._extract import extract, extract_pickles
     from hume import _core
 

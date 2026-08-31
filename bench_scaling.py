@@ -43,14 +43,14 @@ CORPUS = "/Users/lsieben/VSCode/universal-encoder/cpp/hard.smi"
 
 
 def _init():
-    import hume  # noqa: F401
+    import molhume  # noqa: F401
     from rdkit import RDLogger
     RDLogger.DisableLog("rdApp.*")
 
 
 def _work(shard):
     import time as _t
-    import hume
+    import molhume as hume
     t0 = _t.perf_counter()
     fp, X, _ = hume.featurize_all(shard)
     dt = _t.perf_counter() - t0

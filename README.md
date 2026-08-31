@@ -1,0 +1,96 @@
+# mol-hume
+
+Molecular descriptors computed in C++, verified column by column against RDKit and Mordred.
+
+`mol-hume` emits **1,269 descriptors** per molecule in about **285 microseconds**, from a single
+call. Of those, 1,109 reproduce descriptors that RDKit or Mordred already define, and 160 are new.
+Nothing is computed in Python.
+
+```bash
+pip install mol-hume
+```
+
+```python
+import molhume
+
+fp, X, names = molhume.featurize(
+    ["CCO", "CC(=O)Oc1ccccc1C(=O)O"],
+    standardize="none",
+)
+# fp -> (2, 2048) uint8 ECFP        X -> (2, 1269) float64        names -> 1269 column names
+```
+
+## The one decision you have to make
+
+`standardize` has no safe default, so leaving it unset warns once and tells you the options.
+Descriptors are computed on the graph you hand them: a salt, a tautomer and a charge state are
+three different molecules, and no library can guess which one you meant.
+
+| value | what it does |
+| --- | --- |
+| `"none"` | featurize exactly what you supplied |
+| `"canonical"` | SMILES round-trip, nothing else |
+| `"cleanup"` | RDKit `MolStandardize`: normalize, largest fragment, uncharge |
+| a callable | your own `Mol -> Mol` |
+
+Passing `"none"` explicitly is a decision and is silent; omitting it is not, and warns.
+
+## Flags
+
+| flag | default | what it controls |
+| --- | --- | --- |
+| `standardize` | `"none"` (warns if unset) | what molecule the numbers describe |
+| `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` if your own code is already parallel |
+| `fingerprint` | `True` | compute the ECFP. It is an output, not a descriptor, and costs about 30 us/molecule that cannot be threaded |
+| `fp_radius` | `3` | ECFP radius |
+| `fp_size` | `2048` | ECFP bits |
+| `additional_descriptors` | `True` | include the 160 descriptors that are ours rather than RDKit's or Mordred's. Selects what is returned, not what is computed |
+| `columns` | `None` | emit only these names, in this order. Combined with `additional_descriptors` by AND |
+| `optional` | `None` | expensive columns to compute. `AvgIpc` is on by default, `qed` off |
+| `on_error` | `"nan"` | unparseable SMILES: `"nan"` keeps the row and fills it, so the output stays aligned with the input; `"raise"`; `"skip"` drops the row, so it does not |
+| `batch_size` | `4096` | rows per batch. Affects memory, not values |
+
+`molhume.ALL_COLUMNS` lists every emitted name; `molhume._additional.ADDITIONAL_COLUMNS` lists
+the ones that are ours.
+
+`import mol_hume` works too, and is the same module object — the distribution is `mol-hume`, and
+`import mol-hume` is a Python syntax error, not something a package can fix.
+
+## What "verified" means
+
+Every column was compared against its upstream definition over a 42,000-molecule corpus spanning
+1 to 64 heavy atoms:
+
+- **167 of 186** RDKit columns and **412 of 968** Mordred columns are **bit-identical**.
+- **99.99%** (RDKit) and **99.23%** (Mordred) of values agree to within 1e-9.
+
+The remainder are deliberate, documented divergences, not unexplained differences: they are cases
+where the upstream definition depends on atom numbering or on a Kekule choice, and therefore has
+no single correct answer. Every one of them is listed with a measurement in `METHODS.md`.
+
+Values are relative to **RDKit 2025.9.2**. RDKit's perceived atom and bond properties do drift
+across releases, so a different RDKit can move values; that is why the dependency is a lower
+bound rather than a pin.
+
+## Why 1,269 and not 1,539
+
+The implemented set was 1,539 columns. Pairs that carry the same information were removed by a
+greedy cover in ascending compute cost: a column is dropped when some cheaper surviving column
+predicts it at |Spearman| >= 0.99 on ranks, and that has to hold in **every one of five
+heavy-atom strata**, not just on the pooled corpus, so a correlation that only exists because
+small and large molecules sit at opposite ends of both scales does not count. Columns that are
+NaN more than half the time, or that take one value for 99.9% of molecules, are dropped as
+unusable. What survives is 1,269.
+
+## Development
+
+```bash
+uv pip install -e . --python .venv/bin/python -c constraints.txt
+.venv/bin/python -m pytest tests/
+```
+
+The pinned RDKit in `constraints.txt` is the oracle every exactness claim is measured against —
+install with `-c constraints.txt` or a bare editable install will silently upgrade it. `tests/`
+runs in seconds against a committed fixture; the full exactness verifications against RDKit and
+Mordred are the root-level `verify_*.py`, which need the corpus and a second environment. See
+`tests/README.md`.

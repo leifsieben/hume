@@ -99,7 +99,7 @@ def arm_hume(smiles):
     `optional` names both expensive columns: this is a resolution measurement, not a throughput
     one, so the full 864 is what belongs here.
     """
-    import hume
+    import molhume as hume
     from rdkit import Chem, RDLogger
     RDLogger.DisableLog("rdApp.*")
     mols, keep = [], []
@@ -357,7 +357,7 @@ def arm_chemprop(smiles):
 #: model and wrong for anything in this repository.
 def _hume_width():
     try:
-        import hume
+        import molhume as hume
         return len(hume.ALL_COLUMNS) + 2048        # descriptors + the ECFP block arm_hume adds
     except Exception:
         return None

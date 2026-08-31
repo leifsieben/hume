@@ -144,7 +144,7 @@ def _hume_block(smis, drop_new: bool):
     requested: it is emitted, and it is not reconstructible (GBM R2 0.889 from the cheap basis).
     """
     global _NEW_COLS
-    import hume
+    import molhume as hume
     from rdkit import Chem
     mols, keep = [], []
     for i, s in enumerate(smis):
