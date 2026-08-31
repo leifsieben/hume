@@ -55,6 +55,7 @@ so a new arm is visibly unstyled rather than silently missing.
 """
 from __future__ import annotations
 
+import csv
 import json
 import os
 import sys
@@ -194,9 +195,20 @@ def main() -> None:
             kw = A.bar_kw(a)
             face = kw.pop("color")
             kw.pop("hatch", None)                     # hatch reads as noise at marker size
+            # THE WHISKER IS DRAWN ON TOP OF THE MARKER, NOT UNDER IT. At the default order a
+            # bar shorter than the 5 pt marker disappears entirely behind it, and a reader
+            # cannot tell "the error is small" from "there is no error". That is not
+            # hypothetical here: in the quantum panel one outlier (ChemBERTa at 0.176) sets the
+            # y-range, and five of the nine arms then have whiskers of 1.7-3.3 pt -- HUME's is
+            # 1.7 pt against a 5 pt marker. Above the marker, the same whisker reads as a line
+            # crossing it.
+            #
+            # `ecfp_all_desc` IS DIFFERENT AND ITS MISSING BAR IS CORRECT: it is the anchor
+            # every other arm is subtracted from, so its value is 0.000 and its sem is 0.000 by
+            # construction, not by rounding. There is genuinely nothing to draw.
             ax.errorbar(x, y, yerr=e, fmt="o", ms=STYLE["marker_size"], color=face,
                         ecolor=STYLE["ink"], elinewidth=STYLE["lw_thin"],
-                        capsize=STYLE["cap_size"], zorder=3,
+                        capsize=STYLE["cap_size"], zorder=5,
                         # AN INK CIRCLE ON EVERY MARKER (Leif 2026-08-29). It was
                         # `kw.get("linewidth", 0.0)`, so any arm whose style carried no explicit
                         # width drew with NO outline and the pale fills (MiniMol, ECFP+Mordred)
@@ -267,6 +279,26 @@ def main() -> None:
                handletextpad=0.4)
     save(fig, "fig_c")
     plt.close(fig)
+
+    # THE NUMBERS BEHIND THE WHISKERS THAT CANNOT BE SEEN. A standard error smaller than the
+    # marker is invisible on the plate no matter what order things are drawn in -- HUME's on the
+    # quantum panel is 1.7 pt inside a 5 pt marker -- so the figure must not be the only place
+    # the value exists. This is the same reason fig_a writes degenerate_pairs to its CSV instead
+    # of drawing them: a reader who wants to know whether "no bar" means "small" or "none" gets
+    # to look it up, and for `ecfp_all_desc` the answer is genuinely none, since it is the anchor
+    # subtracted from itself.
+    build = Path(__file__).resolve().parents[1] / "build"
+    build.mkdir(parents=True, exist_ok=True)
+    with open(build / "fig_c.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["task", "arm", "delta_error_vs_anchor", "sem", "n_folds",
+                    "us_per_mol", "cost_measured_on", "is_anchor"])
+        for r in sorted(d["records"], key=lambda r: (r["task"], r["arm"])):
+            c = d["cost"].get(r["arm"], {})
+            w.writerow([r["task"], r["arm"], f"{r['mean']:.6f}", f"{r['sem']:.6f}",
+                        r.get("n_folds", ""), f"{c.get('us_per_mol', float('nan')):.2f}",
+                        c.get("measured_on", ""), int(r["arm"] == "ecfp_all_desc")])
+    print(f"  wrote  figures/build/fig_c.csv")
 
 
 if __name__ == "__main__":
