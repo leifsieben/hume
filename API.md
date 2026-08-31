@@ -1,12 +1,24 @@
-# HUME — public API specification
+# HUME — API design record
 
-*What the library promises, what the user decides, and why each default is what it is.*
+*Why each flag is what it is. The reference documentation is `README.md` and the docstrings;
+this file is the argument behind them.*
 
-**Status: specification, not description.** There is no `hume` package yet — no `pyproject.toml`,
-no entry point, and `featurize` exists only as per-module research functions (`chi.py`,
-`resistance.py`, `cycles.py`, `conjugation.py`, `stereo.py`). This file exists so the decisions
-below survive out of the conversation that produced them and into whatever gets built. Items
-marked **OPEN** are not yet decided and must not be implemented as if they were.
+**Status: superseded in part.** This began as a specification written before the package
+existed, and much of it has now been built, measured, and in three places decided differently.
+Read it for the reasoning, not for the signature. Where the two disagree, `molhume.featurize`
+is right and this file is history.
+
+What changed between the specification and the implementation, and why:
+
+| this file said | what shipped | why |
+| --- | --- | --- |
+| `featurize` returns `(fp, X, names)` | returns one `ndarray` | the names are identical on every call for a given set of flags, so returning them is something every caller unpacks and discards. `feature_names(**flags)` gives them on demand, the way sklearn's `get_feature_names_out` does. |
+| the fingerprint is part of the output | `fingerprint=False` by default, bits appended last | this is a descriptor library and the bits are not descriptors. Folding 2,048 of them into the same float64 matrix makes the default output mostly fingerprint by width and nearly triples its memory. Appending rather than prepending keeps descriptor column indices stable when the flag changes. |
+| `descriptors` selects a mode | `additional_descriptors` (bool) plus `columns` (names) | two orthogonal questions — *whose* descriptors, and *which* ones — were one parameter. They are combined with AND. |
+| `standardize` has no default and raises | defaults to a sentinel that behaves as `"none"` and warns once | section 3 below is still the right argument; only the enforcement changed. Raising makes the library unusable in a one-liner; a silent default makes the wrong molecule the quiet case. The sentinel keeps the decision explicit — passing `"none"` yourself is silent, omitting it is not — without making the first call fail. |
+
+Two things section 5 promised and the implementation kept: the column set is versioned, and the
+emitted set is exactly `ALL_COLUMNS`. Section 8's open items are settled — see `CHANGELOG.md`.
 
 Every default here is justified by a measurement in this repo, or it is marked OPEN. A default
 chosen by argument alone is a bug waiting to be discovered by a user.
