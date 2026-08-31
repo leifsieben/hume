@@ -356,3 +356,114 @@ does not.
 
 Being ours is not itself a justification, and the audit in §1.1 is the evidence: our columns were
 put through the same filter as everything else, and a third of them did not survive it.
+
+---
+
+## 5. Cost triage: columns dropped after implementation
+
+Section 1 selected on **redundancy** and never on **cost**. Nothing in the greedy cover asked
+whether a surviving column earned its compute. Once all 228 remaining descriptors were
+implemented in C++ and could be timed, that question was asked separately, and 20 columns were
+dropped. This section records why, because a drop is a claim that has to be defensible later.
+
+### 5.1 The test: reconstruction from a cheap basis
+
+A column earns its place if a model cannot already get its information for free. So each
+candidate was regressed on a **cheap basis** of 21 descriptors that HUME already computes, whose
+marginal cost is therefore zero:
+
+    nHeavyAtom nAromAtom nRing nBondsD MolLogP TPSA NumHDonors NumHAcceptors
+    NumRotatableBonds Chi0 Chi1 Chi0v Chi1v Kappa1 Kappa2 Kappa3 HallKierAlpha
+    FractionCSP3 nN nO nS
+
+Two scores, both on a **30% held-out split** of an 8,000-molecule subsample of the stratified
+20,000-molecule corpus of section 1.2:
+
+  * **linear R2** -- ordinary least squares.
+  * **GBM R2** -- `HistGradientBoostingRegressor`, 120 iterations.
+
+The GBM score is the one that decides. Linear R2 alone is not sufficient evidence for a drop,
+because the downstream model is gradient-boosted trees: a column that is only 93% linearly
+predictable can be 99.9% predictable non-linearly, and `LogEE_A` is exactly that case
+(0.929 linear, 0.999 GBM). Judging it on the linear number would have understated the case for
+dropping it. Raw values are in `results/dedupe2/nonlinear_reconstruction.json`.
+
+Timings are per molecule over the same corpus, measured with the standalone family drivers in
+`build_misc/`, best-of-5 per molecule, and independently reproduced by a second party within 4%.
+
+### 5.2 Dropped
+
+| column(s) | n | us/mol | GBM R2 | reason |
+|---|---:|---:|---:|---|
+| `MID*`, `AMID*` | 12 | 55.6 | 0.986 | identifier, not a property descriptor |
+| `BertzCT` | 1 | 55.5 | 0.994 | complexity index that is size and branching |
+| `LogEE_A` | 1 | 26.5 | 0.999 | Estrada index, dominated by lambda_1 |
+| `VE1/2/3_A`, `VR1/2/3_A` | 6 | -- | 0.876 | ill-posed: numerically degenerate Perron vector |
+
+**MolecularId (`MID*`, `AMID*`) -- dropped on mechanism first, cost second.** Mordred's
+`MolecularId.py` builds a graph weighted by `deg(a)*deg(b)` and enumerates paths to a cutoff
+`1/eps^2`. This is Randic's molecular *identification* number: it is designed so that distinct
+structures receive distinct values, i.e. to tell isomers apart. That objective is the opposite
+of what a property descriptor needs. A feature used for regression should be **smooth** --
+similar structures give similar values, so the model can interpolate between them -- whereas an
+identifier is engineered to be maximally **discriminative**, separating structures that are
+nearly identical. Using one as a feature is closer to handing the model a hash of the molecule
+than a physical quantity. The path enumeration is also the source of the group's p99 tail:
+16 ms on a single 76-atom bridged cage.
+
+**BertzCT -- the worst value in the package.** An entropy over bond and atom equivalence
+classes, presented as "molecular complexity". Complexity so defined is size plus branching in
+practice, and the measurement agrees: GBM R2 0.994 from descriptors already computed. At
+55.5 us for one column it was the highest per-column cost in HUME -- more than the entire
+31-column ring/atom count group and the entire 29-column ETA group combined -- for 0.6% of new
+information.
+
+**LogEE_A -- a size statistic in spectral clothing.** Confirmed against mordred's own source as
+the "Estrada-like index", the log-sum-exp of the adjacency eigenvalues. The sum is dominated by
+the largest eigenvalue, which for a molecular graph is a branching and size measure. GBM R2
+0.999 -- effectively free from what we already have -- at 26.5 us for one column.
+
+**The six adjacency eigenvector columns -- dropped on correctness, not on cost.** These derive
+from the Perron eigenvector of the adjacency matrix. For molecules built of two near-identical
+halves on a linker the leading eigenvalue gap is exponentially small: 4e-15 on corpus molecule
+19279 (97 heavy atoms), and roughly 64 of 20,000 corpus molecules have a gap below 1e-9. Mordred
+returns an arbitrary member of the numerically degenerate pair, and its value there is
+demonstrably not a function of the molecule -- it moves with atom numbering, with
+`OMP_NUM_THREADS`, and between runs on the same input (re-running mordred today returns NaN
+where the stored reference holds 1.3e12; mordred disagrees with its own earlier run on 31
+cells). HUME's inverse-iteration implementation is *better* -- closer to a 60-digit `mpmath`
+reference on nine of ten sampled cells -- but a column whose reference definition disagrees with
+itself has no place in a package whose central claim is bit-exactness. Their GBM R2 of 0.876
+means they were not carrying much unique information either, but that is the secondary reason.
+
+Total: **20 columns, ~138 us/molecule.**
+
+### 5.3 Kept, and why the expensive ones survive
+
+**BCUT (20 columns, ~137 us) -- kept, and it is the most defensible expensive family.**
+Median GBM R2 **0.656, and not one of the 32 BCUT columns exceeds 0.97** -- the only family
+tested where nothing is reconstructible. It is also the least size-correlated family measured
+(median |r| with heavy-atom count 0.222, against 0.953 for BertzCT). The mechanism explains it:
+a BCUT is an extreme eigenvalue of a Burden matrix whose diagonal carries an atomic property
+(charge, polarizability, H-bond capacity) and whose off-diagonal carries connectivity, so it
+encodes the *joint* distribution of a property with topology -- "how is charge arranged across
+this scaffold", not "how much charge is there". Counts, logP and TPSA cannot express that.
+This is where the cost buys something the cheap basis provably does not contain.
+
+**ETA (29 columns, 20.5 us) -- kept.** Median GBM R2 0.882 with 12 of 31 above 0.97, so it is
+partly reconstructible, but at 0.7 us per column the cost does not justify the analysis needed
+to split it.
+
+**Barysz (30 columns) -- kept, but flagged.** Median GBM R2 **0.977, with 19 of 30 above 0.97**,
+and ten columns at 0.997 or higher: `VE1_DzZ`, `VE1_Dzv`, `VE1_Dzp` and `VR3_Dzv` all reach
+GBM R2 **1.000**. The dedup of section 1 pruned Barysz from 104 columns to 30 on redundancy
+grounds, but never asked whether the survivors were cheaply reconstructible, and most of them
+are. One column stands out in the other direction: `SM1_DzZ` at GBM R2 **0.687**, the only
+Barysz survivor carrying substantial independent information.
+
+The mechanistic reading is consistent: the Barysz matrix is the topological distance matrix
+weighted by atomic number, so its spectral summaries are heteroatom-weighted restatements of
+topology -- and Chi and Kappa, which are in the cheap basis, are topology. The heteroatom
+weighting is what ought to add information, and for the `VE*`/`VR*` eigenvector-derived members
+it evidently does not. This is recorded rather than acted on; it is the strongest remaining
+candidate for a further reduction.
