@@ -14,3 +14,11 @@ SCALE_BACKSTOP=shutdown -h +180, InstanceInitiatedShutdownBehavior=terminate
 SCALE_LOG=s3://hume-bench-use1-075120018132/logs/i-06039ca4e5a997591.log
 SCALE_STATUS=s3://hume-bench-use1-075120018132/status/i-06039ca4e5a997591.{DONE,FAILED}.json
 SCALE_RESULTS=s3://hume-bench-use1-075120018132/results/i-06039ca4e5a997591/
+
+# classification expansion, launched 2026-08-31T17:44:09Z
+CLS_INSTANCE=i-021bc813eed63093e
+CLS_ARMS=26 (the full downstream grid)
+CLS_DATASETS=bace herg wong_hepg2 wong_imr90 wong_hskmc wong_saureus hiv
+CLS_CAP=16h, InstanceInitiatedShutdownBehavior=terminate
+CLS_LOG=s3://hume-bench-use1-075120018132/logs/i-021bc813eed63093e.log
+CLS_RESULTS=s3://hume-bench-use1-075120018132/downstream/i-021bc813eed63093e{,.partial}.json
