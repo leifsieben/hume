@@ -34,11 +34,28 @@ classifiers = [
 # disagree. Note mordred 1.2.0 needs 3.11 exactly (it imports `distutils`, removed in 3.12), so
 # the Mordred comparison env is 3.11 while the package itself is developed on 3.12.
 requires-python = ">=3.11"
-# Lower bounds only, on purpose. HUME computes its descriptors itself; rdkit supplies parsing
-# and perceived atom/bond properties. Those perceptions DO drift across releases, so values are
-# version-relative -- that belongs in `spec`, not in a hard pin that would fight the user's
-# environment. Verified bit-exact against rdkit 2025.9.2 / numpy 2.4.6.
-dependencies = ["numpy>=1.24", "rdkit>=2023.03"]
+# THE RDKIT RANGE IS A HARD REQUIREMENT, NOT A PREFERENCE, and the bounds are measured.
+#
+# molpickle.h reads rdkit's MolPickler blob directly -- that is where most of the speed comes
+# from -- and the pickle layout is explicitly not a stable API. It is pinned to format 16.2.0,
+# and mol-hume refuses to import against anything else rather than silently misparsing a
+# molecule into wrong descriptors with no symptom. Measured, one probe per release:
+#
+#     rdkit 2023.09.6   pickle 15.0.0   NO
+#     rdkit 2024.03.6   pickle 16.1.0   NO
+#     rdkit 2024.09.1   pickle 16.2.0   yes   <- lower bound
+#     rdkit 2025.03.6   pickle 16.2.0   yes
+#     rdkit 2025.09.2   pickle 16.2.0   yes   <- what the exactness numbers are measured on
+#     rdkit 2026.03.1   pickle 16.3.0   NO    <- upper bound
+#
+# So the cap is real and belongs in the metadata: without it `pip install mol-hume` on a clean
+# machine resolves the newest rdkit and the package does not import at all. Supporting 16.3.0
+# is a maintenance task, not a version-range edit -- see MAINTENANCE.md section 1.
+#
+# Within the supported range the values are still version-relative: rdkit's perceived atom and
+# bond properties drift, and the exactness numbers are quoted against 2025.9.2 specifically.
+# That is documentation, not a pin.
+dependencies = ["numpy>=1.24", "rdkit>=2024.09.1,<2026.03"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]

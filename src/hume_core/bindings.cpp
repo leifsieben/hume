@@ -20,6 +20,7 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include <cstddef>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
@@ -134,7 +135,7 @@ static void crippen_fill(criptyper::Mol &c, std::vector<int32_t> &cur, const int
                          const int *BI, int n, int nb, int a0, int b0, double *logp, double *mr) {
   c.alloc(n, 2 * nb);
   for (int i = 0; i < n; i++) {
-    const int *r = AI + (ssize_t)(a0 + i) * N_ATOM_INT;
+    const int *r = AI + (std::ptrdiff_t)(a0 + i) * N_ATOM_INT;
     const int z = r[A_Z];
     c.z[i] = (uint8_t)(z > 255 ? 255 : z);
     c.arom[i] = (uint8_t)r[A_AROM];
@@ -145,14 +146,14 @@ static void crippen_fill(criptyper::Mol &c, std::vector<int32_t> &cur, const int
   // CSR adjacency, counting sort. Bond order within an atom's list does not matter to any
   // predicate (they all quantify existentially over neighbours), unlike hume_blocks.h's `adj`.
   for (int b = 0; b < nb; b++) {
-    const int *r = BI + (ssize_t)(b0 + b) * N_BOND_INT;
+    const int *r = BI + (std::ptrdiff_t)(b0 + b) * N_BOND_INT;
     c.start[r[B_U] + 1]++;
     c.start[r[B_V] + 1]++;
   }
   for (int i = 0; i < n; i++) c.start[i + 1] += c.start[i];
   cur.assign(c.start.begin(), c.start.end() - 1);   // caller-owned scratch; not a per-mol malloc
   for (int b = 0; b < nb; b++) {
-    const int *r = BI + (ssize_t)(b0 + b) * N_BOND_INT;
+    const int *r = BI + (std::ptrdiff_t)(b0 + b) * N_BOND_INT;
     const uint8_t code = (uint8_t)r[B_CODE];
     c.nbr[cur[r[B_U]]] = r[B_V];
     c.bcode[cur[r[B_U]]++] = code;
@@ -183,10 +184,10 @@ static void fill_hume_mol(Mol &m, criptyper::Mol &c, std::vector<int32_t> &cur, 
     m.hyb.resize(m.n); m.arom.resize(m.n); m.ring.resize(m.n); m.cip.resize(m.n);
     m.mass.resize(m.n); m.gast.resize(m.n); m.clogp.resize(m.n); m.cmr.resize(m.n);
     for (int i = 0; i < m.n; i++) {
-      const int *r = AI + (ssize_t)(a0 + i) * N_ATOM_INT;
+      const int *r = AI + (std::ptrdiff_t)(a0 + i) * N_ATOM_INT;
       m.Z[i] = r[0]; m.deg[i] = r[1]; m.nH[i] = r[2]; m.fchg[i] = r[3];
       m.hyb[i] = r[4]; m.arom[i] = r[5]; m.ring[i] = r[6]; m.cip[i] = r[7];
-      const double *d = AD + (ssize_t)(a0 + i) * N_ATOM_DBL;
+      const double *d = AD + (std::ptrdiff_t)(a0 + i) * N_ATOM_DBL;
       m.mass[i] = d[0]; m.gast[i] = d[1];
     }
     crippen_fill(c, cur, AI, BI, m.n, m.nb, a0, b0, m.clogp.data(), m.cmr.data());
@@ -199,7 +200,7 @@ static void fill_hume_mol(Mol &m, criptyper::Mol &c, std::vector<int32_t> &cur, 
     m.bconj.resize(m.nb); m.bring.resize(m.nb); m.bstereo.resize(m.nb);
     m.adj.assign(m.n, {});
     for (int b = 0; b < m.nb; b++) {
-      const int *r = BI + (ssize_t)(b0 + b) * N_BOND_INT;
+      const int *r = BI + (std::ptrdiff_t)(b0 + b) * N_BOND_INT;
       m.bu[b] = r[0]; m.bv[b] = r[1]; m.bconj[b] = r[2]; m.bring[b] = r[3];
       m.bstereo[b] = BS[b0 + b];
       m.bord[b] = BD[b0 + b];
@@ -213,24 +214,24 @@ static void fill_hume_mol(Mol &m, criptyper::Mol &c, std::vector<int32_t> &cur, 
     }
 }
 
-static void run_blocks(ssize_t nm, const int *AO, const int *BO, const int *OKf, const int *AI,
+static void run_blocks(std::ptrdiff_t nm, const int *AO, const int *BO, const int *OKf, const int *AI,
                        const double *AD, const int *BI, const int *BS, const double *BD,
                        double *O) {
   BlockWork W;
   Mol m;
   criptyper::Mol c;
   std::vector<int32_t> cur;
-  for (ssize_t k = 0; k < nm; k++) {
+  for (std::ptrdiff_t k = 0; k < nm; k++) {
     fill_hume_mol(m, c, cur, AI, AD, BI, BS, BD, AO[k], BO[k], AO[k + 1] - AO[k],
                   BO[k + 1] - BO[k], OKf[k]);
-    blocks_row(m, W, O + (ssize_t)k * HUME_NBLOCK_COLS);
+    blocks_row(m, W, O + (std::ptrdiff_t)k * HUME_NBLOCK_COLS);
   }
 }
 
 static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, ArrI atom_i,
                                   ArrD atom_d, ArrI bond_i, ArrI bond_s, ArrD bond_d) {
   need(atom_off.ndim() == 1 && bond_off.ndim() == 1 && chg_ok.ndim() == 1, "offsets must be 1-D");
-  const ssize_t nm = chg_ok.shape(0);
+  const std::ptrdiff_t nm = chg_ok.shape(0);
   need(atom_off.shape(0) == nm + 1 && bond_off.shape(0) == nm + 1,
        "offset arrays must have n_mol + 1 entries");
   need(atom_i.ndim() == 2 && atom_i.shape(1) == N_ATOM_INT,
@@ -245,11 +246,11 @@ static py::array_t<double> blocks(ArrI atom_off, ArrI bond_off, ArrI chg_ok, Arr
   const int *AO = atom_off.data(), *BO = bond_off.data(), *OKf = chg_ok.data();
   const int *AI = atom_i.data(), *BI = bond_i.data(), *BS = bond_s.data();
   const double *AD = atom_d.data(), *BD = bond_d.data();
-  const ssize_t n_atoms = atom_i.shape(0), n_bonds = bond_i.shape(0);
+  const std::ptrdiff_t n_atoms = atom_i.shape(0), n_bonds = bond_i.shape(0);
   need(nm == 0 || (AO[nm] == n_atoms && BO[nm] == n_bonds),
        "last offset does not match the flat array length");
 
-  auto out = py::array_t<double>({(ssize_t)nm, (ssize_t)HUME_NBLOCK_COLS});
+  auto out = py::array_t<double>({(std::ptrdiff_t)nm, (std::ptrdiff_t)HUME_NBLOCK_COLS});
   double *O = out.mutable_data();
 
   // The GIL goes back only after the loop. Nothing below touches a Python object: the input
@@ -295,13 +296,13 @@ struct Blobs {
 
 static Blobs borrow(const py::sequence &pickles) {
   Blobs b;
-  const ssize_t nm = py::len(pickles);
+  const std::ptrdiff_t nm = py::len(pickles);
   b.ptr.resize(nm);
   b.len.resize(nm);
-  for (ssize_t k = 0; k < nm; k++) {
+  for (std::ptrdiff_t k = 0; k < nm; k++) {
     py::object o = pickles[k];
     char *data = nullptr;
-    ssize_t n = 0;
+    std::ptrdiff_t n = 0;
     if (PyBytes_AsStringAndSize(o.ptr(), &data, &n) != 0) {
       throw py::error_already_set();
     }
@@ -315,12 +316,12 @@ static Blobs borrow(const py::sequence &pickles) {
 //! The peek is 28 bytes per molecule and is what lets the flat arrays be allocated exactly once.
 static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = false,
                               bool want_ac_split = false) {
-  const ssize_t nm = (ssize_t)b.ptr.size();
+  const std::ptrdiff_t nm = (std::ptrdiff_t)b.ptr.size();
   f.atom_off.resize(nm + 1);
   f.bond_off.resize(nm + 1);
   f.chg_ok.resize(nm);
   f.atom_off[0] = f.bond_off[0] = 0;
-  for (ssize_t k = 0; k < nm; k++) {
+  for (std::ptrdiff_t k = 0; k < nm; k++) {
     int na = 0, nb = 0;
     molpickle::peek_sizes(b.ptr[k], b.len[k], na, nb);
     f.atom_off[k + 1] = f.atom_off[k] + na;
@@ -336,7 +337,7 @@ static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = fal
   if (want_ac_split) { f.ac_own.resize(n_atoms); f.ac_h.resize(n_atoms); }
 
   molpickle::Work w;
-  for (ssize_t k = 0; k < nm; k++) {
+  for (std::ptrdiff_t k = 0; k < nm; k++) {
     const int a0 = f.atom_off[k], b0 = f.bond_off[k];
     molpickle::Sink s{f.atom_i.data() + (std::size_t)a0 * N_ATOM_INT,
                       f.atom_d.data() + (std::size_t)a0 * N_ATOM_DBL,
@@ -352,8 +353,8 @@ static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = fal
 
 static py::array_t<double> blocks_from_pickles(py::sequence pickles) {
   Blobs b = borrow(pickles);
-  const ssize_t nm = (ssize_t)b.ptr.size();
-  auto out = py::array_t<double>({(ssize_t)nm, (ssize_t)HUME_NBLOCK_COLS});
+  const std::ptrdiff_t nm = (std::ptrdiff_t)b.ptr.size();
+  auto out = py::array_t<double>({(std::ptrdiff_t)nm, (std::ptrdiff_t)HUME_NBLOCK_COLS});
   double *O = out.mutable_data();
   {
     py::gil_scoped_release nogil;
@@ -374,14 +375,14 @@ static py::tuple pickle_extract(py::sequence pickles) {
     py::gil_scoped_release nogil;
     fill_from_pickles(b, f);
   }
-  const ssize_t nm = (ssize_t)b.ptr.size();
-  const ssize_t na = f.atom_off[nm], nb = f.bond_off[nm];
-  auto vec_i = [](const std::vector<int> &v, ssize_t rows, ssize_t cols) {
+  const std::ptrdiff_t nm = (std::ptrdiff_t)b.ptr.size();
+  const std::ptrdiff_t na = f.atom_off[nm], nb = f.bond_off[nm];
+  auto vec_i = [](const std::vector<int> &v, std::ptrdiff_t rows, std::ptrdiff_t cols) {
     auto a = cols == 1 ? py::array_t<int>({rows}) : py::array_t<int>({rows, cols});
     std::memcpy(a.mutable_data(), v.data(), v.size() * sizeof(int));
     return a;
   };
-  auto vec_d = [](const std::vector<double> &v, ssize_t rows, ssize_t cols) {
+  auto vec_d = [](const std::vector<double> &v, std::ptrdiff_t rows, std::ptrdiff_t cols) {
     auto a = cols == 1 ? py::array_t<double>({rows}) : py::array_t<double>({rows, cols});
     std::memcpy(a.mutable_data(), v.data(), v.size() * sizeof(double));
     return a;
@@ -761,8 +762,8 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
                     const double *ACO, const double *ACH, int h_chg_ok,
                     const int *SA, const int *SB, unsigned fams,
                     unsigned opts, double *out) {
-  const int *ai = AI + (ssize_t)a0 * N_ATOM_INT;
-  const int *bi = BI + (ssize_t)b0 * N_BOND_INT;
+  const int *ai = AI + (std::ptrdiff_t)a0 * N_ATOM_INT;
+  const int *bi = BI + (std::ptrdiff_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
   for (int c = 0; c < N_ROW_COLS; c++) out[c] = 0.0;
 
@@ -777,13 +778,13 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_VSA) {
   W.vm.alloc(n, nb);
   for (int i = 0; i < n; i++) {
-    const int *r = ai + (ssize_t)i * N_ATOM_INT;
+    const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
     W.vm.z[i] = r[A_Z]; W.vm.deg[i] = r[A_DEG]; W.vm.nH[i] = r[A_NH];
     W.vm.fchg[i] = r[A_FCHG]; W.vm.arom[i] = r[A_AROM];
-    W.vm.gast[i] = AD[(ssize_t)(a0 + i) * N_ATOM_DBL + 1];
+    W.vm.gast[i] = AD[(std::ptrdiff_t)(a0 + i) * N_ATOM_DBL + 1];
   }
   for (int b = 0; b < nb; b++) {
-    const int *r = bi + (ssize_t)b * N_BOND_INT;
+    const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
     W.vm.bu[b] = r[B_U]; W.vm.bv[b] = r[B_V]; W.vm.bcode[b] = r[B_CODE];
   }
   vsabin::vsa_row(W.vm, W.vw, out + OFF_VSA);
@@ -796,20 +797,20 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   // SMARTS ask. Doing it here rather than in the caller is why that helper exists.
   W.em.alloc(n, 2 * nb);
   for (int i = 0; i < n; i++) {
-    const int *r = ai + (ssize_t)i * N_ATOM_INT;
+    const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
     W.em.z[i] = (uint8_t)(r[A_Z] > 255 ? 255 : r[A_Z]);
     W.em.nH[i] = (uint8_t)r[A_NH];
     W.em.arom[i] = (uint8_t)r[A_AROM];
   }
   for (int b = 0; b < nb; b++) {
-    const int *r = bi + (ssize_t)b * N_BOND_INT;
+    const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
     W.em.start[r[B_U] + 1]++;
     W.em.start[r[B_V] + 1]++;
   }
   for (int i = 0; i < n; i++) W.em.start[i + 1] += W.em.start[i];
   W.cur.assign(W.em.start.begin(), W.em.start.end() - 1);
   for (int b = 0; b < nb; b++) {
-    const int *r = bi + (ssize_t)b * N_BOND_INT;
+    const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
     const uint8_t bt = esttyper::btypeFromBcode((uint8_t)r[B_CODE]);
     W.em.nbr[W.cur[r[B_U]]] = r[B_V]; W.em.btype[W.cur[r[B_U]]++] = bt;
     W.em.nbr[W.cur[r[B_V]]] = r[B_U]; W.em.btype[W.cur[r[B_V]]++] = bt;
@@ -826,7 +827,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_RING) {
   W.rm.alloc(n);
   for (int i = 0; i < n; i++) {
-    const int *r = ai + (ssize_t)i * N_ATOM_INT;
+    const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
     W.rm.z[i] = r[A_Z];
     W.rm.arom[i] = (uint8_t)r[A_AROM];
   }
@@ -851,14 +852,14 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_IC) {
   W.im.alloc(n, nb);
   for (int i = 0; i < n; i++) {
-    const int *r = ai + (ssize_t)i * N_ATOM_INT;
+    const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
     W.im.z[i] = (uint8_t)(r[A_Z] > 255 ? 255 : r[A_Z]);
     W.im.nh[i] = (uint8_t)r[A_NH];
     W.im.arom[i] = (uint8_t)r[A_AROM];
     W.im.chg[i] = (int8_t)r[A_FCHG];
   }
   for (int b = 0; b < nb; b++) {
-    const int *r = bi + (ssize_t)b * N_BOND_INT;
+    const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
     W.im.bu[b] = r[B_U]; W.im.bv[b] = r[B_V];
     W.im.bcode[b] = (uint8_t)r[B_CODE];
     W.im.bord[b] = bd[b];
@@ -911,14 +912,14 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   //     a real AddHs + ComputeGasteigerCharges over the same 3,677 molecules: 1.67e-16.
   //
   // molpickle.h splits the two halves out as `ac_own` / `ac_h` for exactly this.
-  const int hn = n + [&]{ int t = 0; for (int i = 0; i < n; i++) t += ai[(ssize_t)i * N_ATOM_INT + A_NH]; return t; }();
+  const int hn = n + [&]{ int t = 0; for (int i = 0; i < n; i++) t += ai[(std::ptrdiff_t)i * N_ATOM_INT + A_NH]; return t; }();
   const int hnb = nb + (hn - n);
   if (fams & F_NEEDS_H) {
     W.hc_syn.assign(hn, 0.0);
     for (int i = 0; i < n; i++) W.hc_syn[i] = ACO ? ACO[i] : 0.0;
     int k = n;
     for (int i = 0; i < n; i++) {
-      const int nh = ai[(ssize_t)i * N_ATOM_INT + A_NH];
+      const int nh = ai[(std::ptrdiff_t)i * N_ATOM_INT + A_NH];
       const double qh = ACH ? ACH[i] : 0.0;
       for (int t = 0; t < nh; t++) W.hc_syn[k++] = nh ? qh / (double)nh : 0.0;
     }
@@ -947,7 +948,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     }
     int hb = nb, k = n;
     for (int i = 0; i < n; i++) {
-      const int nh = ai[(ssize_t)i * N_ATOM_INT + A_NH];
+      const int nh = ai[(std::ptrdiff_t)i * N_ATOM_INT + A_NH];
       for (int t = 0; t < nh; t++, hb++, k++) {
         W.am.bu[hb] = i; W.am.bv[hb] = k;
         W.am.adj[i].push_back(k);
@@ -961,7 +962,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_FRAG) {
     W.fm.alloc(n, nb);
     for (int i = 0; i < n; i++) {
-      const int *r = ai + (ssize_t)i * N_ATOM_INT;
+      const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
       W.fm.z[i] = r[A_Z];
       W.fm.deg[i] = r[A_DEG];
       W.fm.nH[i] = r[A_NH];
@@ -976,7 +977,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.fm.iso[i] = r[A_ISO];
     }
     for (int b = 0; b < nb; b++) {
-      const int *r = bi + (ssize_t)b * N_BOND_INT;
+      const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
       W.fm.bu[b] = r[B_U];
       W.fm.bv[b] = r[B_V];
       W.fm.border[b] = frag_border(r[B_CODE]);
@@ -1023,7 +1024,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     // list for every molecule (correct, and O(total) per molecule).
     W.rp_loc.resize(n_rings + 1);
     for (int q = 0; q <= n_rings; q++) W.rp_loc[q] = ring_ptr[q] - ring_ptr[0];
-    W.km.build_from_rows(n, ai, N_ATOM_INT, AD + (ssize_t)a0 * N_ATOM_DBL, N_ATOM_DBL, nb, bi,
+    W.km.build_from_rows(n, ai, N_ATOM_INT, AD + (std::ptrdiff_t)a0 * N_ATOM_DBL, N_ATOM_DBL, nb, bi,
                          N_BOND_INT, bd, n_rings, W.rp_loc.data(), ring_at + ring_ptr[0]);
 
     const InputCols &IC = input_cols();
@@ -1110,7 +1111,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_RDKCORE) {
     W.dm.alloc(n, nb);
     for (int i = 0; i < n; i++) {
-      const int *r = ai + (ssize_t)i * N_ATOM_INT;
+      const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
       W.dm.z[i] = r[A_Z];
       W.dm.deg[i] = r[A_DEG];
       W.dm.nH[i] = r[A_NH];
@@ -1122,12 +1123,12 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       // CHI_UNSPECIFIED. No perception happens on this side of the boundary.
       W.dm.chirposs[i] = r[A_CHIRPOSS];
       W.dm.ctag[i] = r[A_CTAG];
-      W.dm.mass[i] = AD[(ssize_t)(a0 + i) * N_ATOM_DBL];
+      W.dm.mass[i] = AD[(std::ptrdiff_t)(a0 + i) * N_ATOM_DBL];
       W.dm.aw[i] = (r[A_Z] >= 0 && r[A_Z] < pickletab::N_Z) ? pickletab::ATOMIC_WEIGHT[r[A_Z]]
                                                             : 0.0;
     }
     for (int b = 0; b < nb; b++) {
-      const int *r = bi + (ssize_t)b * N_BOND_INT;
+      const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
       W.dm.bu[b] = r[B_U];
       W.dm.bv[b] = r[B_V];
       W.dm.barom[b] = (r[B_CODE] & 8) ? 1 : 0;     // the SMARTS code's AROMATIC FLAG bit
@@ -1152,14 +1153,14 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_CONSTIT) {
     W.sm.alloc(n, nb);
     for (int i = 0; i < n; i++) {
-      const int *r = ai + (ssize_t)i * N_ATOM_INT;
+      const int *r = ai + (std::ptrdiff_t)i * N_ATOM_INT;
       W.sm.z[i] = r[A_Z];       W.sm.deg[i] = r[A_DEG];   W.sm.nH[i] = r[A_NH];
       W.sm.fchg[i] = r[A_FCHG]; W.sm.hyb[i] = r[A_HYB];   W.sm.arom[i] = r[A_AROM];
       W.sm.nring[i] = r[A_NRING]; W.sm.tval[i] = r[A_TVAL];
       W.sm.ctag[i] = r[A_CTAG]; W.sm.iso[i] = r[A_ISO];   W.sm.cip[i] = r[A_CIP];
     }
     for (int b = 0; b < nb; b++) {
-      const int *r = bi + (ssize_t)b * N_BOND_INT;
+      const int *r = bi + (std::ptrdiff_t)b * N_BOND_INT;
       W.sm.bu[b] = r[B_U];  W.sm.bv[b] = r[B_V];  W.sm.btype[b] = r[B_BTYPE];
       W.sm.barom[b] = (r[B_CODE] & 8) ? 1 : 0;
       W.sm.bconj[b] = r[B_CONJ];
@@ -1230,7 +1231,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
 
   // ---- misc singletons: 67 of 81 slots emitted ----
   if (fams & F_MISC) {
-    miscext::build_from_rows(W.mxm, n, nb, ai, N_ATOM_INT, AD + (ssize_t)a0 * N_ATOM_DBL,
+    miscext::build_from_rows(W.mxm, n, nb, ai, N_ATOM_INT, AD + (std::ptrdiff_t)a0 * N_ATOM_DBL,
                              N_ATOM_DBL, bi, N_BOND_INT, bd, chg_ok, n_rings);
     W.buf_misc.assign(miscext::N_COLS, std::nan(""));
     // W.xs and W.ps are chi.h's and pathcount.h's scratch, already filled for F_CHI and
@@ -1326,7 +1327,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   (void)h_pickles;
   const unsigned fams = family_mask(families);
   const unsigned opts = optional_mask(optional);
-  const ssize_t nm = (ssize_t)b.ptr.size();
+  const std::ptrdiff_t nm = (std::ptrdiff_t)b.ptr.size();
   need(ring_moff.ndim() == 1 && ring_ptr.ndim() == 1 && ring_at.ndim() == 1,
        "the ring arrays must be 1-D");
   need(ring_moff.shape(0) == nm + 1, "ring_moff must have n_mol + 1 entries");
@@ -1342,7 +1343,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   need(stereo_a.ndim() == 1 && stereo_b.ndim() == 1, "stereo_a / stereo_b must be 1-D");
   const bool have_stereo = stereo_a.shape(0) != 0 || stereo_b.shape(0) != 0;
 
-  auto out = py::array_t<double>({(ssize_t)nm, (ssize_t)N_ALL_COLS});
+  auto out = py::array_t<double>({(std::ptrdiff_t)nm, (std::ptrdiff_t)N_ALL_COLS});
   double *O = out.mutable_data();
   {
     py::gil_scoped_release nogil;
@@ -1382,12 +1383,12 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // violations, so every worker catches, stores, and the first one is rethrown after join.
     std::vector<std::exception_ptr> errs;
     std::mutex errmu;
-    auto worker = [&](ssize_t lo, ssize_t hi) {
+    auto worker = [&](std::ptrdiff_t lo, std::ptrdiff_t hi) {
       try {
       AllWork W;
       // one full-width scratch row per thread; the output slice holds only the emitted columns
       std::vector<double> row((std::size_t)N_ROW_COLS);
-      for (ssize_t k = lo; k < hi; k++) {
+      for (std::ptrdiff_t k = lo; k < hi; k++) {
         const int r0 = RM[k], nr = RM[k + 1] - r0;
         all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
                 f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
@@ -1396,7 +1397,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                 need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
                 f.chg_ok[k], SA, SB, fams, opts,
                 row.data());
-        double *dst = O + (ssize_t)k * N_ALL_COLS;
+        double *dst = O + (std::ptrdiff_t)k * N_ALL_COLS;
         for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
       }
       } catch (...) {
@@ -1416,9 +1417,9 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
       // output writes in its own cache lines.
       std::vector<std::thread> ts;
       ts.reserve(nt);
-      const ssize_t chunk = (nm + nt - 1) / nt;
+      const std::ptrdiff_t chunk = (nm + nt - 1) / nt;
       for (int t = 0; t < nt; t++) {
-        const ssize_t lo = (ssize_t)t * chunk, hi = std::min(nm, lo + chunk);
+        const std::ptrdiff_t lo = (std::ptrdiff_t)t * chunk, hi = std::min(nm, lo + chunk);
         if (lo < hi) ts.emplace_back(worker, lo, hi);
       }
       for (auto &th : ts) th.join();
@@ -1497,19 +1498,19 @@ static py::array_t<double> crippen_pairs(ArrI atom_off, ArrI bond_off, ArrI atom
        ("bond_i must be (n_bonds, " + std::to_string(N_BOND_INT) + ")").c_str());
   need(atom_off.ndim() == 1 && bond_off.ndim() == 1 && atom_off.shape(0) >= 1 &&
        atom_off.shape(0) == bond_off.shape(0), "offsets must be 1-D and the same length");
-  const ssize_t nm = atom_off.shape(0) - 1;
+  const std::ptrdiff_t nm = atom_off.shape(0) - 1;
   need(nm == 0 || (atom_off.data()[nm] == atom_i.shape(0) &&
                    bond_off.data()[nm] == bond_i.shape(0)),
        "last offset does not match the flat array length");
   const int *AO = atom_off.data(), *BO = bond_off.data();
   const int *AI = atom_i.data(), *BI = bond_i.data();
-  auto out = py::array_t<double>({atom_i.shape(0), (ssize_t)2});
+  auto out = py::array_t<double>({atom_i.shape(0), (std::ptrdiff_t)2});
   double *O = out.mutable_data();
   py::gil_scoped_release nogil;
   criptyper::Mol c;
   std::vector<int32_t> cur;
   std::vector<double> lp, mr;
-  for (ssize_t k = 0; k < nm; k++) {
+  for (std::ptrdiff_t k = 0; k < nm; k++) {
     const int a0 = AO[k], n = AO[k + 1] - a0, b0 = BO[k], nb = BO[k + 1] - b0;
     lp.resize(n); mr.resize(n);
     crippen_fill(c, cur, AI, BI, n, nb, a0, b0, lp.data(), mr.data());

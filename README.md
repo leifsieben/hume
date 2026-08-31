@@ -13,11 +13,18 @@ pip install mol-hume
 ```python
 import molhume
 
-fp, X, names = molhume.featurize(
-    ["CCO", "CC(=O)Oc1ccccc1C(=O)O"],
-    standardize="none",
-)
-# fp -> (2, 2048) uint8 ECFP        X -> (2, 1269) float64        names -> 1269 column names
+X = molhume.featurize(["CCO", "CC(=O)Oc1ccccc1C(=O)O"], standardize="none")
+# X -> (2, 1269) float64, ready for a model
+
+xgboost.XGBRegressor().fit(X, y)
+```
+
+One array, not a tuple. The column names do not change from call to call, so returning them
+every time is something you would unpack and discard; ask for them when you need them, and they
+come back in the same order for the same flags:
+
+```python
+df = pandas.DataFrame(X, columns=molhume.feature_names())
 ```
 
 ## The one decision you have to make
@@ -41,17 +48,20 @@ Passing `"none"` explicitly is a decision and is silent; omitting it is not, and
 | --- | --- | --- |
 | `standardize` | `"none"` (warns if unset) | what molecule the numbers describe |
 | `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` if your own code is already parallel |
-| `fingerprint` | `True` | compute the ECFP. It is an output, not a descriptor, and costs about 30 us/molecule that cannot be threaded |
+| `fingerprint` | `False` | append `fp_size` ECFP bit columns *after* the descriptors, so descriptor column indices never shift. Off by default: this is a descriptor library, and folding 2,048 bits into the same float64 matrix would make the output mostly fingerprint by width |
 | `fp_radius` | `3` | ECFP radius |
 | `fp_size` | `2048` | ECFP bits |
 | `additional_descriptors` | `True` | include the 160 descriptors that are ours rather than RDKit's or Mordred's. Selects what is returned, not what is computed |
 | `columns` | `None` | emit only these names, in this order. Combined with `additional_descriptors` by AND |
 | `optional` | `None` | expensive columns to compute. `AvgIpc` is on by default, `qed` off |
 | `on_error` | `"nan"` | unparseable SMILES: `"nan"` keeps the row and fills it, so the output stays aligned with the input; `"raise"`; `"skip"` drops the row, so it does not |
+| `dtype` | `float64` | `float32` halves the memory and is what the boosting libraries convert to internally anyway |
 | `batch_size` | `4096` | rows per batch. Affects memory, not values |
 
-`molhume.ALL_COLUMNS` lists every emitted name; `molhume._additional.ADDITIONAL_COLUMNS` lists
-the ones that are ours.
+`featurize` also takes RDKit `Mol` objects instead of SMILES, which skips a parse.
+
+`molhume.feature_names(**flags)` gives the names for any set of flags; `molhume.ALL_COLUMNS` is
+the full list, and `molhume._additional.ADDITIONAL_COLUMNS` the ones that are ours.
 
 `import mol_hume` works too, and is the same module object — the distribution is `mol-hume`, and
 `import mol-hume` is a Python syntax error, not something a package can fix.
@@ -68,9 +78,18 @@ The remainder are deliberate, documented divergences, not unexplained difference
 where the upstream definition depends on atom numbering or on a Kekule choice, and therefore has
 no single correct answer. Every one of them is listed with a measurement in `METHODS.md`.
 
-Values are relative to **RDKit 2025.9.2**. RDKit's perceived atom and bond properties do drift
-across releases, so a different RDKit can move values; that is why the dependency is a lower
-bound rather than a pin.
+### The RDKit range
+
+`mol-hume` requires **`rdkit>=2024.09.1,<2026.03`**, and this is a hard requirement rather than a
+preference. The library reads RDKit's `MolPickler` blob directly — a large part of where the
+speed comes from — and that format is explicitly not a stable API. Those are the releases that
+write pickle format 16.2.0; outside them `mol-hume` refuses to import rather than misparse a
+molecule into wrong numbers with no symptom. Widening it is a maintenance task with a
+verification step, not a metadata edit; see `MAINTENANCE.md`.
+
+Within that range, values are quoted against **RDKit 2025.9.2** specifically. RDKit's perceived
+atom and bond properties drift across releases, so a different RDKit inside the range can still
+move values in the last digits.
 
 ## Why 1,269 and not 1,539
 
@@ -81,6 +100,22 @@ heavy-atom strata**, not just on the pooled corpus, so a correlation that only e
 small and large molecules sit at opposite ends of both scales does not count. Columns that are
 NaN more than half the time, or that take one value for 99.9% of molecules, are dropped as
 unusable. What survives is 1,269.
+
+## Platforms
+
+Wheels are built for the platforms RDKit itself ships, since a `mol-hume` wheel for a platform
+with no RDKit wheel could not be imported:
+
+| | CPython 3.11 - 3.14 |
+| --- | --- |
+| Linux x86_64, aarch64 | manylinux_2_28 |
+| macOS arm64 | 11.0+ |
+| macOS x86_64 | 10.15+, needs `rdkit<=2025.9.2` (RDKit dropped Intel Mac after that) |
+| Windows x86_64 | MSVC |
+
+No musl, no 32-bit, no PyPy — RDKit publishes none of those. The extension links only the C++
+runtime: no BLAS, no RDKit library, and no NumPy ABI, so one wheel works across NumPy 1.x
+and 2.x.
 
 ## Development
 

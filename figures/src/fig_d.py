@@ -66,7 +66,7 @@ SECONDS_PER_HOUR = 3600.0
 # had been understating HUME's width by a third on a plate whose whole argument is what that
 # width costs. Falls back to the last measured value only if hume is not importable, and says so.
 try:
-    import hume as _hume
+    import molhume as _hume
     _HUME_NDESC = len(_hume.ALL_COLUMNS)
 except Exception:
     _HUME_NDESC = "1266?"

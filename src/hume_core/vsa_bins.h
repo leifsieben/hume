@@ -82,6 +82,17 @@
 #include "../../cpp/vsa_tables.h"
 #include "crippen_typer.h"
 
+// M_PI IS NOT STANDARD C++. glibc and libc++ define it in <cmath> as an extension; MSVC does
+// not, unless _USE_MATH_DEFINES is defined before the include -- which a header cannot rely on.
+// Spelled out here instead, with the static_assert below proving it is the same double wherever
+// M_PI does exist. The literal carries more digits than a double holds, so both round to the
+// nearest double to pi and the bits are identical.
+inline constexpr double kPi = 3.14159265358979323846;
+#ifdef M_PI
+static_assert(kPi == M_PI, "kPi must be bit-identical to the platform's M_PI");
+#endif
+
+
 namespace vsabin {
 
 // =============================================================================================
@@ -296,7 +307,7 @@ inline void check() { if (!drift().empty()) throw std::runtime_error(drift()); }
 //      hContrib as the RAW accumulator and does not add it to the total -- it does not zero it.
 //      Reproduced; it matters only for an empty molecule, but "matters only for" is how the
 //      other two bugs in this repo got in.
-//   2. `Vi[i] = M_PI * Ri * (4.*Ri - Vi[i])` is the C++ form.  MolSurf.py's _pyLabuteHelper
+//   2. `Vi[i] = kPi * Ri * (4.*Ri - Vi[i])` is the C++ form (kPi == M_PI, asserted at the top).  MolSurf.py's _pyLabuteHelper
 //      writes the algebraically equal `4*pi*Ri**2 - pi*Ri*Vi[i]`, which rounds DIFFERENTLY.
 //      The C++ form is the one that runs: _LabuteHelper calls
 //      rdMolDescriptors._CalcLabuteASAContribs, and _pyLabuteHelper is dead code.  Using the
@@ -352,12 +363,12 @@ inline double labute_contribs(const Mol& m, double* Vi, double& hContrib) {
   double res = 0.0;
   for (int i = 0; i < m.n; ++i) {
     const double Ri = vsa_tbl::RB0[m.z[i]];
-    Vi[i] = M_PI * Ri * (4.0 * Ri - Vi[i]);
+    Vi[i] = kPi * Ri * (4.0 * Ri - Vi[i]);
     res += Vi[i];
   }
   if (std::fabs(hContrib) > 1e-4) {              // see quirk (1) above: NOT an else-zero
     const double Rj = vsa_tbl::RB0[1];
-    hContrib = M_PI * Rj * (4.0 * Rj - hContrib);
+    hContrib = kPi * Rj * (4.0 * Rj - hContrib);
     res += hContrib;
   }
   return res;
