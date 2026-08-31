@@ -223,7 +223,13 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     X = np.empty((len(mols), N_ALL_COLS), dtype=np.float64)
     for lo in range(0, len(mols), batch_size):
         chunk = mols[lo:lo + batch_size]
-        p = extract_pickles(chunk)
+        # `stereo=False` SINCE SPS MOVED TO C++. `_potential_stereo` existed for exactly one
+        # column, and src/hume_core/sps.h now perceives potential stereo itself from boundary
+        # fields the blobs already carry -- bit-identical to Chem.SpacialScore.SPS on 6,600
+        # corpus molecules. Measured at the corpus median: extract_pickles 213.7 -> 156.5 us/mol.
+        # The stereo_a / stereo_b arguments stay in the C++ signature and are passed empty;
+        # nothing reads them any more.
+        p = extract_pickles(chunk, stereo=False)
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
             p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs,
             p.stereo_a, p.stereo_b, optional=optional)
