@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 3320,
+  "n_records": 3470,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -39,7 +39,6 @@
    "metric": "rmse / sd(y)",
    "lower_is_better": true,
    "proto": [
-    1,
     2
    ]
   }
@@ -50,6 +49,7 @@
   "ecfp_mordred_desc",
   "ecfp_all_desc",
   "hume",
+  "hume_no_new",
   "minimol",
   "chemeleon",
   "chemberta_mtr"
@@ -84,11 +84,17 @@
    }
   },
   "hume": {
-   "us_per_mol": 124.10220537800002,
+   "us_per_mol": 158.99057642,
    "measured_on": "c7i.4xlarge, 16 vCPU",
    "breakdown": {
-    "hume": 124.10220537800002
+    "hume": 158.99057642
    }
+  },
+  "hume_no_new": {
+   "us_per_mol": 158.99057642,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "alias_of": "hume",
+   "note": "the ablation masks columns after the block is computed, so its featurisation cost is identical to the arm it is an ablation of"
   },
   "minimol": {
    "us_per_mol": 1544.659867544,
@@ -149,8 +155,16 @@
    "task": "physchem",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.0089522513208914,
-   "sem": 0.008492451745418636,
+   "mean": 0.0008219525318275597,
+   "sem": 0.0022482741235190715,
+   "n_folds": 30
+  },
+  {
+   "task": "physchem",
+   "arm": "hume_no_new",
+   "head": "xgboost",
+   "mean": 0.010898910526891967,
+   "sem": 0.006732433959458316,
    "n_folds": 30
   },
   {
@@ -213,8 +227,16 @@
    "task": "adme",
    "arm": "hume",
    "head": "xgboost",
-   "mean": -0.0022803863399481817,
-   "sem": 0.014466752788400705,
+   "mean": 0.0009972206322892974,
+   "sem": 0.013270203783186192,
+   "n_folds": 50
+  },
+  {
+   "task": "adme",
+   "arm": "hume_no_new",
+   "head": "xgboost",
+   "mean": 0.027412099695049617,
+   "sem": 0.017590435334026013,
    "n_folds": 50
   },
   {
@@ -277,8 +299,16 @@
    "task": "classif",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.005222306264203928,
-   "sem": 0.003077529412746459,
+   "mean": 0.0033821047488081977,
+   "sem": 0.004190051357625861,
+   "n_folds": 30
+  },
+  {
+   "task": "classif",
+   "arm": "hume_no_new",
+   "head": "xgboost",
+   "mean": 0.007689469502587791,
+   "sem": 0.005940906859663675,
    "n_folds": 30
   },
   {
@@ -341,8 +371,16 @@
    "task": "quantum",
    "arm": "hume",
    "head": "xgboost",
-   "mean": -0.0012614974319399772,
-   "sem": 0.004244492637672735,
+   "mean": -0.005665409703560019,
+   "sem": 0.0018520395798105257,
+   "n_folds": 20
+  },
+  {
+   "task": "quantum",
+   "arm": "hume_no_new",
+   "head": "xgboost",
+   "mean": -0.0024233507634368948,
+   "sem": 0.0034497942520915945,
    "n_folds": 20
   },
   {

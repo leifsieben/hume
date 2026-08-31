@@ -59,8 +59,14 @@ TASKS = {
 FIGB_BASES = ["ecfp", "desc", "ecfp_all_desc"]
 FIGB_ANCHOR = "ecfp_all_desc"
 FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
-FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "hume",
+FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc",
+             "hume", "hume_no_new",
              "minimol", "chemeleon", "chemberta_mtr"]
+#: `hume_no_new` COSTS EXACTLY WHAT `hume` COSTS, and that is the point of drawing it. The
+#: ablation masks the 185 post-dedup columns AFTER the block is computed, so the featurisation
+#: is byte-for-byte the same work -- the two points sit at the same x and differ only in y.
+#: Read that way the panel says what the columns are worth: they are free, and they move the
+#: error. Giving the ablation a lower x would be inventing a measurement nobody took.
 #: The three arms Figure C plots that are not measured end-to-end by bench_aws.py under the same
 #: name. Cost is ADDITIVE here because the arm literally runs both blocks: `ecfp_rdkit_desc` is
 #: the ECFP call plus the RDKit-180 call, one after the other, on the same molecule.
@@ -68,6 +74,7 @@ FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "h
 # they are the concatenated arm, not the descriptor block alone -- so adding `ecfp` on top
 # double-counted the fingerprint. Small (~4% on ecfp_rdkit_desc, under 1% on the others) but
 # wrong, and the kind of wrong that survives review because the number still looks plausible.
+COST_ALIAS = {"hume_no_new": "hume"}
 COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
             "ecfp_mordred_desc": ["mordred_desc"],
             "ecfp_all_desc": ["mordred"]}
@@ -250,6 +257,15 @@ def costs():
             out[arm] = {"us_per_mol": sum(best[p] for p in parts),
                         "measured_on": "c7i.4xlarge, 16 vCPU",
                         "breakdown": {p: best[p] for p in parts}}
+        elif arm in COST_ALIAS:
+            src = COST_ALIAS[arm]
+            k = COST_KEY.get(src, src)
+            if k not in best:
+                missing.append((arm, [k])); continue
+            out[arm] = {"us_per_mol": best[k], "measured_on": "c7i.4xlarge, 16 vCPU",
+                        "alias_of": src,
+                        "note": "the ablation masks columns after the block is computed, so its "
+                                "featurisation cost is identical to the arm it is an ablation of"}
         else:
             k = COST_KEY.get(arm)
             if k not in best:

@@ -176,6 +176,12 @@ ARMS = {
     # `order()` only positions arms that are actually passed to it -- but a figure must not draw
     # `hume` and `hume_core_custom` together, because they share a shade.
     "hume": dict(label="HUME", family="hume", color=SHADES["hume"][0]),
+    # THE ABLATION PAIR. `hume_no_new` is HUME with the 185 columns wired after the
+    # deduplication masked out -- counts_ext, estate_ext, eta, spectral and misc_ext, minus the
+    # 43 the cost triage dropped. Same block, same model, same folds; the only difference is
+    # those columns, so the gap between the two IS what they are worth. Lighter shade of the
+    # same family, because it is the same method and not a competitor.
+    "hume_no_new": dict(label="HUME (no new desc)", family="hume", color=SHADES["hume"][1]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Grey, like every other control in the set.
@@ -296,7 +302,7 @@ ARMS = {
 # the axis the whole paper is about.
 ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
-             "hume",
+             "hume", "hume_no_new",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
              # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all
@@ -323,7 +329,7 @@ SHORT_LABEL = {
     "ecfp": "ECFP4", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
     "desc": "descriptors", "ecfp_rdkit_desc": "ECFP4 + RDKit",
     "ecfp_mordred_desc": "ECFP4 + Mordred", "ecfp_all_desc": "ECFP4 + descriptors",
-    "hume": "HUME", "minimol": "MiniMol", "chemeleon": "CheMeleon", "chemprop": "chemprop",
+    "hume": "HUME", "hume_no_new": "HUME no-new", "minimol": "MiniMol", "chemeleon": "CheMeleon", "chemprop": "chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",
     "selfies_ted": "SELFIES-TED", "classical_base": "classical block alone",
 }

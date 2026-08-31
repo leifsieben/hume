@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 3320,
+  "n_records": 3470,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -39,7 +39,6 @@
    "metric": "rmse / sd(y)",
    "lower_is_better": true,
    "proto": [
-    1,
     2
    ]
   }
@@ -517,8 +516,8 @@
    "task": "quantum",
    "base": "ecfp_all_desc",
    "add": "chemberta_mtr",
-   "mean": 0.007152696525111586,
-   "sem": 0.001755179636930621,
+   "mean": 0.007108564278558618,
+   "sem": 0.0017461093532520984,
    "n_folds": 20
   },
   {
@@ -533,8 +532,8 @@
    "task": "quantum",
    "base": "ecfp_all_desc",
    "add": "molformer",
-   "mean": 0.007423436141676759,
-   "sem": 0.002172529548304561,
+   "mean": 0.007393153710082735,
+   "sem": 0.002180731454259033,
    "n_folds": 20
   }
  ]

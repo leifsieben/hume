@@ -115,27 +115,27 @@ def pareto(xs, ys):
     return sorted(keep, key=lambda i: xs[i])
 
 
-#: Physical cores the cost axis was measured on. os.cpu_count() reports logical CPUs, which on
-#: this machine is 12 against 8 performance cores, and quoting the logical number would overstate
-#: the parallelism the measurement actually had.
-def _cores() -> int:
-    try:
-        import subprocess
-        out = subprocess.run(["sysctl", "-n", "hw.perflevel0.physicalcpu"],
-                             capture_output=True, text=True, timeout=2)
-        if out.returncode == 0 and out.stdout.strip().isdigit():
-            return int(out.stdout.strip())
-    except Exception:
-        pass
-    return os.cpu_count() or 1
-
-
-_NCORES = _cores()
+#: THE HARDWARE THE COST AXIS WAS MEASURED ON, READ FROM THE MEASUREMENT ITSELF.
+#: An earlier version of this read the LOCAL machine's core count and printed "8 cores" under an
+#: axis whose numbers all came from a 16-vCPU c7i.4xlarge. Every point on this axis is an AWS
+#: measurement; the machine rendering the figure has nothing to do with it, and asking the host
+#: was simply the wrong question. `measured_on` is carried per-arm by collect_downstream.py.
+def _cost_hardware(cost: dict) -> str:
+    seen = {v.get("measured_on") for v in cost.values() if isinstance(v, dict)}
+    seen.discard(None)
+    if len(seen) == 1:
+        return seen.pop()
+    if not seen:
+        return "hardware not recorded"
+    # More than one box in one axis is a real problem, not a formatting one -- say so on the
+    # figure rather than picking whichever sorts first.
+    return " / ".join(sorted(seen))
 
 
 def main() -> None:
     check_font()
     d = load()
+    _HW = _cost_hardware(d["cost"])
     tasks, arm_keys = d["tasks"], A.order(d["arms"])
     rec = {(r["task"], r["arm"]): r for r in d["records"]}
 
@@ -216,7 +216,7 @@ def main() -> None:
             # 279 µs on 8 performance cores against 690 µs on one. A cost axis without the
             # hardware on it is not a measurement anyone can reproduce or compare against.
             ax.set_xlabel("" if nrow == 1 else
-                          f"featurisation cost (µs / molecule, log; {_NCORES} cores)",
+                          f"featurisation cost (µs / molecule, log; {_HW})",
                           fontsize=FS["label"])
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.
@@ -247,7 +247,8 @@ def main() -> None:
     # Order follows arms.ARM_ORDER -- classical, then HUME, then graph models, then string
     # models -- so the key reads in the same left-to-right order as every other figure.
     if nrow == 1:
-        fig.supxlabel("featurisation cost (µs / molecule, log)", fontsize=FS["label"], y=0.175)
+        fig.supxlabel(f"featurisation cost (µs / molecule, log; {_HW})",
+                      fontsize=FS["label"], y=0.175)
     from matplotlib.lines import Line2D
     handles = []
     for a in arm_keys:
@@ -256,7 +257,8 @@ def main() -> None:
                               color=kw["color"], label=A.short_label(a),
                               markeredgecolor=STYLE["ink"], markeredgewidth=0.7))
     if nrow == 1:
-        fig.supxlabel("featurisation cost (µs / molecule, log)", fontsize=FS["label"], y=0.175)
+        fig.supxlabel(f"featurisation cost (µs / molecule, log; {_HW})",
+                      fontsize=FS["label"], y=0.175)
     lax = fig.add_axes([0.005, 0.005, 0.99, 0.135 if nrow == 1 else 0.055])
     lax.axis("off")
     mark_empty(lax, "legend strip -- holds no data by design")
