@@ -451,8 +451,13 @@ inline void eval_matrix(const Mol &m, const double *M, bool want_vec, Attrs &a, 
   a.spmad = topomisc::npPairwiseSum(S.tmp.data(), n) / (double)n;  // SpAD / A
 
   if (!want_vec) return;
-#ifdef SPECTRAL_NO_EIGVEC
-  return;   // VE*/VR* dropped: the leading eigenvector has no consumer
+#ifndef SPECTRAL_WANT_EIGVEC
+  // DEFAULT. Every VE*/VR* column was dropped in the cost triage (METHODS 5.2), so nothing
+  // consumes the leading EIGENVECTOR any more and the inverse iteration -- with its lu_small.h
+  // dgetf2/dgetrs factorisation -- leaves the kernel. Every retained spectral column is an
+  // eigenVALUE aggregate, which sytd2/sterf above has already produced.
+  // Measured: 264.2 -> 250.7 us/mol at the median molecule.
+  return;
 #else
   if (!leading_vector(M, n, a.spmax, S.vec, S.B, S.ipiv)) return;
 #endif
@@ -542,6 +547,19 @@ inline bool barysz(const Mol &m, const std::vector<double> &w, int q, bool need_
 }  // namespace detail
 
 //! All N_COLS values for one molecule. `out` must have room for 65 doubles.
+//
+// TWENTY-NINE OF THE 65 SLOTS ARE NaN BY CONSTRUCTION AND MUST NOT BE WIRED. The cost triage
+// (METHODS 5.2) dropped them; the code that computed them is still here behind
+// -DSPECTRAL_WANT_EIGVEC and -DSPECTRAL_FIVE_BARYSZ_SPECTRA, so a reversal is a rebuild rather
+// than a reimplementation. The `out[i] = NaN` fill below means a slot nothing writes reads back
+// as NaN, not as stale buffer -- but the wiring must skip these names, not emit NaN columns:
+//
+//   eigenvector-derived (18): VE1/2/3_A  VR1/2/3_A  VE1/2_D
+//                             VE1_DzZ VE2_DzZ VR1_DzZ VR2_DzZ
+//                             VE1_Dzv VE2_Dzv VR2_Dzv VR3_Dzv  VE1_Dzp VE2_Dzp
+//   redundant Barysz    (11): SpAbs/SpDiam/SpMAD_Dzv, _Dzse, _Dzp   SpAbs_Dzi  SpMAD_Dzi
+//
+// 36 columns are emitted.
 inline void compute(const Mol &m, double *out, Scratch &S) {
   using namespace detail;
   const int n = m.n;
@@ -595,9 +613,6 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
         {P_i, 28, 29},
     };
     for (const Slot &sl : SL) {
-#ifdef SPECTRAL_NO_BCUT
-      break;   // measurement only
-#endif
       if (!prop_ok(w, n, sl.q)) continue;          // AtomicProperty.calculate() fails -> NaN
       for (std::size_t k = 0; k < (std::size_t)n * n; k++) M[k] = base[k];
       for (int i = 0; i < n; i++)
@@ -620,10 +635,15 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
       int q; bool paths; bool vec;
       int spabs, spdiam, spmad, sm1, ve1, ve2, vr1, vr2, vr3;
     };
-#ifdef SPECTRAL_ONE_BARYSZ_SPECTRUM
-    // Experiment: SpAbs/SpDiam/SpMAD are 0.982-0.999 correlated ACROSS the atomic-property
-    // weightings, so only P_Z keeps its eigensolve; the rest fall back to the trace, which is
-    // what SM1 needs and is the only aggregate that genuinely varies with the property.
+#ifndef SPECTRAL_FIVE_BARYSZ_SPECTRA
+    // DEFAULT. SpAbs/SpDiam/SpMAD are 0.982-0.999 correlated ACROSS the atomic-property
+    // weightings -- the Barysz spectrum is dominated by topology and barely notices which
+    // property sits on the diagonal. Only P_Z keeps its eigensolve; the other five fall back to
+    // the trace, which is all SM1 needs and is the one aggregate that genuinely varies with the
+    // property (pairwise |r| down to 0.282 against 0.982 for the other three).
+    // Measured: 250.7 -> 209.3 us/mol at the median molecule, for 11 columns every one of which
+    // is >= 0.982 correlated with a column that is kept. -DSPECTRAL_FIVE_BARYSZ_SPECTRA restores
+    // all five, and the 11 columns with them.
     static const Bar BR[6] = {
         {P_Z,   true,  false, 30, 31, 32, 33, -1, -1, -1, -1, -1},
         {P_v,   false, false, -1, -1, -1, 41, -1, -1, -1, -1, -1},
