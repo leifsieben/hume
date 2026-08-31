@@ -2218,7 +2218,8 @@ static void bcut2d(const Mol &m, BcutWork &W, double *out) {
 //   [26]  chi.py         [31] cycles.py (minus C_sssr/C_redundancy, see verify_hume.py)
 //   [24]  conjugation.py [23] stereo.py   [60] resistance.py
 //   [16]  RDKit tail: EState x4, Kappa1-3, HallKierAlpha, BCUT2D x8
-static constexpr int HUME_NBLOCK_COLS = 182;
+static constexpr int HUME_NBLOCK_COLS = 178;   // was 182; the four E-state extremes
+                                              // moved to the RDKit block, see below
 
 // Per-thread scratch. Every buffer here is reused across molecules, which is deliberate and is
 // also why it is a struct rather than a bag of locals: the distance matrix is shared by EState,
@@ -2246,14 +2247,16 @@ static void blocks_row(const Mol &m, BlockWork &W, double *out) {
   double J = balaban(m, W.WD);
   // EState reuses D -- the whole point of the merge. It used to build its own copy.
   estate_from(m, W.D, W.ES);
-  double emx = -1e30, emn = 1e30, eax = -1e30, ean = 1e30;
-  for (int i = 0; i < m.n; i++) {
-    double v = W.ES[i], a = std::fabs(v);
-    if (v > emx) emx = v;
-    if (v < emn) emn = v;
-    if (a > eax) eax = a;
-    if (a < ean) ean = a;
-  }
+  // THE FOUR E-STATE EXTREMES USED TO BE EMITTED HERE AND ARE NOT ANY MORE. They are RDKit
+  // descriptors (Descriptors.MaxEStateIndex and friends) and vsa_bins.h already emits them from
+  // its own copy of the index, which is the one built in RDKit's exact association order -- see
+  // the note at vsa_bins.h:369, which says outright that this is why they are computed there
+  // "rather than read from the blocks". Emitting both meant 1,540 columns carrying only 1,536
+  // distinct names: four duplicated dimensions, and a name collision for anything keyed by
+  // column name. They belong to the RDKit block, so that is where they now live, once.
+  //
+  // `estate_from` above still runs: BlockWork::ES feeds the 79 S<t> typer sums and the 16
+  // MAX*/MIN* per-type extremes in estate_ext.h.
   kappa(m, kp);
   bcut2d(m, W.BW, bc);
 
@@ -2271,7 +2274,6 @@ static void blocks_row(const Mol &m, BlockWork &W, double *out) {
   for (int i = 0; i < 24; i++) out[p++] = cj[i];
   for (int i = 0; i < 23; i++) out[p++] = st[i];
   for (int i = 0; i < 60; i++) out[p++] = rs[i];
-  out[p++] = emx; out[p++] = emn; out[p++] = eax; out[p++] = ean;
   for (int i = 0; i < 4; i++) out[p++] = kp[i];
   for (int i = 0; i < 8; i++) out[p++] = bc[i];
 }

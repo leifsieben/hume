@@ -1,4 +1,4 @@
-"""The 182 verified block columns, in the order the C++ emits them.
+"""The 178 verified block columns, in the order the C++ emits them.
 
 GENERATED, NOT TYPED, and the distinction is the point. The order is defined in exactly one
 place -- `blocks_row()` in src/hume_core/hume_blocks.h -- and these names were emitted from the
@@ -186,11 +186,10 @@ COLUMNS: tuple[str, ...] = (
     "RW16_std",
     "RW16_max",
     "RW16_q90",
-    # RDKit tail: EState x4, Kappa1-3, HallKierAlpha, BCUT2D x8
-    "MaxEStateIndex",
-    "MinEStateIndex",
-    "MaxAbsEStateIndex",
-    "MinAbsEStateIndex",
+    # RDKit tail: Kappa1-3, HallKierAlpha, BCUT2D x8.
+    # The four E-state extremes that used to head this tail are gone: vsa_bins.h emits them, from
+    # the copy of the index built in RDKit's own association order, and having both made four
+    # column names appear twice in ALL_COLUMNS.
     "Kappa1",
     "Kappa2",
     "Kappa3",
@@ -206,4 +205,6 @@ COLUMNS: tuple[str, ...] = (
 )
 
 N_COLS = len(COLUMNS)
-assert N_COLS == 182, N_COLS
+# 178, not 182: the four E-state extremes moved to the RDKit block (vsa_bins.h), which
+# already emitted them. See the note in the RDKit tail above.
+assert N_COLS == 178, N_COLS
