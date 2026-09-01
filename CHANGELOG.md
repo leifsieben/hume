@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 — unreleased
+## 0.1.0 — 2026-09-01
 
 First release.
 
@@ -23,6 +23,8 @@ First release.
   (rdkit 2024.09 - 2025.09) and 16.3.0 (rdkit 2026.03) are both supported: the two differ only
   in `AtomMonomerInfo`, which a SMILES molecule never carries, and all 1,269 columns over 8,000
   molecules are bit-identical between rdkit 2025.9.2 and 2026.3.5.
+- Released against RDKit 2025.9.2 as the reference; the published wheel reproduces the
+  committed fixture bit-for-bit on macOS arm64, and installs and runs against RDKit 2026.3.5.
 - Verified against RDKit 2025.9.2 and Mordred 1.2.0 over a 42,000-molecule corpus: 167/186
   RDKit and 412/968 Mordred columns bit-identical, 99.99% and 99.23% of values within 1e-9.
   Divergences are enumerated in `METHODS.md`.
