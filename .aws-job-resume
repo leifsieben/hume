@@ -1,24 +1,43 @@
 PROJECT=hume-bench
 BUCKET=hume-bench-use1-075120018132
 REGION=us-east-1
-LAUNCHED=2026-08-28T16:28:25Z
-COST_PER_HOUR=1.5188   # c7i.4xlarge 0.7140 + g6.xlarge 0.8048, us-east-1 on-demand
-BACKSTOP=shutdown -h +240 armed in user-data; InstanceInitiatedShutdownBehavior=terminate
-GPU_INSTANCE=i-0172a4cab9777e6ee
-CPU_INSTANCE=i-0990f4993c5a25215
 
-# scale-benchmark rerun for figure D, launched 2026-08-31T16:10:27Z
-SCALE_CPU_INSTANCE=i-0179a15f1100caa52
-SCALE_ARMS=hume descriptastorus rdkit_desc
-SCALE_BACKSTOP=shutdown -h +180, InstanceInitiatedShutdownBehavior=terminate
-SCALE_LOG=s3://hume-bench-use1-075120018132/logs/i-06039ca4e5a997591.log
-SCALE_STATUS=s3://hume-bench-use1-075120018132/status/i-06039ca4e5a997591.{DONE,FAILED}.json
-SCALE_RESULTS=s3://hume-bench-use1-075120018132/results/i-06039ca4e5a997591/
-
-# classification expansion, launched 2026-08-31T17:44:09Z
-CLS_INSTANCE=i-021bc813eed63093e
-CLS_ARMS=26 (the full downstream grid)
-CLS_DATASETS=bace herg wong_hepg2 wong_imr90 wong_hskmc wong_saureus hiv
-CLS_CAP=16h, InstanceInitiatedShutdownBehavior=terminate
-CLS_LOG=s3://hume-bench-use1-075120018132/logs/i-021bc813eed63093e.log
-CLS_RESULTS=s3://hume-bench-use1-075120018132/downstream/i-021bc813eed63093e{,.partial}.json
+# ============================================================================================
+# CURRENT WAVE — updated 2026-09-01T13:45Z. Everything below runs WITHOUT this laptop: each box
+# was started from user-data at boot, ships its log and partial grid to S3 every 30 s, and
+# self-terminates (InstanceInitiatedShutdownBehavior=terminate, plus an EXIT trap that ships and
+# shuts down even on failure). Nothing needs SSH and nothing needs a live session.
+# ============================================================================================
+#
+# name   instance              market  work                                  cap    ETA (UTC)
+# clsF   i-0e6f71bfe6709940b   ondemand  hiv, 26 arms                        16h    ~18:00
+# clsJ   i-0e1466ee759b9a8c6   spot/c5   wong_hskmc, 26 arms                 14h    ~21:10
+# clsK   i-01d06588d897ec3e9   spot/c5   wong_saureus, 26 arms               14h    ~21:10
+# minE   i-045707ce546edb15b   spot/c5   hume_minimal, 30 datasets            8h    ~15:50
+#
+# DONE and self-terminated: minF i-017ae0e7308c9798b (hume_minimal, 5 large sets)
+#                           clsB i-076e41b2f1c80cced (partial: bace herg wong_hepg2 wong_imr90)
+#
+# TO PICK THIS UP IN A NEW SESSION
+#   aws ec2 describe-instances --region us-east-1 \
+#     --filters Name=tag:Project,Values=hume-bench Name=instance-state-name,Values=running \
+#     --query 'Reservations[].Instances[].[Tags[?Key==`Name`]|[0].Value,InstanceId,LaunchTime]' \
+#     --output text
+#   aws s3 ls s3://hume-bench-use1-075120018132/status/     # DONE / FAILED markers
+#   aws s3 cp s3://hume-bench-use1-075120018132/logs/<iid>.log -  | tail
+#
+# LOG FRESHNESS IS THE HEARTBEAT, NOT UPTIME. `ship` runs every 30 s, so a LastModified older
+# than ~2 min on a running box means it is wedged or was reclaimed. Four spot boxes were lost to
+# instance-terminated-no-capacity on 2026-09-01; c7i/m7i/c6i/m6i 4xlarge all had no spot
+# capacity and c5.4xlarge did, hence ITYPE= in aws_launch_ds.sh.
+#
+# NOTHING IS CLOBBERED. Each box writes downstream/<instance-id>.json, so keys never collide,
+# and collect_downstream.py merges on (dataset, arm, fold) with newest-wins and
+# protocol-beats-timestamp. Re-running a dataset elsewhere is safe.
+#
+# ⚠️ THE ONE STEP THAT IS NOT AUTOMATIC: folding results into the figures. The data lands in S3
+# by itself, but nothing re-renders. When the boxes are down, run:
+#
+#     ./refresh_figures.sh          # collect from S3, rebuild figB/figC/figD, re-render
+#
+# and check the "what is still missing" section it prints.
