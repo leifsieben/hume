@@ -1,0 +1,10 @@
+{
+ "n": 24000,
+ "seed": 20260901,
+ "standardize": "none",
+ "molhume_version": "0.1.1",
+ "rdkit": "2025.09.2",
+ "repA_source": "data/corpus1m/selected.txt",
+ "repB_source": "data/corpus1m/selected.txt (disjoint from repA)",
+ "adv_source": "cpp/hard.smi"
+}

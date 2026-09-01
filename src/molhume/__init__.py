@@ -31,6 +31,7 @@ from ._extract import Batch, extract, extract_pickles
 __all__ = [
     # the public API
     "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
+    "minimal_columns", "minimal_curve",
     # lower level: the (fp, X, names) form, and the 178-column block on its own
     "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
     "COLUMNS", "N_COLS", "FAMILY_OFFSETS", "RAW_FAMILY_OFFSETS",
@@ -477,6 +478,52 @@ def feature_names(*, fingerprint: bool = True, fp_size: int = 2048,
             raise ValueError(f"fp_size must be positive, got {fp_size!r}")
         names = names + tuple(f"ECFP_{i}" for i in range(int(fp_size)))
     return names
+
+
+def minimal_columns(n: int = None, spec: str = "minimal-v1") -> tuple:
+    """The first `n` columns of a reduced spec, as names to hand to `featurize(columns=...)`.
+
+        X = molhume.featurize(smiles, columns=molhume.minimal_columns())     # 800 columns
+
+    THE ORDERING IS THE PRODUCT, NOT THE NUMBER. `n` defaults to the shipped operating point,
+    but the full ranking is published so a caller can pick their own: a memory-constrained user
+    can take 400 knowing exactly what they gave up, against the coverage curve in
+    `molhume.minimal_curve()`. A single frozen number would force everyone into one trade-off.
+
+    The set is chosen so that every column NOT in it is linearly recoverable from the ones that
+    are -- a COVERAGE criterion, not a compression one. A dropped column costs a model nothing
+    if the model can rebuild it; what is lost is only a column's unique variance. It is derived
+    label-free, from the descriptor matrix alone, on the training corpus stacked with an
+    adversarial salts-and-mixtures set. See docs/MINIMAL_SPEC.md.
+
+    Note this selects what is RETURNED, not what is computed: the block is monolithic, so a
+    reduced spec narrows the output and speeds up whatever consumes it, not the featurization.
+    """
+    from . import _minimal
+    if spec != "minimal-v1":
+        raise ValueError(
+            f"spec={spec!r} is not a spec this build carries. The only one is 'minimal-v1'; "
+            "a spec is a frozen contract, so new ones are added rather than edited.")
+    n = _minimal.N_DEFAULT if n is None else int(n)
+    if not 1 <= n <= len(_minimal.ORDER_NAMES):
+        raise ValueError(
+            f"n={n} is out of range for spec {spec!r}, which ranks "
+            f"{len(_minimal.ORDER_NAMES)} columns. Pass 1..{len(_minimal.ORDER_NAMES)}, or None "
+            f"for the shipped default of {_minimal.N_DEFAULT}.")
+    return _minimal.ORDER_NAMES[:n]
+
+
+def minimal_curve(spec: str = "minimal-v1") -> tuple:
+    """What each operating point of `minimal_columns` gives up. See docs/MINIMAL_SPEC.md.
+
+    Each entry reports the WORST-CASE reconstruction R^2 over dropped columns, never the mean:
+    a set where 639 columns sit at 0.999 and one at 0.40 has lost something real, and an average
+    hides exactly that.
+    """
+    from . import _minimal
+    if spec != "minimal-v1":
+        raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
+    return _minimal.CURVE
 
 
 def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,

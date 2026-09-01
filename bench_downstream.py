@@ -135,8 +135,13 @@ def f_mordred_desc(smis):
 _NEW_COLS = None
 
 
-def _hume_block(smis, drop_new: bool):
+def _hume_block(smis, drop_new: bool, minimal: bool = False):
     """ECFP + HUME's descriptors. `drop_new` masks the 185 post-dedup columns.
+
+    `minimal` restricts to the HUME_minimal spec instead -- the 800-column reduced set derived
+    label-free by pivoted QR, see docs/MINIMAL_SPEC.md. It is applied by NAME rather than by
+    index so it cannot silently drift if the emitted layout ever changes, which is the failure
+    FAMILY_OFFSETS already shipped once.
 
     `optional=` NO LONGER ASKS FOR qed. The column was dropped in the cost triage because it
     shipped 100% NaN -- its 116 structural alerts are OPT_QED and off by default -- so requesting
@@ -152,6 +157,16 @@ def _hume_block(smis, drop_new: bool):
         if m is not None:
             mols.append(m); keep.append(i)
     fp, X, cols = hume.featurize_all_from_mols(mols, optional=("AvgIpc",))
+    if minimal:
+        want = set(hume.minimal_columns())
+        mask = np.array([c in want for c in cols], dtype=bool)
+        if mask.sum() != len(want):
+            raise RuntimeError(
+                f"hume_minimal: the spec names {len(want)} columns but only {mask.sum()} of them "
+                f"are in this build's {len(cols)}-column output. The spec is frozen against "
+                "mol-hume 0.1.1; a build whose emitted set has changed needs the spec "
+                "re-derived, not silently truncated -- see docs/MINIMAL_SPEC.md section 10.")
+        X = X[:, mask]
     if drop_new:
         if _NEW_COLS is None:
             _NEW_COLS = set(json.loads(
@@ -175,6 +190,18 @@ def f_hume(smis):
 def f_hume_no_new(smis):
     """HUME WITHOUT the 185 columns wired after the deduplication."""
     return _hume_block(smis, drop_new=True)
+
+
+def f_hume_minimal(smis):
+    """ECFP + the 800-column HUME_minimal spec, instead of all 1,269.
+
+    THE BENCHMARK IS A TEST OF THE SPEC, NOT AN INPUT TO IT. The 800 columns were chosen
+    label-free from the descriptor matrix alone -- no target, no assay, none of these datasets --
+    precisely so that this arm is an independent check. If it loses materially to `hume`, the
+    linear-recoverability proxy in docs/MINIMAL_SPEC.md is wrong and that document is what
+    should change.
+    """
+    return _hume_block(smis, drop_new=False, minimal=True)
 
 
 #: Per-dataset memo for feature BLOCKS. Cleared at the top of every dataset, so it never holds
@@ -292,6 +319,7 @@ FP_BLOCK = {
     "minimol": None, "chemeleon": None, "molformer": None,
     "ecfp_rdkit_desc": ("head", 2048), "ecfp_mordred_desc": ("head", 2048),
     "ecfp_all_desc": ("head", 2048), "hume": ("tail", 2048),
+    "hume_minimal": ("tail", 2048),
 }
 
 #: The `w` grid from API.md section 7. w=1 is XGBoost's uniform default and is dominated on BOTH
@@ -344,6 +372,7 @@ ARMS = {
     "ecfp_all_desc":   _cat(B_ECFP, B_RDKIT, B_MORD),
     "desc":            _cat(B_RDKIT, B_MORD),
     "hume":            f_hume,
+    "hume_minimal":    f_hume_minimal,
     "hume_all_desc":   f_hume,          # same block; named for the ablation pair
     "hume_no_new":     f_hume_no_new,
     "chemberta_mtr":   B_LEARNED["chemberta_mtr"],
