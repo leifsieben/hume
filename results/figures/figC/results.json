@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 3975,
+  "n_records": 4145,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -267,25 +267,25 @@
    "task": "classif",
    "arm": "ecfp",
    "head": "xgboost",
-   "mean": 0.01031664734366069,
-   "sem": 0.0036031069090233523,
-   "n_folds": 50
+   "mean": 0.011314234321424472,
+   "sem": 0.003408390611163054,
+   "n_folds": 55
   },
   {
    "task": "classif",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": -0.000995641101412048,
-   "sem": 0.002064915677107285,
-   "n_folds": 50
+   "mean": -0.000816207642924762,
+   "sem": 0.0018763855682557436,
+   "n_folds": 55
   },
   {
    "task": "classif",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": 0.001667441821861415,
-   "sem": 0.0022140034115787953,
-   "n_folds": 50
+   "mean": 0.0022894736995395693,
+   "sem": 0.002097020834501539,
+   "n_folds": 55
   },
   {
    "task": "classif",
@@ -293,23 +293,23 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 50
+   "n_folds": 55
   },
   {
    "task": "classif",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.00045093666466816673,
-   "sem": 0.00198962184465785,
-   "n_folds": 50
+   "mean": 0.00125429273638188,
+   "sem": 0.001970845377455378,
+   "n_folds": 55
   },
   {
    "task": "classif",
    "arm": "hume_no_new",
    "head": "xgboost",
-   "mean": 0.004117504768320968,
-   "sem": 0.0014902269915940444,
-   "n_folds": 50
+   "mean": 0.0038777499599726376,
+   "sem": 0.001369116982440159,
+   "n_folds": 55
   },
   {
    "task": "classif",
@@ -331,9 +331,9 @@
    "task": "classif",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 0.025195665853105353,
-   "sem": 0.005064233635075413,
-   "n_folds": 50
+   "mean": 0.02706369710283818,
+   "sem": 0.0049470203065300235,
+   "n_folds": 55
   },
   {
    "task": "quantum",

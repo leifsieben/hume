@@ -142,6 +142,41 @@ small and large molecules sit at opposite ends of both scales does not count. Co
 NaN more than half the time, or that take one value for 99.9% of molecules, are dropped as
 unusable. What survives is 1,269.
 
+## A reduced column set
+
+`minimal-v1` is an 800-column subset chosen so that every column it drops is linearly
+recoverable from the ones it keeps — derived label-free from the descriptor matrix alone, with
+no target, assay or benchmark involved:
+
+```python
+X = molhume.featurize(smiles, columns=molhume.minimal_columns())      # 800 instead of 1,269
+```
+
+**The ordering is the product, not the number.** `minimal_columns(n)` takes any prefix, and
+`minimal_curve()` publishes what each `n` costs, so you can pick your own operating point rather
+than inherit one:
+
+```python
+molhume.minimal_columns(400)      # smaller, and minimal_curve() says exactly what you gave up
+```
+
+### What it costs, measured
+
+Benchmarked as an independent test — the datasets played no part in choosing the columns — with
+an untuned XGBoost head on 5-fold scaffold splits, against the full 1,269:
+
+| endpoint family | mean cost | worst |
+| --- | --- | --- |
+| ADME & tox (10 datasets) | +0.29% | +2.73% |
+| Classification (3 so far) | −0.12% | +0.50% |
+| **Physicochemical (6)** | **+3.83%** | **+7.33%** |
+
+So a 37% column reduction is **free on ADME and classification**, and costs about **4% on
+physicochemical endpoints** — `esol` 7.3%, `lipophilicity` 5.5% against a fold SD of 2.4%. If
+you work on solubility or logP, take more than 800 columns. Linear recoverability says a dropped
+column can be *rebuilt*; it does not say a depth-6 tree can split on it. See
+`docs/MINIMAL_SPEC.md` for the derivation and the full coverage curve.
+
 ## Platforms
 
 Wheels are built for the platforms RDKit itself ships, since a `mol-hume` wheel for a platform

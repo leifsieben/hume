@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 3975,
+  "n_records": 4145,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -300,9 +300,9 @@
    "task": "classif",
    "base": "ecfp",
    "add": null,
-   "mean": 0.01031664734366069,
-   "sem": 0.0036031069090233523,
-   "n_folds": 50
+   "mean": 0.011314234321424472,
+   "sem": 0.003408390611163054,
+   "n_folds": 55
   },
   {
    "task": "classif",
@@ -340,9 +340,9 @@
    "task": "classif",
    "base": "desc",
    "add": null,
-   "mean": 0.004589582118585123,
-   "sem": 0.002219281927328254,
-   "n_folds": 50
+   "mean": 0.005308523030342249,
+   "sem": 0.0021322746462462895,
+   "n_folds": 55
   },
   {
    "task": "classif",
@@ -382,15 +382,15 @@
    "add": null,
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 50
+   "n_folds": 55
   },
   {
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "chemeleon",
-   "mean": -0.00739173612329828,
-   "sem": 0.001425213966928007,
-   "n_folds": 45
+   "mean": -0.0062361015927053344,
+   "sem": 0.0017206042687149506,
+   "n_folds": 50
   },
   {
    "task": "classif",
@@ -404,17 +404,17 @@
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "minimol",
-   "mean": -0.007408589552321475,
-   "sem": 0.0031313767577196973,
-   "n_folds": 45
+   "mean": -0.007348262972420305,
+   "sem": 0.0028014381334008197,
+   "n_folds": 50
   },
   {
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "molformer",
-   "mean": 0.0013186734649103002,
-   "sem": 0.0014987914891407591,
-   "n_folds": 45
+   "mean": 0.00046658266588949225,
+   "sem": 0.0015884456150943719,
+   "n_folds": 50
   },
   {
    "task": "quantum",

@@ -14,7 +14,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "mol-hume"
-version = "0.1.1"
+version = "0.2.0"
 description = "Verified molecular descriptor blocks, computed in C++"
 readme = "README.md"
 # BSD-3-Clause, matching rdkit and mordred, whose published parameter values and definitions

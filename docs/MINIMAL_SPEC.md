@@ -173,10 +173,39 @@ the library and RDKit versions, and the curve. Treat a change as a **breaking** 
 who cached features under `minimal-v1` must be able to tell that they did. New specs are added
 under a new name rather than edited.
 
-## 11. What would falsify this
+## 11. The falsification test, and what it found
 
-The reconstruction criterion is a *proxy* for the thing anyone actually cares about, which is
-whether a model does as well on 800 columns as on 1,269. That is measured separately and
-independently, as an arm in Figure C — using the benchmark as a **test** of the spec, never as
-an input to it (§2). If `hume_minimal` loses materially to `hume` there, the proxy is wrong and
-this document is what should be revised.
+The reconstruction criterion is a *proxy* for the thing anyone actually cares about: whether a
+model does as well on 800 columns as on 1,269. That is measured separately, as an arm in
+Figure C, using the benchmark as a **test** of the spec and never as an input to it (§2).
+
+**The proxy is only partly right, and the failure is systematic.** Measured with the same
+untuned XGBoost head and the same 5-fold scaffold splits, cost expressed as relative degradation
+against `hume` on the same dataset:
+
+| panel | datasets | mean cost | worst |
+| --- | --- | --- | --- |
+| Physicochemical | 6 / 6 | **+3.83%** | **+7.33%** (`esol`) |
+| ADME & tox | 10 / 10 | +0.29% | +2.73% (`vdss_lombardo`) |
+| Classification | 3 / 13 | −0.12% | +0.50% |
+
+On ADME and classification the reduced set is free — differences are inside fold noise and the
+sign is as often negative as positive. **On physicochemical endpoints it is not.** `esol` loses
+7.3%, `lipophilicity` 5.5% against a fold SD of 2.4%, `pb_water_sol` 4.9% against 2.5%. Those
+are several times the fold-to-fold spread, so they are effects rather than noise.
+
+This is coherent rather than mysterious. Linear recoverability says a dropped column can be
+*reconstructed*; it does not say the reconstruction is as useful to a depth-6 tree ensemble as
+the column itself. A boosted tree splits on individual columns, and a quantity that exists only
+as a linear combination of thirty others is not available to it at any single split. Solubility
+and logP depend most directly on exactly the kind of additive atom-contribution descriptors that
+this makes expensive to rebuild.
+
+**What this does and does not change.** It does not license re-picking `k` against these
+numbers: choosing the operating point by benchmark performance is precisely the leakage §2
+forbids, and a spec tuned to these 33 datasets would narrow the library for everyone whose
+chemistry is not in them. The ordering and the default stand as derived. What it changes is the
+documentation: **a user whose endpoint is solubility or lipophilicity should take more than 800
+columns**, and the published ordering lets them, which is why §6 ships the ranking rather than a
+single frozen set. The honest summary is that `minimal-v1` buys a 37% column reduction for free
+on ADME and classification, and for about 4% on physicochemistry.

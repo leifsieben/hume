@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.2.0 — 2026-09-01
+
+Adds a reduced column specification. No change to any descriptor value, and no change to the
+default behaviour of `featurize`.
+
+- **`molhume.minimal_columns(n=800)`** — the `minimal-v1` reduced spec, an ordered ranking of
+  all 1,267 eligible columns from which any prefix may be taken. Chosen so every dropped column
+  is linearly recoverable from those kept, derived **label-free** by rank-revealing QR on the
+  training corpus stacked with an adversarial salts-and-mixtures set. `molhume.minimal_curve()`
+  publishes what each `n` costs.
+- Measured downstream cost against the full 1,269, as an independent test: **free on ADME
+  (+0.29% mean) and classification (−0.12%), about +3.83% mean and +7.33% worst on
+  physicochemical endpoints.** Take more than 800 columns for solubility or logP work.
+- `minimal-v1` is a frozen contract: `src/molhume/_minimal.py` records the sample, seed,
+  `standardize` setting and library versions, and a change to it is a breaking change.
+
 ## 0.1.1 — 2026-09-01
 
 Fixes a wrong-answer bug in `FAMILY_OFFSETS` and makes the version constraints much less
