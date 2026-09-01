@@ -416,7 +416,7 @@ def _column_index(columns, additional_descriptors):
     return np.asarray([pos[c] for c in kept], dtype=np.intp), tuple(kept)
 
 
-def feature_names(*, fingerprint: bool = False, fp_size: int = 2048,
+def feature_names(*, fingerprint: bool = True, fp_size: int = 2048,
                   additional_descriptors: bool = True, columns=None) -> tuple:
     """The column names `featurize` produces for the same flags, in the same order.
 
@@ -437,7 +437,7 @@ def feature_names(*, fingerprint: bool = False, fp_size: int = 2048,
 
 
 def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
-              fingerprint: bool = False, fp_radius: int = 3, fp_size: int = 2048,
+              fingerprint: bool = True, fp_radius: int = 3, fp_size: int = 2048,
               additional_descriptors: bool = True, columns=None, optional=None,
               on_error: str = "nan", dtype=np.float64, batch_size: int = 4096) -> np.ndarray:
     """SMILES -> one ``(n_molecules, n_features)`` array. The entry point.
@@ -446,6 +446,9 @@ def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
 
         X = molhume.featurize(smiles, standardize="none")
         xgboost.XGBRegressor().fit(X, y)
+
+    By default that is 1,269 descriptors followed by 2,048 ECFP bits. Pass
+    ``fingerprint=False`` for the descriptors alone.
 
     Column names are not returned, because they are the same on every call for a given set of
     flags. `molhume.feature_names(...)` gives them for the same flags, in the same order.
@@ -463,12 +466,11 @@ def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
     threads : int, default 0
         Workers for the descriptor block; 0 is one per hardware thread. Pass 1 if the caller is
         already parallel, or 16 processes x 12 threads will spend the run in the scheduler.
-    fingerprint : bool, default False
-        Append `fp_size` ECFP bit columns after the descriptors. Off by default: this is a
-        descriptor library, the bits are not descriptors, and folding 2,048 of them into the
-        same float64 matrix would make the default output mostly fingerprint by width and
-        nearly triple its memory. They go last, so descriptor column indices do not shift when
-        the flag changes.
+    fingerprint : bool, default True
+        Append `fp_size` ECFP bit columns after the descriptors, giving 1,269 + `fp_size`
+        columns. They go LAST, so descriptor column indices do not shift when the flag changes.
+        Turning it off saves about 30 us/molecule that cannot be threaded, and drops the output
+        to descriptors alone.
     additional_descriptors : bool, default True
         Include the descriptors that are ours rather than RDKit's or Mordred's. This selects
         what is returned, not what is computed -- the block is monolithic, so turning it off

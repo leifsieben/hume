@@ -3,8 +3,8 @@
 Molecular descriptors computed in C++, verified column by column against RDKit and Mordred.
 
 `mol-hume` emits **1,269 descriptors** per molecule in about **285 microseconds**, from a single
-call. Of those, 1,109 reproduce descriptors that RDKit or Mordred already define, and 160 are new.
-Nothing is computed in Python.
+call, plus a 2,048-bit ECFP alongside them. Of the descriptors, 1,109 reproduce ones that RDKit
+or Mordred already define, and 160 are new. Nothing is computed in Python.
 
 ```bash
 pip install mol-hume
@@ -14,7 +14,7 @@ pip install mol-hume
 import molhume
 
 X = molhume.featurize(["CCO", "CC(=O)Oc1ccccc1C(=O)O"], standardize="none")
-# X -> (2, 1269) float64, ready for a model
+# X -> (2, 3317) float64: 1,269 descriptors then 2,048 ECFP bits, ready for a model
 
 xgboost.XGBRegressor().fit(X, y)
 ```
@@ -26,6 +26,9 @@ come back in the same order for the same flags:
 ```python
 df = pandas.DataFrame(X, columns=molhume.feature_names())
 ```
+
+Pass the same flags to both and the names line up: `feature_names(fingerprint=False)` for the
+1,269 descriptors alone, `feature_names(columns=[...])` for a subset.
 
 ## The one decision you have to make
 
@@ -48,7 +51,7 @@ Passing `"none"` explicitly is a decision and is silent; omitting it is not, and
 | --- | --- | --- |
 | `standardize` | `"none"` (warns if unset) | what molecule the numbers describe |
 | `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` if your own code is already parallel |
-| `fingerprint` | `False` | append `fp_size` ECFP bit columns *after* the descriptors, so descriptor column indices never shift. Off by default: this is a descriptor library, and folding 2,048 bits into the same float64 matrix would make the output mostly fingerprint by width |
+| `fingerprint` | `True` | append `fp_size` ECFP bit columns *after* the descriptors, so descriptor column indices never shift when the flag changes. Turning it off saves about 30 us/molecule that cannot be threaded |
 | `fp_radius` | `3` | ECFP radius |
 | `fp_size` | `2048` | ECFP bits |
 | `additional_descriptors` | `True` | include the 160 descriptors that are ours rather than RDKit's or Mordred's. Selects what is returned, not what is computed |

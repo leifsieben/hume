@@ -46,8 +46,11 @@ for lo, hi in STRATA:
 
 # Canonicalize so the committed SMILES are stable text, then featurize them as given.
 picked = [Chem.MolToSmiles(Chem.MolFromSmiles(s)) for s in picked]
-X = molhume.featurize(picked, standardize="none")
-names = molhume.feature_names()
+# fingerprint=False on purpose: the fixture records DESCRIPTORS. The ECFP bits are
+# reproducible from rdkit in one line and would add 2,048 columns of stored zeros
+# and ones to a file that is already 1.2 MB.
+X = molhume.featurize(picked, standardize="none", fingerprint=False)
+names = molhume.feature_names(fingerprint=False)
 assert names == molhume.ALL_COLUMNS, "fixture must cover every emitted column"
 
 with open("tests/data/fixture_smiles.txt", "w") as fh:

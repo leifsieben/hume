@@ -5,11 +5,13 @@
 First release.
 
 - `molhume.featurize(smiles, ...)` — SMILES (or RDKit `Mol` objects) to one
-  `(n_molecules, n_features)` array. 1,269 descriptors per molecule, about 285 us/molecule.
+  `(n_molecules, n_features)` array. 1,269 descriptors per molecule, about 285 us/molecule
+  including the fingerprint.
   Column names are not returned, since they are identical for a given set of flags;
   `molhume.feature_names(**flags)` gives them in the same order.
-- `fingerprint` is off by default and its bits are appended *after* the descriptors, so
-  descriptor column indices do not shift when it is turned on.
+- The default output is the 1,269 descriptors followed by 2,048 ECFP bits. The bits are
+  appended *after* the descriptors, so descriptor column indices do not shift when
+  `fingerprint` is turned off.
 - `standardize` has no silent default: leaving it unset behaves as `"none"` and warns once,
   because what molecule the descriptors describe is the caller's decision.
 - `columns`, `additional_descriptors`, `on_error`, `threads`, `fingerprint`, `fp_radius`,

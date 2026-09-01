@@ -100,22 +100,24 @@ def test_bad_on_error_names_the_choices():
 
 def test_all_bad_input_still_returns_an_aligned_block():
     with pytest.warns(UserWarning):
-        X = molhume.featurize([BAD, BAD], standardize="none")
+        X = molhume.featurize([BAD, BAD], standardize="none", fingerprint=False)
     assert X.shape == (2, len(molhume.ALL_COLUMNS)) and np.all(np.isnan(X))
 
 
 def test_empty_input():
-    X = molhume.featurize([], standardize="none")
+    X = molhume.featurize([], standardize="none", fingerprint=False)
     assert X.shape == (0, len(molhume.ALL_COLUMNS))
+    assert molhume.featurize([], standardize="none").shape == (0, len(molhume.ALL_COLUMNS) + 2048)
 
 
 # ---------------------------------------------------------------- columns
 
 def test_columns_selects_and_orders():
     want = ["TPSA", "ExactMolWt", "SLogP"]
-    X = _quiet(SMIS, standardize="none", columns=want)
-    assert molhume.feature_names(columns=want) == tuple(want), "caller's order is output order"
-    full = _quiet(SMIS, standardize="none")
+    X = _quiet(SMIS, standardize="none", columns=want, fingerprint=False)
+    assert molhume.feature_names(columns=want, fingerprint=False) == tuple(want), (
+        "the caller's order is the output order")
+    full = _quiet(SMIS, standardize="none", fingerprint=False)
     idx = [molhume.ALL_COLUMNS.index(c) for c in want]
     assert np.array_equal(X, full[:, idx], equal_nan=True)
 
@@ -127,9 +129,10 @@ def test_unknown_column_is_named_and_points_at_the_list():
 
 def test_repeated_column_is_emitted_once_with_a_warning():
     with pytest.warns(UserWarning, match="repeated"):
-        X = molhume.featurize(SMIS, standardize="none", columns=["TPSA", "TPSA"])
+        X = molhume.featurize(SMIS, standardize="none", columns=["TPSA", "TPSA"],
+                              fingerprint=False)
     with pytest.warns(UserWarning, match="repeated"):
-        assert molhume.feature_names(columns=["TPSA", "TPSA"]) == ("TPSA",)
+        assert molhume.feature_names(columns=["TPSA", "TPSA"], fingerprint=False) == ("TPSA",)
     assert X.shape[1] == 1
 
 
@@ -161,21 +164,24 @@ def test_the_two_filters_are_combined_with_and():
     from molhume._additional import ADDITIONAL_COLUMNS
     mine = next(c for c in ADDITIONAL_COLUMNS if c in molhume.ALL_COLUMNS)
     with pytest.warns(UserWarning, match="additional_descriptors=False removed"):
-        X = molhume.featurize(SMIS, standardize="none",
+        X = molhume.featurize(SMIS, standardize="none", fingerprint=False,
                               additional_descriptors=False, columns=["TPSA", mine])
     assert X.shape[1] == 1
 
 
 # ---------------------------------------------------------------- fingerprint
 
-def test_fingerprint_is_off_by_default_and_appends_when_on():
-    off = _quiet(SMIS, standardize="none")
-    on = _quiet(SMIS, standardize="none", fingerprint=True)
+def test_fingerprint_is_on_by_default_and_the_bits_go_last():
+    on = _quiet(SMIS, standardize="none")
+    off = _quiet(SMIS, standardize="none", fingerprint=False)
     assert off.shape[1] == len(molhume.ALL_COLUMNS)
-    assert on.shape[1] == off.shape[1] + 2048
+    assert on.shape[1] == off.shape[1] + 2048, "default output is descriptors + 2048 ECFP bits"
     assert np.array_equal(on[:, :off.shape[1]], off, equal_nan=True), (
-        "fingerprint bits must go last, so descriptor column indices do not shift")
+        "fingerprint bits must go LAST, so descriptor column indices do not shift with the flag")
     assert set(np.unique(on[:, off.shape[1]:])) <= {0.0, 1.0}
+    names = molhume.feature_names()
+    assert len(names) == on.shape[1]
+    assert names[off.shape[1]] == "ECFP_0" and names[-1] == "ECFP_2047"
 
 
 @pytest.mark.parametrize("size", [512, 2048])
@@ -203,8 +209,8 @@ def test_the_alias_package_is_the_same_module():
 def test_all_columns_is_unique_and_matches_the_output_width():
     cols = molhume.ALL_COLUMNS
     assert len(set(cols)) == len(cols), "ALL_COLUMNS contains a duplicate name"
-    X = _quiet(["CCO"], standardize="none")
-    assert X.shape[1] == len(cols) == len(molhume.feature_names())
+    X = _quiet(["CCO"], standardize="none", fingerprint=False)
+    assert X.shape[1] == len(cols) == len(molhume.feature_names(fingerprint=False))
 
 
 def test_featurize_is_exported():
@@ -214,6 +220,7 @@ def test_featurize_is_exported():
 def test_featurize_returns_a_bare_array_not_a_tuple():
     X = _quiet(SMIS, standardize="none")
     assert isinstance(X, np.ndarray) and X.ndim == 2
+    assert X.shape == (len(SMIS), len(molhume.feature_names()))
 
 
 @pytest.mark.parametrize("dt", [np.float32, np.float64])

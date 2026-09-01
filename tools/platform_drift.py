@@ -35,7 +35,7 @@ with np.load(ROOT / "tests/data/fixture_expected.npz") as z:
     ref_rdkit = str(z["rdkit_version"])
     ref_plat = str(z["platform"]) if "platform" in z else "(not recorded)"
 
-got = molhume.featurize(smis, standardize="none")
+got = molhume.featurize(smis, standardize="none", fingerprint=False)
 
 print(f"  this machine : {platform.system()} {platform.machine()}, python "
       f"{sys.version.split()[0]}, rdkit {Chem.rdBase.rdkitVersion}")
