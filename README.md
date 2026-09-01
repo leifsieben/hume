@@ -50,7 +50,7 @@ Passing `"none"` explicitly is a decision and is silent; omitting it is not, and
 | flag | default | what it controls |
 | --- | --- | --- |
 | `standardize` | `"none"` (warns if unset) | what molecule the numbers describe |
-| `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` if your own code is already parallel |
+| `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` if your own code is already parallel — but see the timing note below, because it costs about 3x |
 | `fingerprint` | `True` | append `fp_size` ECFP bit columns *after* the descriptors, so descriptor column indices never shift when the flag changes. Turning it off saves about 30 us/molecule that cannot be threaded |
 | `fp_radius` | `3` | ECFP radius |
 | `fp_size` | `2048` | ECFP bits |
@@ -65,6 +65,14 @@ Passing `"none"` explicitly is a decision and is silent; omitting it is not, and
 
 `molhume.feature_names(**flags)` gives the names for any set of flags; `molhume.ALL_COLUMNS` is
 the full list, and `molhume._additional.ADDITIONAL_COLUMNS` the ones that are ours.
+
+To take one descriptor family, `molhume.FAMILY_OFFSETS` maps a family name to a half-open
+`(start, stop)` into `ALL_COLUMNS` and into the descriptor block of the output:
+
+```python
+lo, hi = molhume.FAMILY_OFFSETS["ringcount"]
+ring_counts = X[:, lo:hi]                     # 47 columns, n5Ring .. nG12FAHRing
+```
 
 `import mol_hume` works too, and is the same module object — the distribution is `mol-hume`, and
 `import mol-hume` is a Python syntax error, not something a package can fix.
@@ -81,6 +89,24 @@ The remainder are deliberate, documented divergences, not unexplained difference
 where the upstream definition depends on atom numbering or on a Kekule choice, and therefore has
 no single correct answer. Every one of them is listed with a measurement in `METHODS.md`.
 
+### About that 285 us
+
+**That is the threaded number**, with `threads=0` (one worker per hardware thread), which is the
+default. The descriptor block is the parallel part, so the single-threaded figure is very
+different. Measured on a 12-thread M-series laptop, 4,000 corpus molecules:
+
+| | us/molecule |
+| --- | --- |
+| `threads=0` (default, 12 threads) | 282 |
+| `threads=0`, `fingerprint=False` | 247 |
+| `threads=1` | 861 |
+| `threads=1`, `fingerprint=False` | 846 |
+
+So `threads=1` costs roughly 3x, not 12x — the per-molecule boundary work does not parallelize.
+Pass `threads=1` when your own code is already parallel across processes; leave it at `0`
+otherwise. Quoting a per-molecule cost without saying which of these it is makes the number
+meaningless, so always say.
+
 ### The RDKit range
 
 `mol-hume` requires **`rdkit>=2024.09.1,<2026.09`**, and this is a hard requirement rather than a
@@ -95,6 +121,12 @@ to bytes that differ only in the version triple, and all 1,269 columns over 8,00
 out bit-identical. Widening it for a future release is one command —
 `tools/check_rdkit_release.py` — plus, if the blobs really changed, work on the reader. See
 `MAINTENANCE.md`.
+
+The upper bound is loose on purpose. It is a courtesy to resolvers — it stops a fresh install
+picking an RDKit years newer than anything measured — not a claim that 2027 will work. If the
+pickle format does change, `featurize` raises an error naming your RDKit and what to do, the
+package still imports, and `featurize_blocks(reader="api")` still works on any RDKit at all,
+because it goes through RDKit's supported Python API.
 
 Within that range, values are quoted against **RDKit 2025.9.2** specifically. RDKit's perceived
 atom and bond properties drift across releases, so a different RDKit inside the range can still
@@ -115,7 +147,7 @@ unusable. What survives is 1,269.
 Wheels are built for the platforms RDKit itself ships, since a `mol-hume` wheel for a platform
 with no RDKit wheel could not be imported:
 
-| | CPython 3.11 - 3.14 |
+| | CPython 3.10 - 3.14 |
 | --- | --- |
 | Linux x86_64, aarch64 | manylinux_2_28 |
 | macOS arm64 | 11.0+ |

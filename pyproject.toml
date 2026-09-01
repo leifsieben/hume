@@ -14,7 +14,7 @@ build-backend = "scikit_build_core.build"
 
 [project]
 name = "mol-hume"
-version = "0.1.0"
+version = "0.1.1"
 description = "Verified molecular descriptor blocks, computed in C++"
 readme = "README.md"
 # BSD-3-Clause, matching rdkit and mordred, whose published parameter values and definitions
@@ -30,10 +30,23 @@ classifiers = [
     "Programming Language :: C++",
     "Topic :: Scientific/Engineering :: Chemistry",
 ]
-# >=3.11, not >=3.10: the pinned numpy 2.4.6 does not support 3.10, and uv warns that the two
-# disagree. Note mordred 1.2.0 needs 3.11 exactly (it imports `distutils`, removed in 3.12), so
-# the Mordred comparison env is 3.11 while the package itself is developed on 3.12.
-requires-python = ">=3.11"
+# >=3.10, WHICH IS A USER FACT AND NOT A DEVELOPMENT ONE. This said >=3.11 for a reason that
+# only applied inside this repo: the pinned numpy 2.4.6 in [tool.uv] below does not support
+# 3.10. That pin exists to keep the rdkit/numpy oracle still for the exactness measurements; it
+# has nothing to do with what a user can run, and leaking it into the metadata turned away
+# anyone whose environment was 3.10.
+#
+# The real floor is the lowest interpreter rdkit ships across the ENTIRE supported rdkit range,
+# because a mol-hume wheel without a matching rdkit is unusable:
+#     rdkit 2024.09.1 (our floor)  cp39 cp310 cp311 cp312 cp313
+#     rdkit 2026.03.5 (our cap)         cp310 cp311 cp312 cp313 cp314
+# The intersection starts at 3.10 -- cp39 would only work against the older half of the range,
+# which is a worse promise than not making it.
+#
+# Note mordred 1.2.0 needs 3.11 exactly (it imports `distutils`, removed in 3.12), so the
+# mordred comparison env is 3.11 while the package itself is developed on 3.12. That is also a
+# development fact and also not a user's problem.
+requires-python = ">=3.10"
 # THE RDKIT RANGE IS A HARD REQUIREMENT, NOT A PREFERENCE, and the bounds are measured.
 #
 # molpickle.h reads rdkit's MolPickler blob directly -- that is where most of the speed comes
@@ -56,14 +69,27 @@ requires-python = ">=3.11"
 # blobs differ ONLY in the version triple. Then, end to end, all 1,269 columns over 8,000
 # molecules are BIT-IDENTICAL between the two releases.
 #
-# The cap is still real and belongs in the metadata: without it `pip install mol-hume` resolves
-# whatever rdkit is newest and the package may not import at all. Widening it to a new release
-# line means re-running `tools/check_rdkit_release.py` -- see MAINTENANCE.md section 1.
+# THE CAP IS DELIBERATELY LOOSE, and it was too tight in 0.1.0. <2026.09 was set to the exact
+# measured boundary, which meant the very next rdkit release would have made mol-hume
+# uninstallable for anyone whose environment already pinned it -- an aggressive answer to a risk
+# that is now handled better elsewhere.
+#
+# What changed: the pickle-format guard is no longer an import-time ImportError. It fires when a
+# pickle is actually read, it names the rdkit in use and what to do about it, and
+# featurize_blocks(reader="api") keeps working on ANY rdkit because it goes through rdkit's
+# supported Python API. So an unmeasured rdkit now degrades loudly and recoverably instead of
+# bricking the install.
+#
+# The lower bound stays hard -- below 2024.09.1 the format is definitely wrong. The upper bound
+# is a courtesy to resolvers: it keeps a FRESH install from picking an rdkit years newer than
+# anything measured, while leaving several release lines of headroom. Run
+# `tools/check_rdkit_release.py` when a new line appears and record the result; see
+# MAINTENANCE.md section 1.
 #
 # Within the supported range the values are still version-relative: rdkit's perceived atom and
 # bond properties drift, and the exactness numbers are quoted against 2025.9.2 specifically.
 # That is documentation, not a pin.
-dependencies = ["numpy>=1.24", "rdkit>=2024.09.1,<2026.09"]
+dependencies = ["numpy>=1.24", "rdkit>=2024.09.1,<2028.01"]
 
 [project.optional-dependencies]
 test = ["pytest>=7"]
@@ -136,7 +162,7 @@ build-dir = "build/{wheel_tag}"
 #     release this library is verified against and an Intel Mac user pinning it should not also
 #     have to compile this from source.
 [tool.cibuildwheel]
-build = "cp311-* cp312-* cp313-* cp314-*"
+build = "cp310-* cp311-* cp312-* cp313-* cp314-*"
 skip = ["*-musllinux*", "*_i686", "pp*"]
 # NO build-frontend = "build[uv]". uv is not on the macOS or Windows runners, and cibuildwheel
 # asserts "uv not found" before it builds anything -- a fast frontend is not worth a matrix that

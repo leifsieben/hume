@@ -33,7 +33,7 @@ __all__ = [
     "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
     # lower level: the (fp, X, names) form, and the 178-column block on its own
     "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
-    "COLUMNS", "N_COLS", "FAMILY_OFFSETS",
+    "COLUMNS", "N_COLS", "FAMILY_OFFSETS", "RAW_FAMILY_OFFSETS",
 ]
 
 assert _core.N_COLS == N_COLS, (
@@ -117,7 +117,50 @@ PENDING_COLUMNS: tuple[str, ...] = ()
 DUPLICATE_COLUMNS: tuple[str, ...] = tuple(
     sorted({n for n in ALL_COLUMNS if ALL_COLUMNS.count(n) > 1}))
 N_ALL_COLS: int = _core.N_ALL_COLS
-FAMILY_OFFSETS: dict = dict(_core.ALL_OFFSETS)
+# FAMILY OFFSETS, REMAPPED ONTO WHAT IS ACTUALLY EMITTED.
+#
+# `_core.ALL_OFFSETS` indexes the N_ROW_COLS (1,539) row the C++ computes, NOT the 1,269 columns
+# `featurize` returns. Exporting it raw was a silent-wrong-answer bug: a user slicing
+# `ALL_COLUMNS[FAMILY_OFFSETS["ringcount"]]` got `ATS2Z`, a column from a different family, with
+# nothing to indicate anything was wrong. It was reported by a user, not by a test.
+#
+# The dedup removes columns but preserves ORDER, so every family is still a contiguous run in the
+# emitted layout -- only the boundaries move. Remapping is therefore exact: for each raw offset,
+# count how many kept columns lie before it.
+#
+# A family that the dedup emptied entirely maps to a zero-length span, which is the honest answer
+# and is why the values are (start, stop) pairs rather than bare starts: a bare start cannot
+# express "this family contributes nothing", and the caller would slice into the next family.
+def _emitted_family_spans():
+    keep = list(_core.EMIT_KEEP)
+    raw = dict(_core.ALL_OFFSETS)
+    # position in the emitted row for each raw index, plus the count of kept columns before it
+    before = [0] * (len(_ALL_ROW_NAMES) + 1)
+    kept = set(keep)
+    n = 0
+    for i in range(len(_ALL_ROW_NAMES)):
+        before[i] = n
+        if i in kept:
+            n += 1
+    before[len(_ALL_ROW_NAMES)] = n
+
+    bounds = sorted((v, k) for k, v in raw.items() if isinstance(v, int) and k != "end")
+    spans = {}
+    for j, (start, name) in enumerate(bounds):
+        stop = bounds[j + 1][0] if j + 1 < len(bounds) else raw.get("end", len(_ALL_ROW_NAMES))
+        spans[name] = (before[start], before[min(stop, len(_ALL_ROW_NAMES))])
+    return spans
+
+
+#: ``{family: (start, stop)}`` into ALL_COLUMNS and into the descriptor block of `featurize`'s
+#: output -- half-open, so ``ALL_COLUMNS[start:stop]`` is that family. Fingerprint bits are
+#: appended after every family and are not covered here; use `feature_names` for those.
+FAMILY_OFFSETS: dict = _emitted_family_spans()
+
+#: The raw offsets into the 1,539-column row the extension computes internally, before the
+#: deduplication filter. Almost nobody wants this; it is kept because `verify_*.py` and the
+#: profiling tools reason about the pre-filter layout.
+RAW_FAMILY_OFFSETS: dict = dict(_core.ALL_OFFSETS)
 
 # `Phi` is computed in C++ as Kappa1 * Kappa2 / heavy-atom count, reading the two out of the
 # block row rather than paying findAllPathsOfLengthN(mol, 2) a second time. The extension resolves

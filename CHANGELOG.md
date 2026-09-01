@@ -1,5 +1,28 @@
 # Changelog
 
+## 0.1.1 — 2026-09-01
+
+Fixes a wrong-answer bug in `FAMILY_OFFSETS` and makes the version constraints much less
+aggressive. No descriptor value changes: the fixture regenerates to the same hash.
+
+- **`FAMILY_OFFSETS` was wrong and silently so.** It exported the offsets of the internal
+  1,539-column row, while `featurize` returns 1,269 — so `ALL_COLUMNS[FAMILY_OFFSETS["ringcount"]]`
+  was `ATS2Z`, a column from a different family, with nothing to indicate a problem. It is now
+  `{family: (start, stop)}` half-open pairs into the emitted layout, the 19 families tile
+  `[0, 1269)` exactly, and there are tests. Reported by a user slicing by family. The old values
+  are still available as `RAW_FAMILY_OFFSETS` for the tools that reason about the pre-dedup row.
+- **Python 3.10 is supported.** The `>=3.11` floor was never a property of the code — it came
+  from this repo's pinned dev NumPy leaking into published metadata. 3.10 is the lowest
+  interpreter RDKit ships across the whole supported RDKit range.
+- **The RDKit cap is much looser**: `<2028.01` rather than `<2026.09`, which was the exact
+  measured boundary and would have made the package uninstallable the day RDKit 2026.09 shipped.
+- **An unsupported RDKit no longer breaks `import molhume`.** The pickle-format guard used to
+  raise `ImportError` at import, which also took down `featurize_blocks(reader="api")` — a path
+  that reads through RDKit's Python API and is unaffected by the pickle layout. The check is now
+  lazy: it fires when a pickle is actually read, names your RDKit, and says what to do.
+- Documented that the ~285 us/molecule figure is the **threaded** number. `threads=1` is about
+  861 us/molecule on a 12-thread laptop; the table is in the README.
+
 ## 0.1.0 — 2026-09-01
 
 First release.
@@ -28,7 +51,7 @@ First release.
 - Verified against RDKit 2025.9.2 and Mordred 1.2.0 over a 42,000-molecule corpus: 167/186
   RDKit and 412/968 Mordred columns bit-identical, 99.99% and 99.23% of values within 1e-9.
   Divergences are enumerated in `METHODS.md`.
-- Wheels for CPython 3.11-3.14 on Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows.
+- Wheels for CPython 3.10-3.14 on Linux (x86_64, aarch64), macOS (arm64, x86_64) and Windows.
 - Values are bit-identical across RDKit releases in the supported range, but **not across
   architectures**: the exactness numbers are from macOS arm64/clang, and x86-64 moves 594
   columns (gcc) or 595 (MSVC) by at most 1.1e-14 of each column's range. NaN patterns are

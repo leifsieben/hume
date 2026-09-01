@@ -598,6 +598,7 @@ def extract_pickles(mols, stereo: bool = True) -> Pickles:
     `stereo` is the same switch `extract()` carries and costs the same 52 us/mol; the 182-column
     block path passes False because it reads neither array.
     """
+    _check_pickle_version()
     mols = list(mols)
     out, hout = [], []
     for k, m in enumerate(mols):
@@ -634,31 +635,47 @@ def extract_pickles(mols, stereo: bool = True) -> Pickles:
     return Pickles(out, _rings_csr(mols), hout, sa, sb)
 
 
+_PICKLE_CHECKED = False
+
+
 def _check_pickle_version() -> None:
-    """Fail at import if RDKit's pickle format is not the one molpickle.h was written against.
+    """Fail before reading a pickle whose format this reader was not written against.
 
     Same shape as the drift guards in src/hume_core/crippen_typer.h and cpp/estate_tables.h, and
     for the same reason: a silently misparsed pickle is a wrong descriptor with no symptom. The
     probe is one carbon atom, so this costs microseconds once per process.
+
+    LAZY, NOT AT IMPORT, and that is a deliberate loosening. This used to run at module import
+    and raise ImportError, so an unsupported rdkit broke `import molhume` outright -- including
+    featurize_blocks(reader="api"), which reads the molecule through rdkit's supported Python
+    API and is entirely unaffected by the pickle layout. Refusing to import is far more
+    aggressive than the problem warrants. The thing that must not happen is READING a pickle
+    this code cannot parse; importing the package is harmless.
     """
+    global _PICKLE_CHECKED
+    if _PICKLE_CHECKED:
+        return
     from . import _core
 
     probe = Chem.MolFromSmiles("C")
     try:
         _core.pickle_check(_to_binary(probe, _PICKLE_FLAGS))
     except RuntimeError as exc:
-        raise ImportError(
+        raise RuntimeError(
             f"{exc}\n\n"
-            f"This is rdkit {Chem.rdBase.rdkitVersion}. mol-hume supports rdkit >=2024.09.1 and "
-            "<2026.09, which are the releases whose pickle format it has been measured against; "
-            "pyproject.toml "
-            "declares that range, so this usually means rdkit was upgraded in place after "
-            "mol-hume was installed. Either pin rdkit back into the range, or install mol-hume "
-            "into an environment resolved from scratch."
+            f"This is rdkit {Chem.rdBase.rdkitVersion}. mol-hume reads rdkit's MolPickler blob "
+            "directly -- that is where much of its speed comes from -- and the layout is not a "
+            "stable API, so it refuses to read a format it has not been measured against rather "
+            "than quietly producing wrong numbers. What you can do:\n"
+            "  * Pin rdkit to a measured release: 2024.09.1 through 2026.03.x cover pickle "
+            "formats 16.2.0 and 16.3.0.\n"
+            "  * molhume.featurize_blocks(..., reader='api') works on ANY rdkit -- it reads the "
+            "molecule through rdkit's Python API. It returns the 178 verified block columns "
+            "rather than all 1,269.\n"
+            "  * To add this format: tools/check_rdkit_release.py measures whether it is already "
+            "readable; see MAINTENANCE.md section 1."
         ) from None
-
-
-_check_pickle_version()
+    _PICKLE_CHECKED = True
 
 
 def _empty() -> Batch:

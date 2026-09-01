@@ -241,3 +241,36 @@ def test_mol_objects_are_accepted_without_reparsing():
 def test_a_non_molecule_type_is_rejected_by_name():
     with pytest.raises(TypeError, match="item 0 is a float"):
         molhume.featurize([1.5], standardize="none")
+
+
+# ---------------------------------------------------------------- family offsets
+
+def test_family_offsets_index_the_emitted_layout():
+    """FAMILY_OFFSETS must address ALL_COLUMNS, not the pre-dedup 1,539-column row.
+
+    Shipped wrong in 0.1.0: the raw offsets were exported unchanged, so
+    ALL_COLUMNS[FAMILY_OFFSETS["ringcount"]] was `ATS2Z` -- a column from a different family,
+    with nothing to signal it. Found by a user slicing by family, not by a test. Hence this test.
+    """
+    fo = molhume.FAMILY_OFFSETS
+    spans = sorted(fo.values())
+    assert spans[0][0] == 0, "families must start at column 0"
+    assert spans[-1][1] == len(molhume.ALL_COLUMNS), "families must cover the last column"
+    for (a, b), (c, _) in zip(spans, spans[1:]):
+        assert a <= b == c, f"family spans must tile without gaps or overlap: {(a, b)} then {c}"
+
+
+def test_family_offsets_land_on_the_right_columns():
+    # a spot check per family, by a name that unambiguously belongs to it
+    for family, name in [("ringcount", "n5Ring"), ("estate", "NsCH3"), ("autocorr", "ATS0c"),
+                         ("chi", "AXp-7dv"), ("eta", "ETA_alpha"), ("spectral", "SpAbs_A"),
+                         ("frag", "fr_C_O"), ("blocks", "BalabanJ")]:
+        a, b = molhume.FAMILY_OFFSETS[family]
+        assert name in molhume.ALL_COLUMNS[a:b], (
+            f"{name!r} should be inside family {family!r} at [{a}:{b}], which actually holds "
+            f"{molhume.ALL_COLUMNS[a:a + 3]}...")
+
+
+def test_raw_offsets_are_kept_but_separate():
+    assert max(v for v in molhume.RAW_FAMILY_OFFSETS.values() if isinstance(v, int)) > \
+        len(molhume.ALL_COLUMNS), "RAW_FAMILY_OFFSETS describes the wider pre-dedup row"
