@@ -33,12 +33,17 @@ EOF
 # It is also the right risk trade here: every box ships its partial grid to S3 within 30s of
 # finishing a dataset, so a reclaimed instance costs at most the dataset it was in the middle of
 # -- which is exactly the checkpointing that makes spot a saving rather than a lottery.
+# INSTANCE TYPE IS AN OVERRIDE because spot capacity is per (type, AZ) pool, not global. Four
+# spot boxes were reclaimed within 90 minutes on 2026-09-01 with
+# `instance-terminated-no-capacity` on c7i.4xlarge, while on-demand of the same type kept
+# running -- so the answer to a capacity reclaim is a DIFFERENT POOL, not a retry of the same
+# request. ITYPE=m7i.4xlarge or c6i.4xlarge are the same 16 vCPU at a similar price.
 MARKET=""
 if [ "${SPOT:-0}" = "1" ]; then
   MARKET='--instance-market-options {"MarketType":"spot","SpotOptions":{"SpotInstanceType":"one-time","InstanceInterruptionBehavior":"terminate"}}'
 fi
 IID=$(aws ec2 run-instances $MARKET \
-  --image-id ami-0d7f022123f8ff19d --instance-type c7i.4xlarge \
+  --image-id ami-0d7f022123f8ff19d --instance-type "${ITYPE:-c7i.4xlarge}" \
   --iam-instance-profile Arn=arn:aws:iam::075120018132:instance-profile/HumeBenchEC2 \
   --subnet-id subnet-0ee6327e8f5b315df --security-group-ids sg-0c90752120ffd64df \
   --instance-initiated-shutdown-behavior terminate \
