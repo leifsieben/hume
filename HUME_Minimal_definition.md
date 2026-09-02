@@ -249,6 +249,91 @@ local pattern** -- precisely what a binary circular fingerprint encodes and noth
 boundary falls exactly where the mechanism says it should, which is evidence the drop was
 principled rather than a threshold artifact.
 
+### 3.4 Ring perception, constitutional counts (decided)
+
+**Exactly determined columns.** A grid of counts over a partition has exact additive structure --
+`n7Ring == n7aRing + n7ARing` and ten others hold to machine precision on every molecule. Greedy
+elimination requiring a column to raise the rank on **both** corpora finds **25 ring + 6
+constitutional** columns determined by the rest.
+
+⚠️ Checked across chemical spaces, and it mattered: rank says 23 determined on the benchmark
+corpus alone, 22 on salts alone, but only **21 on the two stacked**. Dependencies that hold on
+one space and break on the other are corpus artifacts, and taking the minimum is what excludes
+them.
+
+⚠️ And checked with the consumer, because linear determination is not tree determination -- a
+tree cannot split on a sum of two features, which is the error that killed minimal-v1. Measured:
+
+| rebuilt by | median R^2 | below 0.99 | worst |
+| --- | ---: | ---: | ---: |
+| XGBoost | **1.0000** | 3 of 27 | 0.857 |
+| linear | 0.9971 | 12 of 27 | 0.626 |
+
+The tree rebuilds them *better* than a linear model, exploiting integer structure a linear fit
+cannot. The concern was unfounded; testing it was still right. One straggler: `n12FaRing`, tree
+R^2 0.857, fires 0.200% -- kept.
+
+**Ring size binning.** Decision: collapse sizes to {3,4,5,6,7,8+} **for non-fused cells only**.
+
+⚠️ The reason for the exception is mechanical and nearly went unnoticed. For a FUSED cell,
+mordred's "size" is the **atom count of the whole fused system**, not a ring size -- naphthalene's
+system is 10 atoms and counts as a 10. So the fused 8+ bins are not exotic macrocycles:
+
+| fused "size" | fires on | what it is |
+| --- | ---: | --- |
+| 9 | 15.5% | indole, benzofuran |
+| 10 | 13.6% | naphthalene, quinoline |
+| >12 | 12.0% | larger fused systems |
+
+Collapsing those would merge indole, naphthalene and anthracene into one bin. The non-fused
+cells at the same sizes are the genuine medium and macro rings and fire on 1.9%, 0.19%, 0.29% --
+there the collapse is right. Implementation note: this is not a drop, it needs new summed
+columns in `ringcount.h`.
+
+### 3.5 ETA (29 columns): the whole family is reproducible
+
+Consumer inversion with the **entire family removed** from the design:
+
+| | median R^2 | worst | below 0.96 |
+| --- | ---: | ---: | ---: |
+| siblings present | 0.9970 | 0.958 | 0 |
+| whole family removed | **0.9954** | 0.962 | **0 of 29** |
+
+Those being nearly equal is the finding: ETA columns are not predicting each other, the rest of
+the library predicts all of them. Mechanistically expected -- ETA is a per-atom core count
+(alpha, a valence-electron-mobility count) aggregated by a distance-weighted pair sum, which is
+the same operator class as the autocorrelation block applied to a weight close to `dv`, and its
+beta/gamma terms are functions of degree, which is `d`.
+
+**And it independently fails notation stability.** `ETA_epsilon_4` and `ETA_dEpsilon_C` move on
+**33%** of molecules under rewriting, `ETA_dEpsilon_B` on 16%; `eta.h` records that
+`ETA_epsilon_4`'s definition is **ill-posed** for saturated systems and depends on a search
+order. Two independent criteria converging on one block.
+
+### 3.6 Information content (22 columns): redundant across RADII, not across series
+
+The intuition that these are one quantity in several weightings is **wrong**, measured:
+
+| pair, same radius | r at 0 | at 2 | at 4 |
+| --- | ---: | ---: | ---: |
+| `IC` ~ `ZMIC` | 0.092 | 0.063 | **0.029** |
+| `IC` ~ `MIC` | 0.880 | 0.477 | 0.389 |
+
+`IC` and `ZMIC` are essentially uncorrelated, so keeping one series and dropping the others would
+discard real information. The redundancy is **within** a series, across radii:
+
+| series | adjacent-radius correlations |
+| --- | --- |
+| `IC` | 0.64, 0.72, 0.87, **0.97**, **0.99** |
+| `MIC` | 0.88, 0.95, **0.98**, **1.00** |
+| `ZMIC` | 0.79, 0.88, 0.88, 0.97, **0.99** |
+| `BIC` | 0.80, 0.92, **0.98** |
+
+Low radii are distinct; high radii converge, because the orbit partition saturates as the
+neighborhood grows. So the defensible cut keeps all three series and drops the high radii, not
+the reverse. `AvgIpc` correlates 0.13-0.40 with all of them -- it is built from the
+characteristic polynomial rather than an orbit entropy, a genuinely different operator.
+
 ## 4. Running total
 
 | stage | columns |
