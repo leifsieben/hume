@@ -21,6 +21,27 @@ present in the output, or an exact arithmetic identity. Nothing removed on a var
 which is what made v1 delete the rare tail. Full reasoning per decision in
 `HUME_Minimal_definition.md`; family provenance in `docs/DESCRIPTOR_MAP.md`.
 
+**What it costs**, benchmarked against the full 1,269 with the same untuned XGBoost head and the
+same 5-fold scaffold folds, on 29 of the 33 grid datasets:
+
+| panel | datasets | mean | worst |
+| --- | ---: | ---: | ---: |
+| ADME & tox | 10 | −1.55% | +2.79% |
+| physicochemical | 6 | −0.94% | +1.49% |
+| classification | 13 | −0.17% | +1.99% |
+| **overall** | **29** | **−0.81%** | — |
+
+Negative means the reduced set scored better. **No dataset moved by more than its own
+fold-to-fold spread**, and a sign test puts the reduced set behind on 11 of 29 (p = 0.27) — so
+this is *no measurable difference at 43% of the columns*, not evidence that fewer columns help.
+For contrast, v1 cost +3.83% on the physicochemical panel with 800 columns.
+
+⚠️ **The quantum panel is not yet included.** `qm8`, `qm9`, `qm9_gap` and `qmugs_gap` are still
+running. It is the panel to watch: the 227-column autocorrelation block was dropped on a
+physicochemical ablation, and autocorrelation is a distance-resolved property correlation, which
+is the kind of signal an electronic-structure endpoint might depend on. If it turns out to matter
+there, that will be a follow-up release rather than a change to this one.
+
 Also in this release: six conjugation descriptors are now notation-invariant (see 0.3.0 notes
 below, which were never published separately).
 
