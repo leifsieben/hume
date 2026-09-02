@@ -334,6 +334,64 @@ neighborhood grows. So the defensible cut keeps all three series and drops the h
 the reverse. `AvgIpc` correlates 0.13-0.40 with all of them -- it is built from the
 characteristic polynomial rather than an orbit entropy, a genuinely different operator.
 
+### 3.7 BCUT weights, path/walk, matrix spectrum, AETA (decided)
+
+**BCUT (7 columns, ~59 us/mol).** The 20 mordred BCUTs are indexed by the same weight vocabulary
+cut from the autocorrelation block. ⚠️ **That argument does not transfer automatically and was
+measured rather than assumed**: BCUT is an extreme eigenvalue of a matrix carrying the weight on
+its diagonal, and two affinely related diagonals do not give affinely related eigenvalues because
+the off-diagonal part does not scale. Mostly it holds -- `BCUTpe-1l`~`BCUTare-1l` 0.981,
+`BCUTv-1h`~`BCUTp-1h` 0.971 -- but **`BCUTi-1l`~`BCUTpe-1l` is 0.244**, so ionization and
+electronegativity are one axis in the element tables and are NOT one axis through this operator.
+The decision rests on the consumer test instead: dropping the 7 gives median R^2 0.9997, floor
+0.9965, none below 0.9.
+
+**Cost matters more than the column count here.** Each weight is its own Burden matrix and its
+own eigensolve, so cost scales with WEIGHTS: 4 of 11 matrices removed is roughly **59 of BCUT's
+163.3 us/mol**, about 10% of total featurization, for 7 columns. Column count and compute are not
+proportional, and this is the clearest case.
+
+**path/walk counts (30) + matrix spectrum (16), tested JOINTLY.** ⚠️ The family screen removes one
+family at a time, which cannot license dropping two: if each is reproducible from a library still
+containing the other, mutual redundancy makes both look free while the pair is not. Measured with
+both removed together:
+
+| | median R^2 | floor |
+| --- | ---: | ---: |
+| path/walk alone | 0.9980 | 0.9895 |
+| path/walk, spectrum also gone | **0.9980** | 0.9889 |
+| spectrum alone | 0.9958 | 0.9881 |
+| spectrum, path/walk also gone | **0.9957** | 0.9883 |
+
+Unchanged to four decimals -- they are not propping each other up.
+
+**AETA (14 columns).** ⚠️ Found by auditing the residue, not by the screen: the ETA drop matched
+`startswith("ETA_")`, which does not match `AETA_`. AETA is the same family normalised per atom.
+Dropped on the same reasoning, with the inversion test run to confirm rather than assume.
+
+### 3.8 Autocorrelation: why it stays large
+
+The block is 227 of the planned library and the obvious reaction is that it is too many
+dimensions. The evidence points three ways and it is worth recording all three:
+
+| view | verdict |
+| --- | --- |
+| exact linear rank, both corpora | **227 of 227 -- nothing determined** |
+| components for 90% / 99% of variance | **1 / 3** |
+| participation ratio | **1.1** |
+| family screen: can the rest of the library rebuild it? | **least reproducible family, median 0.80** |
+
+One size-like axis carries 90% of the variance, so by variance the block looks almost
+one-dimensional. But after that axis every residual is distinct: no column is an arithmetic
+identity of another, and the rest of the library rebuilds it worse than any other family (13 of
+21 sampled below R^2 0.9).
+
+**This is the same trap the exercise began with** -- the source document's own observation that 325
+columns reach 99.9% of variance while 640 are needed to reconstruct. A variance cut would take
+autocorrelation to 3 columns and destroy the distance-resolved structure it exists to encode.
+Under the constructual-or-exact standard the block is finished; what remains untested is not
+redundancy but IMPORTANCE, which is a different question and needs an ablation.
+
 ## 4. Running total
 
 | decision | columns removed |

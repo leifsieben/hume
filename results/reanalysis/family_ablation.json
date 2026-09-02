@@ -1,0 +1,170 @@
+[
+ {
+  "dataset": "esol",
+  "arm": "full",
+  "rmse": 0.7595967213514841,
+  "sd": 0.03134631829315272,
+  "n_cols": 3317
+ },
+ {
+  "dataset": "esol",
+  "arm": "minus_ETA",
+  "rmse": 0.7767544059795154,
+  "sd": 0.0561329149568472,
+  "n_cols": 3288
+ },
+ {
+  "dataset": "esol",
+  "arm": "minus_IC",
+  "rmse": 0.786269029846904,
+  "sd": 0.056817151170481646,
+  "n_cols": 3295
+ },
+ {
+  "dataset": "esol",
+  "arm": "minus_both",
+  "rmse": 0.771439629788356,
+  "sd": 0.06966815591273658,
+  "n_cols": 3266
+ },
+ {
+  "dataset": "lipophilicity",
+  "arm": "full",
+  "rmse": 0.7176574541160043,
+  "sd": 0.0076811250826147965,
+  "n_cols": 3317
+ },
+ {
+  "dataset": "lipophilicity",
+  "arm": "minus_ETA",
+  "rmse": 0.7132804133739492,
+  "sd": 0.006107268057694131,
+  "n_cols": 3288
+ },
+ {
+  "dataset": "lipophilicity",
+  "arm": "minus_IC",
+  "rmse": 0.7315712450122249,
+  "sd": 0.02239338275802036,
+  "n_cols": 3295
+ },
+ {
+  "dataset": "lipophilicity",
+  "arm": "minus_both",
+  "rmse": 0.7325754321435032,
+  "sd": 0.02311577016578928,
+  "n_cols": 3266
+ },
+ {
+  "dataset": "aqsoldb",
+  "arm": "full",
+  "rmse": 1.077616066000527,
+  "sd": 0.08475402133822812,
+  "n_cols": 3317
+ },
+ {
+  "dataset": "aqsoldb",
+  "arm": "minus_ETA",
+  "rmse": 1.085983806594193,
+  "sd": 0.1007721068576898,
+  "n_cols": 3288
+ },
+ {
+  "dataset": "aqsoldb",
+  "arm": "minus_IC",
+  "rmse": 1.073052566150878,
+  "sd": 0.09910036461508401,
+  "n_cols": 3295
+ },
+ {
+  "dataset": "aqsoldb",
+  "arm": "minus_both",
+  "rmse": 1.0612290409275096,
+  "sd": 0.08580912540713087,
+  "n_cols": 3266
+ },
+ {
+  "dataset": "pb_logd",
+  "arm": "full",
+  "rmse": 0.7903266245682912,
+  "sd": 0.049387339096415364,
+  "n_cols": 3317
+ },
+ {
+  "dataset": "pb_logd",
+  "arm": "minus_ETA",
+  "rmse": 0.7896074404626869,
+  "sd": 0.050858413529290505,
+  "n_cols": 3288
+ },
+ {
+  "dataset": "pb_logd",
+  "arm": "minus_IC",
+  "rmse": 0.7938013745743884,
+  "sd": 0.052821502138442736,
+  "n_cols": 3295
+ },
+ {
+  "dataset": "pb_logd",
+  "arm": "minus_both",
+  "rmse": 0.7868144053032852,
+  "sd": 0.04771331331643571,
+  "n_cols": 3266
+ },
+ {
+  "dataset": "pb_water_sol",
+  "arm": "full",
+  "rmse": 0.9660495601125388,
+  "sd": 0.021008328755800266,
+  "n_cols": 3317
+ },
+ {
+  "dataset": "pb_water_sol",
+  "arm": "minus_ETA",
+  "rmse": 0.9599010005501439,
+  "sd": 0.02018638534375989,
+  "n_cols": 3288
+ },
+ {
+  "dataset": "pb_water_sol",
+  "arm": "minus_IC",
+  "rmse": 0.962214625061022,
+  "sd": 0.02646852781195182,
+  "n_cols": 3295
+ },
+ {
+  "dataset": "pb_water_sol",
+  "arm": "minus_both",
+  "rmse": 0.9479472698615112,
+  "sd": 0.03207795655896607,
+  "n_cols": 3266
+ },
+ {
+  "dataset": "photoswitch",
+  "arm": "full",
+  "rmse": 43.99715422621145,
+  "sd": 19.779835228144247,
+  "n_cols": 3317
+ },
+ {
+  "dataset": "photoswitch",
+  "arm": "minus_ETA",
+  "rmse": 46.26966242662494,
+  "sd": 19.61071041478708,
+  "n_cols": 3288
+ },
+ {
+  "dataset": "photoswitch",
+  "arm": "minus_IC",
+  "rmse": 45.390328151731275,
+  "sd": 19.119311166462538,
+  "n_cols": 3295
+ },
+ {
+  "dataset": "photoswitch",
+  "arm": "minus_both",
+  "rmse": 44.94566481759186,
+  "sd": 18.977423026159062,
+  "n_cols": 3266
+ }
+]
