@@ -280,7 +280,7 @@ def test_raw_offsets_are_kept_but_separate():
 
 def test_minimal_columns_is_a_subset_of_what_is_emitted():
     c = molhume.minimal_columns()
-    assert len(c) == 612
+    assert len(c) == 622
     assert set(c) <= set(molhume.ALL_COLUMNS)
     assert len(set(c)) == len(c), "the spec contains a duplicate name"
 
@@ -288,7 +288,7 @@ def test_minimal_columns_is_a_subset_of_what_is_emitted():
 def test_minimal_columns_actually_selects():
     X = _quiet(SMIS, standardize="none", columns=list(molhume.minimal_columns()),
                fingerprint=False)
-    assert X.shape == (len(SMIS), 612)
+    assert X.shape == (len(SMIS), 622)
 
 
 def test_minimal_v1_is_withdrawn_with_a_reason():
@@ -305,6 +305,10 @@ def test_the_composition_fr_flags_stay_out():
     for dup, because in (("fr_halogen", "nF/nCl/nBr/nI/nX"), ("fr_Ar_N", "the SMARTS `n`"),
                          ("fr_bicyclic", "ring perception")):
         assert dup not in c, f"{dup} duplicates {because}"
+    # and exactly those three -- 0.5.0 held out ten more that are functional groups, not
+    # duplicates. nS counts sulfur and cannot separate sulfide from sulfone.
+    assert len([x for x in molhume.ALL_COLUMNS if x.startswith("fr_")]) - \
+len([x for x in c if x.startswith('fr_')]) == 3
 
 
 def test_the_retired_v1_api_is_gone():
@@ -320,5 +324,6 @@ def test_the_core_descriptors_survive_the_spec():
     for expected in ("ExactMolWt", "SLogP", "TPSA", "NumHDonors", "NumHAcceptors", "nRot",
                      "RingCount", "LabuteASA", "BalabanJ", "Kappa1", "chi0n", "Lipinski",
                      # curated assertions no structural descriptor derives -- see _minimal.py
-                     "fr_Ndealkylation1", "fr_quatN", "fr_nitro", "fr_pyridine", "fr_Ar_OH"):
+                     "fr_Ndealkylation1", "fr_quatN", "fr_nitro", "fr_pyridine", "fr_Ar_OH",
+                     "fr_sulfone", "fr_SH", "fr_nitrile"):
         assert expected in c, f"{expected} is missing from minimal-v2"

@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.6.0 — 2026-09-02
+
+**`minimal-v2` now has 622 columns, up from 612 in 0.5.0.** ⚠️ That is the **third** change to the
+contents of a spec whose name never changed — 550 in 0.4.0, 612 in 0.5.0, 622 here. **The package
+version is the only thing distinguishing them.** Editing a published spec in place stops now:
+future changes get a new spec name.
+
+**10 more `fr_*` flags restored, correcting a grouping error rather than a new finding.** 0.5.0
+held out 13 flags as "duplicates of counts we already emit". Only three are: `fr_halogen` is
+`[F,Cl,Br,I]` against `nF`/`nCl`/`nBr`/`nI`/`nX`, `fr_Ar_N` is the SMARTS `n`, and `fr_bicyclic`
+is `[R2][R2]`. The other ten are **functional groups**, the same category as the 62 restored in
+0.5.0 — `nS` counts sulfur atoms and cannot separate a sulfide from a sulfoxide from a sulfone,
+and sulfones are oxidative metabolites of sulfides.
+
+Restored: `fr_sulfone`, `fr_sulfide`, `fr_SH`, `fr_nitrile`, `fr_C_S`, `fr_alkyl_halide`,
+`fr_ArN`, `fr_phos_ester`, `fr_term_acetylene`, `fr_unbrch_alkane`.
+
+72 of the 75 `fr_*` flags are now in the spec. All 15 flags requested by the ChemPFN project are
+present — `fr_sulfone` was the one missing in 0.5.0.
+
 ## 0.5.0 — 2026-09-02
 
 **`minimal-v2` now has 612 columns, up from 550 in 0.4.0.** ⚠️ The spec *name* did not change,

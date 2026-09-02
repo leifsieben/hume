@@ -144,7 +144,7 @@ unusable. What survives is 1,269.
 
 ## A reduced column set
 
-`minimal-v2` is a 612-column subset of the 1,269:
+`minimal-v2` is a 622-column subset of the 1,269:
 
 ```python
 X = molhume.featurize(smiles, columns=list(molhume.minimal_columns()))
@@ -164,7 +164,7 @@ them is a variance threshold:
 
 All the descriptors you would expect are in it: molecular weight, Crippen logP, TPSA, H-bond
 donors and acceptors, rotatable bonds, ring counts, Kappa shape, chi connectivity, Labute ASA,
-Balaban J, Lipinski, and 62 of the 75 `fr_*` substructure flags.
+Balaban J, Lipinski, and 72 of the 75 `fr_*` substructure flags.
 
 ⚠️ **The `fr_*` flags were dropped in 0.4.0 and restored in 0.5.0**, and the reason is worth
 knowing. They were dropped because they are detectable from the ECFP at AUROC 1.000 — but that

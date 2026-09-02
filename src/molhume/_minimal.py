@@ -5,14 +5,13 @@ column earned or lost its place, and docs/DESCRIPTOR_MAP.md for what the familie
 
 spec "minimal-v2"
   built from   mol-hume 0.5.0, rdkit 2025.9.2, standardize="none"
-  size         612 of the 1,269 emitted columns
+  size         622 of the 1,269 emitted columns
 
-⚠️ THE CONTENTS OF minimal-v2 CHANGED BETWEEN 0.4.0 AND 0.5.0: 550 columns became 612, by
-restoring 62 fr_* substructure flags. The spec NAME did not change, so the package version is
-the only thing distinguishing them -- if you cached features under 0.4.0 and care which set you
-have, check the installed version. This was a deliberate call taken while 0.4.0 was about an
-hour old with no pinned consumers; it is not the normal practice, which is to add a spec rather
-than edit one.
+⚠️ THE CONTENTS OF minimal-v2 HAVE CHANGED TWICE. 550 columns in 0.4.0, 612 in 0.5.0, 622 in
+0.6.0. The spec NAME did not change, so THE PACKAGE VERSION IS THE ONLY THING DISTINGUISHING
+THEM -- if you cached features, check the installed version. Editing a published spec in place
+is not the normal practice here (specs are added, not edited); it was done deliberately while
+the releases were hours old with no pinned consumers, and it should stop now that there are.
 
 WHY THE fr_* FLAGS CAME BACK. They were dropped in 0.4.0 because they are detectable from the
 ECFP shipped alongside at AUROC 1.000. ⚠️ That figure turned out to be conditional on the
@@ -35,11 +34,19 @@ MECHANISM instead -- they are curated assertions that no structural descriptor d
   * OH type. Aliphatic and aromatic hydroxyls differ by ~4 pKa units; NumHDonors counts both
     the same.
 
-13 STAYED OUT, on the same mechanistic reasoning applied in the other direction: they duplicate
-counts the library already emits. fr_halogen is [F,Cl,Br,I] against nF/nCl/nBr/nI/nX; fr_Ar_N is
-literally the SMARTS `n`; fr_bicyclic is [R2][R2], which ring perception covers. Also out:
-fr_ArN, fr_C_S, fr_SH, fr_alkyl_halide, fr_nitrile, fr_phos_ester, fr_sulfide, fr_sulfone,
-fr_term_acetylene, fr_unbrch_alkane.
+THREE STAY OUT, and only three, on the same mechanistic reasoning applied in the other
+direction -- they duplicate counts the library already emits:
+
+    fr_halogen   [F,Cl,Br,I]   against nF / nCl / nBr / nI / nX
+    fr_Ar_N      the SMARTS n  against the aromatic-nitrogen count
+    fr_bicyclic  [R2][R2]      against ring perception
+
+⚠️ 0.5.0 HELD OUT THIRTEEN, AND TEN OF THOSE WERE MIS-GROUPED. fr_sulfone, fr_sulfide, fr_SH,
+fr_nitrile, fr_C_S, fr_alkyl_halide, fr_ArN, fr_phos_ester, fr_term_acetylene and
+fr_unbrch_alkane were filed as "composition", but they are functional groups -- the same
+category as everything restored above. `nS` counts sulfur atoms and says nothing about oxidation
+state, so sulfide, sulfoxide and sulfone are three different things it cannot separate, and
+sulfones are oxidative metabolites of sulfides. They are restored in 0.6.0.
 
 WHAT minimal-v1 WAS AND WHY IT WENT. An ORDERING derived by rank-revealing QR on a
 linear-recoverability criterion: a column could go if the kept ones could rebuild it linearly.
@@ -508,11 +515,13 @@ MINIMAL_COLUMNS = (
     'fr_Al_COO',
     'fr_Al_OH',
     'fr_Al_OH_noTert',
+    'fr_ArN',
     'fr_Ar_COO',
     'fr_Ar_OH',
     'fr_COO2',
     'fr_C_O',
     'fr_C_O_noCOO',
+    'fr_C_S',
     'fr_HOCCN',
     'fr_Imine',
     'fr_NH0',
@@ -522,8 +531,10 @@ MINIMAL_COLUMNS = (
     'fr_Ndealkylation1',
     'fr_Ndealkylation2',
     'fr_Nhpyrrole',
+    'fr_SH',
     'fr_aldehyde',
     'fr_alkyl_carbamate',
+    'fr_alkyl_halide',
     'fr_allylic_oxid',
     'fr_amidine',
     'fr_aniline',
@@ -548,6 +559,7 @@ MINIMAL_COLUMNS = (
     'fr_lactone',
     'fr_methoxy',
     'fr_morpholine',
+    'fr_nitrile',
     'fr_nitro',
     'fr_nitro_arom',
     'fr_nitro_arom_nonortho',
@@ -557,15 +569,20 @@ MINIMAL_COLUMNS = (
     'fr_phenol',
     'fr_phenol_noOrthoHbond',
     'fr_phos_acid',
+    'fr_phos_ester',
     'fr_piperdine',
     'fr_piperzine',
     'fr_priamide',
     'fr_pyridine',
     'fr_quatN',
+    'fr_sulfide',
     'fr_sulfonamd',
+    'fr_sulfone',
+    'fr_term_acetylene',
     'fr_tetrazole',
     'fr_thiazole',
     'fr_thiophene',
+    'fr_unbrch_alkane',
     'fr_urea',
     'frac_in_cycle',
     'fragCpx',
