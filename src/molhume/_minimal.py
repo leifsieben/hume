@@ -1810,7 +1810,14 @@ RECOVERY_AT_DEFAULT = {
 #: about the descriptors: a column that is constant on 72,000 drug-like and adversarial
 #: molecules may well vary on yours.
 GATED = {
-    "MDEC-11": "finite on only 41% of molecules, below the 50% usability gate",
-    "n5FHRing": "constant on all three derivation samples (24k training, 24k held out, 24k "
-                "salts and mixtures), so it carries no variance to rank",
+    "MDEC-11": "finite on 40% of the 1M training corpus, below the 50% usability gate used "
+               "here. It is finite on 52% of the benchmark corpus and is informative there "
+               "(1,425 distinct values, mode share 0.09), which is why it is emitted; this gate "
+               "and the emit filter's gate were applied to different molecule samples and it "
+               "falls between them",
+    "n5FHRing": "no molecule in any of the three derivation samples had a nonzero value, so "
+                "there was no variance to rank. It is NOT a dead column: it is nonzero on 0.78% "
+                "of benchmark and salt molecules (484 of 62,000) against 0.0008% of the "
+                "training corpus (1 of 120,000), a thousand-fold difference. The training "
+                "corpus simply does not contain this chemistry",
 }

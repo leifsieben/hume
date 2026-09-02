@@ -8,8 +8,11 @@
   since a kept column is present, not reconstructed. At n=800: median 0.995, 44 below 0.99,
   none below 0.95.
 - **`molhume.minimal_gated()`** — the 2 columns excluded from the ranking before it was derived,
-  with the reason. `MDEC-11` is finite on 41% of molecules, below the usability gate;
-  `n5FHRing` is constant on all three derivation samples. With these,
+  with the reason. **Neither is a dead column and neither is an error in the emitted 1,269**:
+  `n5FHRing` is nonzero on 0.78% of benchmark molecules but 0.0008% of the training corpus the
+  spec was derived from, so a 24k draw contained none; `MDEC-11` is 52% finite on the benchmark
+  corpus (passing the emit gate) and 40% on the training corpus (failing this one). They are
+  chemistry the derivation sample under-represents. With these,
   `minimal_columns() | minimal_recovery() | minimal_gated()` partitions `ALL_COLUMNS` exactly,
   and there is a test asserting it.
 

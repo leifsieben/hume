@@ -75,6 +75,26 @@ after lets whichever sample has the wider spread set the scale and dominate the 
 ⚠️ The spec is tied to `standardize="none"`, recorded in `_minimal.py`. That setting changes
 descriptor values for every multi-fragment input, so a spec derived under one does not transfer.
 
+**A concrete instance of the limitation, found while writing the per-column API.** Two of the
+1,269 emitted columns were gated out of the ranking before it was derived, and the reason is the
+sample rather than the descriptor:
+
+| column | on the training corpus | on the benchmark corpus |
+| --- | --- | --- |
+| `n5FHRing` | nonzero on 1 of 120,000 (0.0008%) | nonzero on 484 of 62,000 (0.78%) |
+| `MDEC-11` | finite on 40% | finite on 52% |
+
+`n5FHRing` is a thousand times rarer in the corpus this spec was derived from than in the
+benchmark sets, so a 24,000-molecule draw contained none of it and there was nothing to rank.
+`MDEC-11` falls either side of the 50% finite gate depending on which sample you ask; the emit
+filter saw 52% and kept it, this derivation saw 40% and gated it.
+
+**Neither is a dead column and neither is an error in the emitted set** — both are informative
+where they occur. What they are is chemistry the derivation sample under-represents, which is
+exactly what this section warns about, made concrete. `molhume.minimal_gated()` reports them
+with these numbers rather than omitting them silently, because a user whose molecules contain
+that ring class needs to know the ranking never saw it.
+
 ## 6. In-sample R² is not enough, and here it is actively misleading
 
 The acceptance criterion is the **worst-case R²** over dropped columns — never the mean, since a

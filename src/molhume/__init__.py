@@ -573,13 +573,19 @@ def minimal_gated(spec: str = "minimal-v1") -> dict:
     """Columns left out of the ranking before it was derived, and why. ``{name: reason}``.
 
     Two columns are emitted by `featurize` but appear in neither `minimal_columns()` nor
-    `minimal_recovery()`: one is finite on too few molecules to gate through, the other is
-    constant on all three derivation samples. Reporting them rather than quietly omitting them
-    is what makes the three sets partition ALL_COLUMNS.
+    `minimal_recovery()`. Reporting them rather than quietly omitting them is what makes the
+    three sets partition ALL_COLUMNS.
 
-    **Both are facts about the derivation samples, not verdicts about the descriptors.** A
-    column constant across 72,000 drug-like and adversarial molecules may vary on yours, in
-    which case it is one the spec cannot speak for either way.
+    **Neither is a dead column, and neither is a mistake in the emitted set.** Both are facts
+    about the molecules this spec was derived on. `n5FHRing` is nonzero on 0.78% of benchmark
+    and salt molecules but 0.0008% of the training corpus this spec was derived from -- a
+    thousand-fold difference, so a 24,000-molecule draw contained none and there was no variance
+    to rank. `MDEC-11` is 40% finite on the training corpus and 52% on the benchmark corpus,
+    falling either side of a 50% gate depending on which sample you ask.
+
+    So the honest reading is: **the spec has nothing to say about these two**, not that they are
+    worthless. If your chemistry contains fused five-membered rings of that class, `n5FHRing` is
+    informative and this ranking never saw it.
     """
     from . import _minimal
     if spec != "minimal-v1":
