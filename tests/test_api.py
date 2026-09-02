@@ -280,7 +280,7 @@ def test_raw_offsets_are_kept_but_separate():
 
 def test_minimal_columns_is_a_subset_of_what_is_emitted():
     c = molhume.minimal_columns()
-    assert len(c) == 550
+    assert len(c) == 612
     assert set(c) <= set(molhume.ALL_COLUMNS)
     assert len(set(c)) == len(c), "the spec contains a duplicate name"
 
@@ -288,7 +288,7 @@ def test_minimal_columns_is_a_subset_of_what_is_emitted():
 def test_minimal_columns_actually_selects():
     X = _quiet(SMIS, standardize="none", columns=list(molhume.minimal_columns()),
                fingerprint=False)
-    assert X.shape == (len(SMIS), 550)
+    assert X.shape == (len(SMIS), 612)
 
 
 def test_minimal_v1_is_withdrawn_with_a_reason():
@@ -297,6 +297,14 @@ def test_minimal_v1_is_withdrawn_with_a_reason():
         molhume.minimal_columns(spec="minimal-v1")
     with pytest.raises(ValueError, match="minimal-v2"):
         molhume.minimal_columns(spec="something-else")
+
+
+def test_the_composition_fr_flags_stay_out():
+    """13 fr_* duplicate counts the library already emits; keeping them would be double-counting."""
+    c = set(molhume.minimal_columns())
+    for dup, because in (("fr_halogen", "nF/nCl/nBr/nI/nX"), ("fr_Ar_N", "the SMARTS `n`"),
+                         ("fr_bicyclic", "ring perception")):
+        assert dup not in c, f"{dup} duplicates {because}"
 
 
 def test_the_retired_v1_api_is_gone():
@@ -310,5 +318,7 @@ def test_the_core_descriptors_survive_the_spec():
     """A reduced spec that quietly loses MolWt or TPSA is a trap, not a reduction."""
     c = set(molhume.minimal_columns())
     for expected in ("ExactMolWt", "SLogP", "TPSA", "NumHDonors", "NumHAcceptors", "nRot",
-                     "RingCount", "LabuteASA", "BalabanJ", "Kappa1", "chi0n", "Lipinski"):
+                     "RingCount", "LabuteASA", "BalabanJ", "Kappa1", "chi0n", "Lipinski",
+                     # curated assertions no structural descriptor derives -- see _minimal.py
+                     "fr_Ndealkylation1", "fr_quatN", "fr_nitro", "fr_pyridine", "fr_Ar_OH"):
         assert expected in c, f"{expected} is missing from minimal-v2"

@@ -4,36 +4,56 @@ GENERATED -- regenerate with tools/gen_minimal.py. See HUME_Minimal_definition.m
 column earned or lost its place, and docs/DESCRIPTOR_MAP.md for what the families measure.
 
 spec "minimal-v2"
-  built from   mol-hume 0.4.0, rdkit 2025.9.2, standardize="none"
-  size         550 of the 1,269 emitted columns
+  built from   mol-hume 0.5.0, rdkit 2025.9.2, standardize="none"
+  size         612 of the 1,269 emitted columns
 
-WHAT THIS IS, AND WHAT IT REPLACES. minimal-v1 was an ORDERING derived by rank-revealing QR on a
-linear-recoverability criterion: a column could be dropped if the kept ones could rebuild it
-linearly. That criterion describes a consumer that does not exist -- a depth-6 boosted tree
-cannot split on a linear combination of thirty columns -- and when the prediction was tested
-against a deeper tree and an MLP, neither recovered the loss. It is withdrawn.
+⚠️ THE CONTENTS OF minimal-v2 CHANGED BETWEEN 0.4.0 AND 0.5.0: 550 columns became 612, by
+restoring 62 fr_* substructure flags. The spec NAME did not change, so the package version is
+the only thing distinguishing them -- if you cached features under 0.4.0 and care which set you
+have, check the installed version. This was a deliberate call taken while 0.4.0 was about an
+hour old with no pinned consumers; it is not the normal practice, which is to add a spec rather
+than edit one.
 
-minimal-v2 is a SET, not a ranking, and every column was removed for one of three reasons:
+WHY THE fr_* FLAGS CAME BACK. They were dropped in 0.4.0 because they are detectable from the
+ECFP shipped alongside at AUROC 1.000. ⚠️ That figure turned out to be conditional on the
+CORPUS, not just on the fingerprint. ChemPFN measured the same flags on a corpus with 5.4%
+salts and got median 0.9929 with a floor of 0.786; `fr_quatN` reads 0.9995 here and 0.73 there
+-- same flag, same fingerprint class, different chemistry. A 2x2 over radius (2 vs 3) and
+decoder (logistic vs XGBoost) on our corpus moves the median by less than 0.001, so neither
+explains the gap: the corpus does.
 
-  * SAME QUANTITY, DIFFERENT UNITS. Three electronegativity scales, mass against atomic number,
-    polarizability against volume. Read from the definitions, not inferred from correlation --
-    no correlation cutoff separates "0.995, same construct" from "0.99, genuinely different".
-  * ALREADY IN THE OUTPUT. The 75 fr_* substructure flags are carried by the ECFP that ships
-    alongside them, at detection AUROC 1.000.
-  * AN ARITHMETIC IDENTITY. Ring and constitutional counts that are exact sums of others,
-    verified on two chemical spaces and rebuilt by the actual consumer at median R^2 1.0000.
+So detectability was never sound grounds for the drop, and the 62 that returned are kept on
+MECHANISM instead -- they are curated assertions that no structural descriptor derives:
 
-Nothing was removed on a variance ranking. That is the property that made minimal-v1 delete the
+  * metabolic liability. fr_Ndealkylation1/2, fr_para_hydroxylation, fr_allylic_oxid encode
+    "a CYP enzyme attacks here", which is enzymology, not graph structure.
+  * ionization state. fr_quatN is PERMANENTLY charged; the library's only other ionization
+    signal is a computed Gasteiger charge, not a curated one.
+  * toxicophores. fr_nitro, fr_hdrzine, fr_epoxide and the rest are curated toxicity knowledge.
+  * heterocycle identity. Our ring family counts a "6-membered aromatic hetero ring" but never
+    says which heteroatom or where -- pyridine, pyrimidine and pyrazine are one cell to it.
+  * OH type. Aliphatic and aromatic hydroxyls differ by ~4 pKa units; NumHDonors counts both
+    the same.
+
+13 STAYED OUT, on the same mechanistic reasoning applied in the other direction: they duplicate
+counts the library already emits. fr_halogen is [F,Cl,Br,I] against nF/nCl/nBr/nI/nX; fr_Ar_N is
+literally the SMARTS `n`; fr_bicyclic is [R2][R2], which ring perception covers. Also out:
+fr_ArN, fr_C_S, fr_SH, fr_alkyl_halide, fr_nitrile, fr_phos_ester, fr_sulfide, fr_sulfone,
+fr_term_acetylene, fr_unbrch_alkane.
+
+WHAT minimal-v1 WAS AND WHY IT WENT. An ORDERING derived by rank-revealing QR on a
+linear-recoverability criterion: a column could go if the kept ones could rebuild it linearly.
+That describes a consumer that does not exist -- a depth-6 boosted tree cannot split on a linear
+combination of thirty columns -- and when the prediction was tested against a deeper tree and an
+MLP, neither recovered the loss. Withdrawn.
+
+Nothing here was removed on a variance ranking. That is the property that made v1 delete the
 rare tail: pivoted QR ranks by residual orthogonality, so columns firing on <=2% of molecules
-had median rank 71 of 1,267 against 704 for common ones, and a variance-based successor would
-have deleted exactly the chemistry that matters for rare-substructure activity.
+had median rank 71 of 1,267 against 704 for common ones.
 
-⚠️ ONE DECISION IS PROVISIONAL. The 227-column autocorrelation block was dropped on an ablation
-over five PHYSICOCHEMICAL datasets, where removing it cost nothing measurable (mean -0.64%, and
-not one of the five moved by more than its own fold-to-fold spread). Classification, ADME and
-quantum endpoints are untested. This is the only cut in the spec resting on "we could not
-measure it helping" rather than on redundancy, and it should be revisited against the full
-33-dataset grid.
+⚠️ ONE DECISION REMAINS PROVISIONAL. The 227-column autocorrelation block was dropped on an
+ablation over five PHYSICOCHEMICAL datasets. It is now also supported by 13 classification and
+10 ADME sets that had no part in the decision, but the quantum panel is still outstanding.
 """
 
 MINIMAL_COLUMNS = (
@@ -485,6 +505,68 @@ MINIMAL_COLUMNS = (
     'extra_arom_frac',
     'extra_arom_max',
     'fMF',
+    'fr_Al_COO',
+    'fr_Al_OH',
+    'fr_Al_OH_noTert',
+    'fr_Ar_COO',
+    'fr_Ar_OH',
+    'fr_COO2',
+    'fr_C_O',
+    'fr_C_O_noCOO',
+    'fr_HOCCN',
+    'fr_Imine',
+    'fr_NH0',
+    'fr_NH1',
+    'fr_NH2',
+    'fr_N_O',
+    'fr_Ndealkylation1',
+    'fr_Ndealkylation2',
+    'fr_Nhpyrrole',
+    'fr_aldehyde',
+    'fr_alkyl_carbamate',
+    'fr_allylic_oxid',
+    'fr_amidine',
+    'fr_aniline',
+    'fr_aryl_methyl',
+    'fr_azide',
+    'fr_azo',
+    'fr_barbitur',
+    'fr_benzene',
+    'fr_benzodiazepine',
+    'fr_epoxide',
+    'fr_ester',
+    'fr_ether',
+    'fr_furan',
+    'fr_guanido',
+    'fr_hdrzine',
+    'fr_hdrzone',
+    'fr_imidazole',
+    'fr_imide',
+    'fr_ketone',
+    'fr_ketone_Topliss',
+    'fr_lactam',
+    'fr_lactone',
+    'fr_methoxy',
+    'fr_morpholine',
+    'fr_nitro',
+    'fr_nitro_arom',
+    'fr_nitro_arom_nonortho',
+    'fr_oxazole',
+    'fr_oxime',
+    'fr_para_hydroxylation',
+    'fr_phenol',
+    'fr_phenol_noOrthoHbond',
+    'fr_phos_acid',
+    'fr_piperdine',
+    'fr_piperzine',
+    'fr_priamide',
+    'fr_pyridine',
+    'fr_quatN',
+    'fr_sulfonamd',
+    'fr_tetrazole',
+    'fr_thiazole',
+    'fr_thiophene',
+    'fr_urea',
     'frac_in_cycle',
     'fragCpx',
     'het_frac_max',

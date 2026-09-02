@@ -144,7 +144,7 @@ unusable. What survives is 1,269.
 
 ## A reduced column set
 
-`minimal-v2` is a 550-column subset of the 1,269:
+`minimal-v2` is a 612-column subset of the 1,269:
 
 ```python
 X = molhume.featurize(smiles, columns=list(molhume.minimal_columns()))
@@ -156,15 +156,26 @@ them is a variance threshold:
 - **the same physical quantity in different units** — three electronegativity scales, atomic mass
   against atomic number, polarizability against volume. Read from the definitions, because no
   correlation cutoff separates "0.995, same construct" from "0.99, genuinely different";
-- **already carried by the ECFP** that ships alongside — the 75 `fr_*` substructure flags come
-  back from the fingerprint at detection AUROC 1.000;
+- **already carried by the ECFP** that ships alongside, *or* a duplicate of a count we already
+  emit — 13 `fr_*` flags go for the second reason (`fr_halogen` is `[F,Cl,Br,I]` against
+  `nF`/`nCl`/`nBr`/`nI`/`nX`; `fr_Ar_N` is the SMARTS `n`; `fr_bicyclic` is `[R2][R2]`);
 - **an exact arithmetic identity** of columns that remain — ring and constitutional counts that
   are sums of others, verified on two chemical spaces.
 
 All the descriptors you would expect are in it: molecular weight, Crippen logP, TPSA, H-bond
 donors and acceptors, rotatable bonds, ring counts, Kappa shape, chi connectivity, Labute ASA,
-Balaban J, Lipinski. Of RDKit's 217 descriptors, 120 are present; 85 of the 97 absent are `fr_*`
-flags the fingerprint reproduces.
+Balaban J, Lipinski, and 62 of the 75 `fr_*` substructure flags.
+
+⚠️ **The `fr_*` flags were dropped in 0.4.0 and restored in 0.5.0**, and the reason is worth
+knowing. They were dropped because they are detectable from the ECFP at AUROC 1.000 — but that
+figure is conditional on the **corpus**, not just the fingerprint. On a corpus with 5.4% salts
+the same measurement gives a median of 0.9929 and a floor of 0.786; `fr_quatN` reads 0.9995 on
+one corpus and 0.73 on the other. A 2×2 over radius (2 vs 3) and decoder (logistic vs XGBoost)
+moves our median by less than 0.001, so neither explains the gap. Detectability was never sound
+grounds for the drop. The 62 are kept on **mechanism**: they encode curated assertions no
+structural descriptor derives — that a CYP enzyme attacks here, that a nitrogen is permanently
+charged, that a fragment is a toxicophore, which heteroatom sits in a ring, whether a hydroxyl
+is aliphatic or aromatic.
 
 ### What it costs, measured
 

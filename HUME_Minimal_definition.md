@@ -445,7 +445,7 @@ treated as settled.
 | autocorrelation, all remaining (§3.9, **provisional**) | 227 |
 | **total distinct columns dropped** | **719** |
 
-**1,269 → 550, shipped as `minimal-v2`.** The ring 8+ re-binning was dropped from the plan: it
+**1,269 → 612, shipped as `minimal-v2` (0.5.0; it was 550 in 0.4.0 — see §3.10).** The ring 8+ re-binning was dropped from the plan: it
 removes 5 columns and adds 3, and needs new C++ to do it. Information content is kept whole (§3.6): the redundancy there is across radii
 rather than across series, and the block is not worth cutting for 10 columns.
 
@@ -483,6 +483,37 @@ datasets and is now supported by 13 classification and 10 ADME sets that had no 
 decision. ⚠️ **Quantum (4 datasets) is still outstanding** and is the panel where the cut is most
 at risk, since autocorrelation is a distance-resolved property correlation and electronic
 structure is the plausible consumer of one.
+
+### 3.10 fr_* restored: detectability is corpus-conditional
+
+0.4.0 dropped all 75 `fr_*` flags because they are detectable from the ECFP at AUROC 1.000. That
+was measured on our corpus with our fingerprint, and it does not hold generally.
+
+ChemPFN measured the same flags on a corpus with 5.4% salts using an r=2 fingerprint and a
+logistic decoder: **median 0.9929, floor 0.786, 11 of 62 below 0.95.** Two variables differed
+from our setup at once (radius and decoder), so we ran the 2×2 on our own corpus to separate
+them:
+
+| | median | floor | <0.95 |
+| --- | ---: | ---: | ---: |
+| r=2, logistic (their config) | 0.9986 | 0.9490 | 1 |
+| r=2, XGBoost | 0.9984 | 0.7757 | 2 |
+| r=3, logistic | 0.9982 | 0.9440 | 1 |
+| r=3, XGBoost | 0.9980 | 0.7858 | 2 |
+
+**Neither variable explains the gap** — the median moves by less than 0.001 across all four.
+`fr_quatN` reads **0.9995 here and 0.73 there**, same flag, same fingerprint class. The
+difference is the CORPUS: quaternary nitrogen is a salt-former, and one corpus has salts.
+
+So detectability was never sound grounds for dropping the family, and the 62 restored are kept
+on mechanism — curated assertions no structural descriptor derives. 13 stay out because they
+duplicate counts already emitted, which is a mechanistic argument in the other direction.
+
+⚠️ **The general lesson is the one that retired v1.** Both times a criterion was adopted that
+described a decoding rather than a property: v1 assumed a consumer that inverts linear
+combinations, and 0.4.0 assumed a consumer that decodes hashed fingerprint bits. Neither
+consumer exists. A curated, named, cheap feature carries identity, count and provenance; a
+fingerprint bit is an anonymous hash shared with everything that collides into it.
 
 ## 5. Open questions
 

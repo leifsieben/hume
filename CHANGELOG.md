@@ -1,5 +1,35 @@
 # Changelog
 
+## 0.5.0 — 2026-09-02
+
+**`minimal-v2` now has 612 columns, up from 550 in 0.4.0.** ⚠️ The spec *name* did not change,
+so **the package version is the only thing distinguishing the two sets** — if you cached
+features under 0.4.0, check the installed version. Editing a published spec in place is not the
+normal practice here (specs are added, not edited); it was a deliberate call taken while 0.4.0
+was about an hour old with no pinned consumers.
+
+**62 of the 75 `fr_*` substructure flags are restored.** They were dropped in 0.4.0 because they
+come back from the ECFP at detection AUROC 1.000. That figure turned out to be conditional on
+the **corpus**: on a 5.4%-salt corpus the same measurement gives median 0.9929, floor 0.786, and
+`fr_quatN` reads 0.9995 on one corpus against 0.73 on the other. A 2×2 over radius (2 vs 3) and
+decoder (logistic vs XGBoost) moves our median by under 0.001 — neither explains the gap, so
+detectability was not sound grounds for the drop.
+
+They return on **mechanism** instead: curated assertions that no structural descriptor derives —
+metabolic liability (`fr_Ndealkylation1/2`, `fr_para_hydroxylation`), permanent ionization
+(`fr_quatN`), toxicophores (`fr_nitro`, `fr_hdrzine`), heterocycle identity (our ring counts say
+"6-membered aromatic hetero ring" but never which heteroatom), and hydroxyl type (`NumHDonors`
+counts aliphatic and aromatic OH identically, though they differ by ~4 pKa units).
+
+**13 stay out**, on the same mechanistic reasoning applied the other way: they duplicate counts
+already emitted. `fr_halogen` is `[F,Cl,Br,I]` against `nF`/`nCl`/`nBr`/`nI`/`nX`; `fr_Ar_N` is
+the SMARTS `n`; `fr_bicyclic` is `[R2][R2]`. Also out: `fr_ArN`, `fr_C_S`, `fr_SH`,
+`fr_alkyl_halide`, `fr_nitrile`, `fr_phos_ester`, `fr_sulfide`, `fr_sulfone`,
+`fr_term_acetylene`, `fr_unbrch_alkane`.
+
+Reported by the ChemPFN project, whose fingerprint and corpus differ from ours — the kind of
+conditionality a single-corpus measurement cannot reveal.
+
 ## 0.4.0 — 2026-09-02
 
 **Breaking: `minimal-v1` is withdrawn and its API is removed.**
