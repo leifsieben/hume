@@ -180,17 +180,27 @@ ARMS = {
     # so an old CSV still resolves its labels. They remain in ARM_ORDER, which is harmless --
     # `order()` only positions arms that are actually passed to it -- but a figure must not draw
     # `hume` and `hume_core_custom` together, because they share a shade.
-    "hume": dict(label="HUME", family="hume", color=SHADES["hume"][0]),
+    # NAMED HUME_full, NOT "HUME" (Leif 2026-09-02). Three HUME arms are drawn together in
+    # Figures C and D and one of them being the bare project name made the other two read as
+    # variants of it rather than as three widths of one specification.
+    "hume": dict(label="HUME_full", family="hume", color=SHADES["hume"][0]),
     # THE ABLATION PAIR. `hume_no_new` is HUME with the 185 columns wired after the
     # deduplication masked out -- counts_ext, estate_ext, eta, spectral and misc_ext, minus the
     # 43 the cost triage dropped. Same block, same model, same folds; the only difference is
     # those columns, so the gap between the two IS what they are worth. Lighter shade of the
     # same family, because it is the same method and not a competitor.
-    "hume_no_new": dict(label="HUME no-new", family="hume", color=SHADES["hume"][1]),
-    # The 800-column label-free reduced spec. Same featurisation cost as HUME by construction --
-    # it selects what is returned, not what is computed -- so it sits on HUME's x position and
-    # the panel reads as "what does dropping 37% of the columns cost".
-    "hume_minimal": dict(label="HUME minimal", family="hume", color=SHADES["hume"][2]),
+    "hume_no_new": dict(label="HUME_no_new", family="hume", color=SHADES["hume"][1]),
+    # The 622-column reduced spec (minimal-v2).
+    #
+    # ⚠️ ITS x POSITION IS NO LONGER HUME_full's, AND THAT IS A REAL CHANGE. Until mol-hume
+    # 0.7.0 the column selection chose what was RETURNED and not what was COMPUTED, so all three
+    # HUME arms sat on one point by construction and the panel read as "what does dropping the
+    # columns cost, for free". Since 0.7.0 the selection is a compute plan -- a descriptor family
+    # none of whose columns are selected is not calculated -- so HUME_minimal is genuinely
+    # cheaper and moves LEFT. HUME_no_new does not move: its 1,109 columns still span every one
+    # of the nineteen families, so there is nothing for the plan to skip. Any figure that still
+    # draws the three at one x is reading a pre-0.7.0 cost file.
+    "hume_minimal": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][2]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Gray, like every other control in the set.
@@ -338,7 +348,7 @@ SHORT_LABEL = {
     "ecfp": "ECFP", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
     "desc": "descriptors", "ecfp_rdkit_desc": "ECFP + RDKit",
     "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
-    "hume": "HUME", "hume_no_new": "HUME no-new", "hume_minimal": "HUME minimal",
+    "hume": "HUME_full", "hume_no_new": "HUME_no_new", "hume_minimal": "HUME_minimal",
     "minimol": "MiniMol",
     "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",

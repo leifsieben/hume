@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.8.0 — 2026-09-02
+
+**`qed` is emittable, appended last, and in none of the three sets.**
+
+```python
+molhume.featurize(smiles, columns=["TPSA", "qed"])                   # by name
+molhume.featurize(smiles, columns=molhume.column_set("full", extra=["qed"]))   # full + qed
+```
+
+`ALL_COLUMNS` is 1,270. `column_set("full")` is still **1,269** — `full` means every descriptor,
+not every possible expense. `qed` costs 69.3 us/mol, the most expensive column in the suite (116
+structural-alert subgraph searches), and it is a drug-likeness *score*: a weighted geometric mean
+of eight properties this matrix already carries as columns in their own right. Nobody should pay
+for it without saying so. `molhume.OPTIONAL_COLUMNS` names the columns held out this way.
+
+**It is appended, so no column index moved.** `qed` has a slot in `constit.h` that the
+deduplication skipped, and naming it in place would have shifted every column above it. It is
+row slot `N_ROW_COLS` and emitted column 1,269 — both last — and `column_set("full")` is still
+`ALL_COLUMNS[:1269]`, which the test suite asserts.
+
+Values match `rdkit.Chem.QED.qed` to within 1 ULP (max observed 5.6e-17 — a weighted geometric
+mean of eight exp/log terms associates differently in C++ than in Python, and pretending
+otherwise would make the test a tripwire for the optimizer rather than for the descriptor).
+Uncomputed, it is NaN, never zero: a zero there would be a finite, plausible drug-likeness score
+for a molecule nobody scored.
+
+### The 1,269 audited
+
+Asked whether anything is emitted that should not be, on 477,115 molecules across the 33
+downstream datasets:
+
+| check | result |
+| --- | --- |
+| duplicate NAMES | 0 (`DUPLICATE_COLUMNS` is empty) |
+| bit-identical column pairs | 0 |
+| all-NaN columns | 0 |
+| constant columns | 0 |
+
+Two pairs correlate above 0.99999 and both are genuinely two columns: `HeavyAtomCount` vs
+`nHeavyAtom` differ on 1,126 rows (0.236%), and `Diameter` vs `Radius` differ on 98.1% of rows —
+r = 1.000 to seven places is graph radius tracking graph diameter, not a duplicate.
+
+Seven columns would fail the screening rule stated in the README (NaN more than half the time,
+or one value for 99.9% of molecules) **on this corpus**: `MAXssNH`, `MINssNH`, `MDEN-22` for
+NaN, and `TATS2`, `TATS4`, `n12FaRing`, `fr_benzodiazepine` for constancy. The rule was applied
+to the deduplication corpus, not this one, and which columns sit at the margin is a property of
+the corpus. Flagged, not acted on.
+
 ## 0.7.0 — 2026-09-02
 
 **`minimal` is now the default, and `columns` decides what is COMPUTED rather than only what is

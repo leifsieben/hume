@@ -70,7 +70,8 @@ def test_family_spans_tile_the_emitted_row():
 
 
 @pytest.mark.parametrize("family", sorted(
-    f for f, (a, b) in molhume.FAMILY_OFFSETS.items() if b > a))
+    f for f, (a, b) in molhume.FAMILY_OFFSETS.items()
+    if b > a and f not in molhume.OPTIONAL_COLUMNS))
 def test_family_alone_matches_ungated(family, gated):
     """Each family, computed with only its own dependencies, must equal the full run."""
     run, full, n = gated
@@ -183,3 +184,28 @@ def test_unwanted_spectral_slots_are_nan_or_right_never_wrong(gated):
         "BCUTc-1l used to come back for free with BCUTc-1h, because one eigensolve returns both "
         "extremes. If it no longer does, the Burden loop was restructured and the cost model in "
         "the 0.7.0 changelog needs re-measuring.")
+
+
+def test_qed_is_computed_only_when_named(gated):
+    """It is the most expensive column in the suite, so nobody pays for it by accident."""
+    run, full, n = gated
+    for cols, want in (("full", ("AvgIpc",)), ("minimal", ("AvgIpc",)), (["TPSA"], ()),
+                       (["qed"], ("qed",)), (["TPSA", "qed", "AvgIpc"], ("AvgIpc", "qed"))):
+        idx, _ = molhume._resolve_columns(cols)
+        assert molhume._compute_plan(idx)[1] == want, f"columns={cols!r}"
+
+
+def test_qed_needs_constit_and_frag_in_the_plan():
+    """`qed` is its own pseudo-family but the extension computes it inside constit."""
+    idx, _ = molhume._resolve_columns(["qed"])
+    fams, opt, _ = molhume._compute_plan(idx)
+    assert "qed" not in fams, "family_mask() in bindings.cpp would throw on 'qed'"
+    assert {"constit", "frag"} <= set(fams)
+    assert opt == ("qed",)
+
+
+def test_qed_is_nan_rather_than_zero_when_not_asked_for(gated):
+    """A zero here would be a finite, plausible drug-likeness score for a molecule nobody scored."""
+    run, full, n = gated
+    assert np.all(np.isnan(full[:, molhume.ALL_COLUMNS.index("qed")])), (
+        "the ungated fixture asks for AvgIpc only, so qed must come back NaN")

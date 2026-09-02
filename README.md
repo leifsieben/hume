@@ -47,6 +47,20 @@ molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # exactly th
 `molhume.column_set(name)` returns the names in any of the three sets, and `molhume.ALL_COLUMNS`
 lists every name a manual selection can use.
 
+**One column is in `ALL_COLUMNS` and in none of the three sets: `qed`.** It costs 69.3 us/mol on
+its own — the most expensive column here, 116 structural-alert subgraph searches — and it is a
+drug-likeness *score*, a weighted geometric mean of eight properties this matrix already carries
+as columns in their own right. `full` means every descriptor, not every possible expense, so you
+opt in:
+
+```python
+molhume.featurize(smiles, columns=molhume.column_set("full", extra=["qed"]))
+molhume.featurize(smiles, columns=["TPSA", "qed"])
+```
+
+`molhume.OPTIONAL_COLUMNS` names them. It is appended after every other column, so opting in
+moves nothing: `column_set("full")` is still `ALL_COLUMNS[:1269]`.
+
 **Since 0.7.0 this decides what is COMPUTED, not just what is returned.** A descriptor family
 none of whose columns you asked for is not calculated at all, and neither are the individual
 eigensolves of the `spectral` family, which is the most expensive of the nineteen. The output is

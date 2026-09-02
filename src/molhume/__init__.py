@@ -31,7 +31,7 @@ from ._extract import Batch, extract, extract_pickles
 __all__ = [
     # the public API
     "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
-    "column_set", "COLUMN_SETS", "minimal_columns",
+    "column_set", "COLUMN_SETS", "OPTIONAL_COLUMNS", "minimal_columns",
     # lower level: the (fp, X, names) form, and the 178-column block on its own
     "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
     "COLUMNS", "N_COLS", "FAMILY_OFFSETS", "RAW_FAMILY_OFFSETS",
@@ -52,7 +52,27 @@ assert _core.N_COLS == N_COLS, (
 # two chances to disagree, and the assertion below would only catch a length mismatch, not a
 # misalignment.
 _ALL_ROW_NAMES: tuple[str, ...] = COLUMNS + tuple(_core.all_column_names_tail_full())
-ALL_COLUMNS: tuple[str, ...] = tuple(_ALL_ROW_NAMES[i] for i in _core.EMIT_KEEP)
+#: Emittable columns that are not part of the deduplicated row and are APPENDED after it. Today
+#: that is `qed` alone. They are last on purpose: appending costs no existing column its index,
+#: where naming `qed` in place would have shifted every column above it. See OFF_QED in
+#: bindings.cpp, and OPTIONAL_COLUMNS below for why it is in no named set.
+APPENDED_COLUMNS: tuple[str, ...] = tuple(_core.APPENDED_COLUMNS)
+ALL_COLUMNS: tuple[str, ...] = (tuple(_ALL_ROW_NAMES[i] for i in _core.EMIT_KEEP)
+                                + APPENDED_COLUMNS)
+
+#: COLUMNS YOU HAVE TO ASK FOR BY NAME. They are in ALL_COLUMNS and in none of the three sets,
+#: `full` included, because each costs more than most entire families and none is a descriptor
+#: the matrix is incomplete without.
+#:
+#:     `qed`   69.3 us/mol, the most expensive column in the suite: 116 structural-alert
+#:             subgraph searches. It is also a drug-likeness SCORE -- a weighted geometric mean
+#:             of eight properties this matrix already carries as columns in their own right --
+#:             so for an encoding it is a nonlinear function of features the model already has.
+#:
+#: `full` means every descriptor, not every possible expense::
+#:
+#:     molhume.featurize(smiles, columns=molhume.column_set("full", extra=["qed"]))
+OPTIONAL_COLUMNS: tuple[str, ...] = APPENDED_COLUMNS
 
 # NAMED BUT NOT YET COMPUTED. A column here appears in ALL_COLUMNS and in the output array and
 # is NaN on every molecule, because it is blocked on a boundary field that does not exist yet.
@@ -150,6 +170,14 @@ def _emitted_family_spans():
     for j, (start, name) in enumerate(bounds):
         stop = bounds[j + 1][0] if j + 1 < len(bounds) else raw.get("end", len(_ALL_ROW_NAMES))
         spans[name] = (before[start], before[min(stop, len(_ALL_ROW_NAMES))])
+    # The appended columns sit after every family and belong to none of them, so they get spans
+    # of their own -- one per column, named for the column. Without this they would be the only
+    # emitted columns no family covers, and _COLUMN_FAMILY (which is what turns a selection into
+    # a compute plan) is built by looking each column's family up.
+    at = n
+    for name in APPENDED_COLUMNS:
+        spans[name] = (at, at + 1)
+        at += 1
     return spans
 
 
@@ -443,7 +471,7 @@ _COLUMN_FAMILY: tuple = tuple(
 COLUMN_SETS: tuple[str, ...] = ("minimal", "full_no_new", "full")
 
 
-def column_set(name: str) -> tuple:
+def column_set(name: str, *, extra=()) -> tuple:
     """The names in one of the three predefined sets, in ALL_COLUMNS order.
 
         molhume.featurize(smiles, columns="minimal")     # the default
@@ -459,22 +487,42 @@ def column_set(name: str) -> tuple:
         descriptors that are ours. This is the arm to use when the question is "what do the new
         descriptors add", and it is the only honest baseline for that comparison.
     ``full``
-        1,269 columns. Every column this build emits.
+        1,269 columns. Every descriptor -- but NOT `qed`, which is in `OPTIONAL_COLUMNS` and
+        costs 69.3 us/mol on its own. `full` means every descriptor, not every possible expense.
+
+    `extra` appends optional columns to whichever set you picked::
+
+        molhume.featurize(smiles, columns=molhume.column_set("full", extra=["qed"]))
+
+    It is the only thing `extra` is for; anything else belongs in a plain list of names.
     """
+    if extra:
+        bad = [c for c in extra if c not in OPTIONAL_COLUMNS]
+        if bad:
+            raise ValueError(
+                f"column_set(extra={list(extra)!r}) names {len(bad)} column(s) that are not "
+                f"optional: {bad[:6]}. `extra` exists only to opt into {list(OPTIONAL_COLUMNS)}, "
+                "which are the columns held out of every set for cost. To add an ordinary "
+                "column to a set, build the list yourself: "
+                "list(molhume.column_set('minimal')) + ['TPSA'].")
+        base = column_set(name)
+        seen = set(base)
+        return base + tuple(c for c in extra if c not in seen)
     if name == "full":
-        return ALL_COLUMNS
+        return tuple(c for c in ALL_COLUMNS if c not in set(OPTIONAL_COLUMNS))
     if name == "minimal":
         from . import _minimal
         return _minimal.MINIMAL_COLUMNS
     if name == "full_no_new":
-        drop = set(_additional_names())
+        drop = set(_additional_names()) | set(OPTIONAL_COLUMNS)
         return tuple(c for c in ALL_COLUMNS if c not in drop)
     raise ValueError(
         f"column_set({name!r}) is not a set this build carries. The three are 'minimal' "
         f"({len(ALL_COLUMNS)} -> 622 columns, the default), 'full_no_new' (1,109 -- everything "
         "RDKit or Mordred already defines, without the 160 that are ours) and 'full' (all "
-        "1,269). For anything else, pass a list of column names; molhume.ALL_COLUMNS lists "
-        "every available name.")
+        "1,269). None of them includes `qed`, which is opt-in for cost: "
+        "column_set('full', extra=['qed']). For anything else, pass a list of column names; "
+        "molhume.ALL_COLUMNS lists every available name.")
 
 
 def _resolve_columns(columns):
@@ -485,8 +533,6 @@ def _resolve_columns(columns):
     """
     if isinstance(columns, str):
         names = column_set(columns)
-        if names is ALL_COLUMNS:
-            return None, ALL_COLUMNS
         pos = {c: i for i, c in enumerate(ALL_COLUMNS)}
         return np.asarray([pos[c] for c in names], dtype=np.intp), tuple(names)
 
@@ -523,11 +569,12 @@ def _resolve_columns(columns):
     missing = [c for c in want if c not in pos]
     if missing:
         hint = ""
-        if any(m in ("qed", "Ipc", "Log2Ipc") for m in missing):
-            hint = (" `qed`, `Ipc` and `Log2Ipc` are computed by the extension but are NOT among "
-                    "the emitted columns -- the deduplication dropped their slots, and they have "
-                    "no name in the output row. Asking for them was silently impossible before "
-                    "0.7.0; now it is an error.")
+        if any(m in ("Ipc", "Log2Ipc") for m in missing):
+            hint = (" `Ipc` and `Log2Ipc` are computed by the extension but are NOT among the "
+                    "emitted columns -- the deduplication dropped their slots, and they have no "
+                    "name in the output row. (`qed` was in the same position until 0.8.0, which "
+                    "appended it; it is emittable now, by name or via "
+                    "column_set(..., extra=['qed']).)")
         raise ValueError(
             f"columns names {len(missing)} descriptor(s) this build does not emit: "
             f"{missing[:8]}{' ...' if len(missing) > 8 else ''}.{hint} "
@@ -553,13 +600,21 @@ def _compute_plan(idx):
     if idx is None:
         return None, ("AvgIpc",), None
     fams = sorted({_COLUMN_FAMILY[i] for i in idx.tolist()})
+    # `qed` is its own pseudo-family in FAMILY_OFFSETS -- it belongs to none of the nineteen --
+    # but the extension computes it inside `constit`, off the fragment matcher, and knows it by
+    # the OPT_QED switch rather than by a family name. Translate here: family_mask() would
+    # throw on "qed", and constit forces vsa / ringcount / frag on for the matcher.
+    want_qed = "qed" in fams
+    if want_qed:
+        fams = sorted(set(fams) - {"qed"} | {"constit", "frag"})
     avgipc = ALL_COLUMNS.index("AvgIpc")
     # `select` is the per-column mask. Only the spectral family reads it -- see the note in
     # bindings.cpp -- and an uncomputed spectral slot is NaN rather than zero, which is what
     # makes a per-column plan safe there and a per-family one the limit everywhere else.
     select = np.zeros(len(ALL_COLUMNS), dtype=bool)
     select[idx] = True
-    return fams, (("AvgIpc",) if avgipc in idx else ()), select
+    opt = (("AvgIpc",) if avgipc in idx else ()) + (("qed",) if want_qed else ())
+    return fams, opt, select
 
 
 def feature_names(*, columns="minimal", fingerprint: bool = True,

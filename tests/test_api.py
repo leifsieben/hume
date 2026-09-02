@@ -102,14 +102,14 @@ def test_all_bad_input_still_returns_an_aligned_block():
     with pytest.warns(UserWarning):
         X = molhume.featurize([BAD, BAD], standardize="none", fingerprint=False,
                               columns="full")
-    assert X.shape == (2, len(molhume.ALL_COLUMNS)) and np.all(np.isnan(X))
+    assert X.shape == (2, len(molhume.column_set("full"))) and np.all(np.isnan(X))
 
 
 def test_empty_input():
+    n = len(molhume.column_set("full"))
     X = molhume.featurize([], standardize="none", fingerprint=False, columns="full")
-    assert X.shape == (0, len(molhume.ALL_COLUMNS))
-    assert molhume.featurize([], standardize="none", columns="full").shape == (
-        0, len(molhume.ALL_COLUMNS) + 2048)
+    assert X.shape == (0, n)
+    assert molhume.featurize([], standardize="none", columns="full").shape == (0, n + 2048)
 
 
 # ---------------------------------------------------------------- columns
@@ -149,7 +149,9 @@ def test_the_three_sets_are_nested_and_the_sizes_are_the_documented_ones():
     mn, nn, full = (molhume.column_set(k) for k in ("minimal", "full_no_new", "full"))
     assert (len(mn), len(nn), len(full)) == (622, 1109, 1269)
     assert set(mn) <= set(full) and set(nn) <= set(full)
-    assert full is molhume.ALL_COLUMNS
+    # ALL_COLUMNS is one WIDER than `full`: it also carries the opt-in `qed`.
+    assert set(full) < set(molhume.ALL_COLUMNS)
+    assert set(molhume.ALL_COLUMNS) - set(full) == set(molhume.OPTIONAL_COLUMNS)
 
 
 def test_full_no_new_removes_exactly_our_own_columns():
@@ -194,10 +196,10 @@ def test_removed_keywords_say_what_replaced_them(kw):
         molhume.featurize(SMIS, standardize="none", **{kw: False})
 
 
-def test_qed_is_named_as_unreachable_rather_than_just_unknown():
-    """It is computable and not emitted, which is worth saying out loud -- see the 0.7.0 notes."""
+def test_ipc_is_named_as_unreachable_rather_than_just_unknown():
+    """Computable, not emitted, and worth saying so -- qed was here too until 0.8.0 appended it."""
     with pytest.raises(ValueError, match="deduplication dropped their slots"):
-        molhume.featurize(SMIS, standardize="none", columns=["TPSA", "qed"])
+        molhume.featurize(SMIS, standardize="none", columns=["TPSA", "Ipc"])
 
 
 # ---------------------------------------------------------------- fingerprint
@@ -241,9 +243,10 @@ def test_the_alias_package_is_the_same_module():
 def test_all_columns_is_unique_and_matches_the_output_width():
     cols = molhume.ALL_COLUMNS
     assert len(set(cols)) == len(cols), "ALL_COLUMNS contains a duplicate name"
-    X = _quiet(["CCO"], standardize="none", fingerprint=False, columns="full")
-    assert X.shape[1] == len(cols) == len(
-        molhume.feature_names(fingerprint=False, columns="full"))
+    every = list(molhume.column_set("full", extra=molhume.OPTIONAL_COLUMNS))
+    X = _quiet(["CCO"], standardize="none", fingerprint=False, columns=every)
+    assert X.shape[1] == len(cols) == len(every) == len(
+        molhume.feature_names(fingerprint=False, columns=every))
 
 
 def test_featurize_is_exported():
@@ -360,3 +363,51 @@ def test_the_core_descriptors_survive_the_spec():
                      "fr_Ndealkylation1", "fr_quatN", "fr_nitro", "fr_pyridine", "fr_Ar_OH",
                      "fr_sulfone", "fr_SH", "fr_nitrile"):
         assert expected in c, f"{expected} is missing from minimal-v2"
+
+
+# ------------------------------------------------------------------- qed, the opt-in column
+
+def test_qed_is_emittable_by_name_and_is_last():
+    assert molhume.ALL_COLUMNS[-1] == "qed", "qed is appended, so nothing else moves"
+    assert molhume.OPTIONAL_COLUMNS == ("qed",)
+
+
+@pytest.mark.parametrize("name", ["minimal", "full_no_new", "full"])
+def test_qed_is_in_no_named_set(name):
+    """`full` means every descriptor, not every possible expense -- qed is 69.3 us/mol."""
+    assert "qed" not in molhume.column_set(name)
+
+
+def test_extra_opts_qed_in():
+    full = molhume.column_set("full")
+    assert molhume.column_set("full", extra=["qed"]) == full + ("qed",)
+    assert len(molhume.column_set("minimal", extra=["qed"])) == 622 + 1
+
+
+def test_extra_refuses_an_ordinary_column():
+    with pytest.raises(ValueError, match="not optional"):
+        molhume.column_set("minimal", extra=["TPSA"])
+
+
+def test_qed_matches_rdkit_exactly():
+    from rdkit import Chem
+    from rdkit.Chem import QED
+    smis = ["CC(=O)Oc1ccccc1C(=O)O", "CCO", "c1ccccc1N(C)C", "CN1C=NC2=C1C(=O)N(C)C(=O)N2C",
+            "OC(=O)c1ccccc1O", "CCN(CC)CCNC(=O)c1ccc(N)cc1", "Clc1ccccc1C(=O)Nc1ccccc1"]
+    got = molhume.featurize(smis, columns=["qed"], standardize="none", fingerprint=False)[:, 0]
+    want = np.array([QED.qed(Chem.MolFromSmiles(s)) for s in smis])
+    # 1 ULP, not bit-exact. QED is a weighted geometric mean -- eight exp/log terms -- and the
+    # C++ associates them in its own order, so the last bit is not reproducible against Python's
+    # and pretending otherwise would make this test a tripwire for the optimiser rather than for
+    # the descriptor. Measured max |delta| over these seven: 5.6e-17.
+    assert np.allclose(got, want, rtol=0, atol=1e-15), (
+        f"qed differs from rdkit.Chem.QED.qed by more than 1 ULP: "
+        f"max |delta| {np.max(np.abs(got - want)):.3e}")
+
+
+def test_appending_qed_moved_no_other_column():
+    """The whole reason it is appended. Every other column keeps the index it had in 0.7.0."""
+    full = molhume.column_set("full")
+    assert full == molhume.ALL_COLUMNS[:len(full)], (
+        "appending qed was supposed to leave the 1,269 in place and it did not")
+    assert len(full) == 1269

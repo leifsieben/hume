@@ -529,8 +529,22 @@ enum {
   OFF_ETA        = OFF_ESTATE_EXT + N_ESTATE_EXT_COLS,
   OFF_SPECTRAL   = OFF_ETA + N_ETA_COLS,
   OFF_MISC       = OFF_SPECTRAL + N_SPECTRAL_COLS,
-  N_ROW_COLS     = OFF_MISC + N_MISC_COLS,   // every column COMPUTED
-  N_ALL_COLS     = N_EMIT_COLS,              // every column EMITTED (see emit_filter.h)
+  N_ROW_COLS     = OFF_MISC + N_MISC_COLS,   // every column COMPUTED by the wired families
+  // `qed` IS APPENDED AFTER EVERYTHING, AND THAT IS WHY IT COSTS NO INDEX.
+  //
+  // It has a slot in constit.h (constit::C_QED) that `keep_constit()` skips, so it has never
+  // been part of the 1,539-column row and has no name in it. Giving it one in place would shift
+  // every column index above it -- a schema change for one column. Appending it instead moves
+  // nothing: it is row slot N_ROW_COLS and emitted column N_EMIT_COLS, both LAST.
+  //
+  // IT IS NOT IN ANY OF THE THREE NAMED COLUMN SETS, `full` INCLUDED. It costs 69.3 us/mol --
+  // the most expensive column in the suite, 116 structural-alert subgraph searches -- and it is
+  // a drug-likeness SCORE, a weighted geometric mean of eight properties this matrix already
+  // carries as columns in their own right. A caller who wants it names it; nobody pays for it
+  // by default, and `full` means "every descriptor", not "every possible expense".
+  OFF_QED        = N_ROW_COLS,
+  N_ROW_COLS_ALL = N_ROW_COLS + 1,           // the scratch row, `qed` included
+  N_ALL_COLS     = N_EMIT_COLS + 1,          // every column EMITTABLE (see emit_filter.h + qed)
 };
 
 // B_CODE -> the bond-order number `fragmatch` compares against, which is RDKit's Bond::BondType
@@ -776,6 +790,10 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   const int *bi = BI + (std::ptrdiff_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
   for (int c = 0; c < N_ROW_COLS; c++) out[c] = 0.0;
+  // NaN, NOT ZERO, and not with the others: `qed` is off unless asked for, and constit.h's
+  // qedScore() already returns NaN when Inputs::qedAlerts < 0. A zero would be a finite,
+  // plausible drug-likeness score for a molecule nobody scored.
+  out[OFF_QED] = std::nan("");
 
   // ---- the 182 blocks, and the EState index the S* columns need ----
   fill_hume_mol(W.m, W.c, W.cur, AI, AD, BI, BS, BD, a0, b0, n, nb, chg_ok);
@@ -1106,6 +1124,9 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     W.buf_constit.assign(constit::N_COLS, std::nan(""));
     constit::compute(W.km, in, W.buf_constit.data(), out[OFF_VSA + vsabin::C_TPSA]);
     for (int c = 0; c < KEEP_CONSTIT_N; c++) out[OFF_CONSTIT + c] = W.buf_constit[keep_constit(c)];
+    // The slot keep_constit() skips, written to the appended column instead of dropped. It is
+    // already NaN unless OPT_QED asked for the 116 alerts; this copies whichever it is.
+    out[OFF_QED] = W.buf_constit[constit::C_QED];
   }
 
   // ---- aliases: a name, not a computation ----
@@ -1351,10 +1372,11 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   const bool *spec_want = nullptr;
   if (!select.is_none()) {
     auto sel = py::cast<py::array_t<bool, py::array::c_style | py::array::forcecast>>(select);
-    if (sel.ndim() != 1 || sel.shape(0) != (py::ssize_t)N_EMIT_COLS)
+    if (sel.ndim() != 1 || sel.shape(0) != (py::ssize_t)N_ALL_COLS)
       throw std::invalid_argument(
           "hume._core.all_from_pickles: `select` must be a 1-D boolean array of length " +
-          std::to_string((int)N_EMIT_COLS) + " (one entry per emitted column), got shape with " +
+          std::to_string((int)N_ALL_COLS) + " (one entry per emittable column, `qed` last), "
+          "got shape with " +
           std::to_string((long)(sel.ndim() ? sel.shape(0) : 0)) + " entries in " +
           std::to_string((int)sel.ndim()) + " dimension(s).");
     const bool *sp = sel.data();
@@ -1430,7 +1452,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
       try {
       AllWork W;
       // one full-width scratch row per thread; the output slice holds only the emitted columns
-      std::vector<double> row((std::size_t)N_ROW_COLS);
+      std::vector<double> row((std::size_t)N_ROW_COLS_ALL);
       for (std::ptrdiff_t k = lo; k < hi; k++) {
         const int r0 = RM[k], nr = RM[k + 1] - r0;
         all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
@@ -1442,6 +1464,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                 row.data());
         double *dst = O + (std::ptrdiff_t)k * N_ALL_COLS;
         for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
+        dst[N_EMIT_COLS] = row[OFF_QED];   // appended last; see the note on OFF_QED
       }
       } catch (...) {
         std::lock_guard<std::mutex> g(errmu);
@@ -1620,6 +1643,10 @@ PYBIND11_MODULE(_core, mod) {
   // more importantly, for what is not: Autocorrelation's tenth weight `Z` (52 columns) and the
   // three ill-posed InformationContent columns.
   mod.attr("N_ALL_COLS") = (int)N_ALL_COLS;
+  // Emitted columns that are NOT in the deduplicated row and are appended after it. Exported so
+  // src/molhume/__init__.py builds ALL_COLUMNS from the same two pieces the C++ writes, rather
+  // than hard-coding a name that would then be free to drift from the value beside it.
+  mod.attr("APPENDED_COLUMNS") = py::make_tuple("qed");
   mod.attr("N_ROW_COLS") = (int)N_ROW_COLS;
   // THE EMIT TABLE, EXPOSED, so python filters the BLOCK names with the same list the C++
   // filters the values with. src/hume/_columns.py names all HUME_NBLOCK_COLS block columns and

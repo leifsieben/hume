@@ -67,9 +67,13 @@ SECONDS_PER_HOUR = 3600.0
 # width costs. Falls back to the last measured value only if hume is not importable, and says so.
 try:
     import molhume as _hume
-    _HUME_NDESC = len(_hume.ALL_COLUMNS)
+    # column_set("full"), NOT len(ALL_COLUMNS): since 0.8.0 the latter also counts `qed`, which
+    # is opt-in, in no named set, and not computed by any arm on this plate.
+    _HUME_NDESC = len(_hume.column_set("full"))
+    _HUME_NDESC_MIN = len(_hume.column_set("minimal"))
+    _HUME_NDESC_NN = len(_hume.column_set("full_no_new"))
 except Exception:
-    _HUME_NDESC = "1266?"
+    _HUME_NDESC, _HUME_NDESC_MIN, _HUME_NDESC_NN = "1269?", "622?", "1109?"
 
 # SHORT NAMES (Leif). The parenthetical dimensions used to live here -- "(2048x6)", "(3M)",
 # "(300x3)" -- and they cost a third of the axis width to say something no comparison on this
@@ -77,7 +81,12 @@ except Exception:
 LABEL = {
     "ecfp_r2":   "ECFP",
     "descriptastorus": "descriptastorus",
-    "hume":      "HUME",
+    # THE THREE HUME WIDTHS. They are three arms rather than one because since mol-hume 0.7.0
+    # the column selection is a compute plan, so they have three different costs -- before that
+    # they were one point and drawing three would have been three markers on top of each other.
+    "hume":         "HUME_full",
+    "hume_minimal": "HUME_minimal",
+    "hume_no_new":  "HUME_no_new",
     "chemprop":  "Chemprop",
     "chemberta": "ChemBERTa",
     "chemeleon": "CheMeleon",
@@ -90,6 +99,7 @@ LABEL = {
 # used to point at `ecfp_mordred_desc`, a DIFFERENT arm, and the same measurement was therefore
 # drawn in two colors across two figures.
 ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
+          "hume_minimal": "hume_minimal", "hume_no_new": "hume_no_new",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
           "mordred": "ecfp_all_desc",
           "rdkit_desc": "ecfp_rdkit_desc", "mordred_desc": "ecfp_mordred_desc"}
@@ -97,7 +107,8 @@ ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
 # Bar order, matching arms.py's ARM_ORDER: cheapest classical first, then HUME, then graph, then
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
-ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred", "hume",
+ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
+         "hume_minimal", "hume_no_new", "hume",
          "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
@@ -133,7 +144,8 @@ def native(runs, arm):
 HATCH = "///"
 
 
-SHORT = {"ecfp_r2": "ECFP", "hume": "HUME", "chemprop": "chemprop",
+SHORT = {"ecfp_r2": "ECFP", "hume": "HUME_full", "hume_minimal": "HUME_minimal",
+         "hume_no_new": "HUME_no_new", "chemprop": "chemprop",
          "chemberta": "ChemBERTa", "chemeleon": "CheMeleon",
          "rdkit_desc": "+RDKit", "mordred_desc": "+Mordred", "mordred": "+all desc"}
 BUDGET_LABEL = {"cpu": "16 vCPU", "gpu": "1 GPU + 4 vCPU"}
