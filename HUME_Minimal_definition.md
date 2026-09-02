@@ -336,15 +336,27 @@ characteristic polynomial rather than an orbit entropy, a genuinely different op
 
 ## 4. Running total
 
-| stage | columns |
+| decision | columns removed |
 | --- | ---: |
-| emitted today | 1,269 |
-| after the autocorrelation weight cut (§3.1) | 1,077 |
-| after dropping `fr_*` (§3.2) | **1,002** |
+| `fr_*` substructure (§3.2) | 75 |
+| autocorrelation: 5 element weights (§3.1) | 192 |
+| autocorrelation: `MATS` (§3.1b) | 48 |
+| autocorrelation: `ATS`/`AATS` odd lags (§3.1b) | 52 |
+| ring + constitutional, exactly determined (§3.4) | 29 |
+| ETA (§3.5) | 29 |
+| **total distinct columns dropped** | **425** |
+| ring 8+ re-binning, non-fused only (§3.4) | −2 net |
 
-Both cuts are **constructual** — same quantity, different scale; or same information, already
-present elsewhere in the output. No parametric cut has been made yet, and that is where the
-remaining reduction lives.
+**1,269 → 842.** Information content is kept whole (§3.6): the redundancy there is across radii
+rather than across series, and the block is not worth cutting for 10 columns.
+
+Every cut so far is **constructual or exact** — the same quantity in different units, information
+already carried elsewhere in the output, or an arithmetic identity. **Nothing has been removed on
+a variance ranking**, which is the property that made `minimal-v1` delete the rare tail.
+
+⚠️ The ring 8+ re-binning turned out to cost 5 columns and add 3, a net of 2, because most
+non-fused 8+ cells had already gone as exactly determined. It needs new C++ columns in
+`ringcount.h` for that, which is a poor trade and should probably be dropped from the plan.
 
 ## 5. Open questions
 
