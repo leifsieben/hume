@@ -180,3 +180,8 @@ build_eta/
 build_misc/
 build_spectral/
 build_sps/
+
+# Cached reanalysis feature matrices — regenerable from tools/cache_features.py and the lake,
+# ~140 MB for the six physchem sets. The SCRIPT and the results JSON are tracked; the matrices
+# are not, for the same reason data/ is not.
+results/reanalysis/features/
