@@ -161,24 +161,72 @@
   {
    "arm": "hume",
    "n": 10000,
-   "batch": 4096,
-   "wall_s": 1.468248568000007,
+   "batch": 1024,
+   "wall_s": 1.4986643510000022,
    "prep_s": null,
    "fwd_s": null
   },
   {
    "arm": "hume",
    "n": 100000,
-   "batch": 4096,
-   "wall_s": 14.908843805000004,
+   "batch": 1024,
+   "wall_s": 15.337580731000003,
    "prep_s": null,
    "fwd_s": null
   },
   {
    "arm": "hume",
    "n": 1000000,
+   "batch": 1024,
+   "wall_s": 155.375038007,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "hume_minimal",
+   "n": 10000,
+   "batch": 16384,
+   "wall_s": 1.2924036950000186,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "hume_minimal",
+   "n": 100000,
+   "batch": 16384,
+   "wall_s": 12.760744474999967,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "hume_minimal",
+   "n": 1000000,
+   "batch": 16384,
+   "wall_s": 137.90090840099998,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "hume_no_new",
+   "n": 10000,
    "batch": 4096,
-   "wall_s": 158.99057642,
+   "wall_s": 1.4888263029999962,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "hume_no_new",
+   "n": 100000,
+   "batch": 4096,
+   "wall_s": 15.337127903999999,
+   "prep_s": null,
+   "fwd_s": null
+  },
+  {
+   "arm": "hume_no_new",
+   "n": 1000000,
+   "batch": 4096,
+   "wall_s": 161.59420197500003,
    "prep_s": null,
    "fwd_s": null
   },

@@ -63,22 +63,32 @@ FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
 FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "hume_minimal",
              "hume", "hume_no_new",
              "minimol", "chemeleon", "chemberta_mtr"]
-#: `hume_no_new` COSTS EXACTLY WHAT `hume` COSTS, and that is the point of drawing it. The
-#: ablation masks the 185 post-dedup columns AFTER the block is computed, so the featurisation
-#: is byte-for-byte the same work -- the two points sit at the same x and differ only in y.
-#: Read that way the panel says what the columns are worth: they are free, and they move the
-#: error. Giving the ablation a lower x would be inventing a measurement nobody took.
-#: The three arms Figure C plots that are not measured end-to-end by bench_aws.py under the same
-#: name. Cost is ADDITIVE here because the arm literally runs both blocks: `ecfp_rdkit_desc` is
-#: the ECFP call plus the RDKit-180 call, one after the other, on the same molecule.
-# NO SUMMING. `rdkit_desc` and `mordred_desc` in bench_aws ALREADY include the Morgan call --
-# they are the concatenated arm, not the descriptor block alone -- so adding `ecfp` on top
-# double-counted the fingerprint. Small (~4% on ecfp_rdkit_desc, under 1% on the others) but
-# wrong, and the kind of wrong that survives review because the number still looks plausible.
-#: `hume_minimal` costs the same to FEATURISE as `hume` -- the reduced spec selects what is
-#: returned, not what is computed, since the block is monolithic. So it takes hume's cost
-#: point on the x axis, exactly as the no-new ablation does.
-COST_ALIAS = {"hume_no_new": "hume", "hume_minimal": "hume"}
+#: THE THREE HUME ARMS ARE EACH MEASURED NOW, and none of them is aliased to another.
+#:
+#: Until mol-hume 0.7.0 they could not be: the column selection chose what was RETURNED and not
+#: what was COMPUTED, so all three did byte-for-byte identical featurisation work and this file
+#: aliased two of them onto `hume`'s cost point. Giving them separate x positions then would
+#: have been inventing a measurement nobody took. Since 0.7.0 the selection IS the compute plan,
+#: so they are three different jobs and were measured as such -- ONE c7i.4xlarge run, all three
+#: arms, same box and same hour, which is what makes their relative positions trustworthy.
+#:
+#:     HUME_full     155.4 us/mol
+#:     HUME_minimal  137.9        11% cheaper: it skips autocorrelation, ETA and pathcount
+#:                                entirely, plus most of spectral's eigensolves
+#:     HUME_no_new   161.6        NOT cheaper, and not really dearer either -- see below
+#:
+#: ⚠️ HUME_no_new MEASURES 4% ABOVE HUME_full AND THAT IS NOISE, NOT A SLOWDOWN. It cannot be
+#: cheaper: its 1,109 columns span all nineteen families, so the compute plan has nothing to
+#: skip -- the 160 columns it drops are 142 in `blocks` (which is never optional, because the
+#: E-state columns weight by it) and 18 in `autocorr` (which stays for its other 501). The two
+#: arms are the same work and the figure should be read as showing that.
+#:
+#: The noise floor is measured, not asserted: `hume` itself read 159.0 us/mol on the earlier
+#: c7i.4xlarge run and 155.4 on this one, 2.3% apart for identical code, and the two narrower
+#: arms agree with `hume` to within 1% at N=1e4 and are identical at N=1e5. Only the N=1e6 point
+#: diverges. The convention here is largest-N-measured and it is kept rather than bent, because
+#: switching to a median for one arm is how a figure stops being reproducible from its inputs.
+COST_ALIAS: dict = {}
 COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
             "ecfp_mordred_desc": ["mordred_desc"],
             "ecfp_all_desc": ["mordred"]}
@@ -90,6 +100,7 @@ COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
 #: cost, and re-measuring a 1.7-hour Mordred sweep to change a number by 0.3% is not a good
 #: trade. Stated rather than hidden.
 COST_KEY = {"ecfp": "ecfp_r2", "hume": "hume", "chemeleon": "chemeleon",
+            "hume_minimal": "hume_minimal", "hume_no_new": "hume_no_new",
             "chemberta_mtr": "chemberta", "minimol": "minimol"}
 
 

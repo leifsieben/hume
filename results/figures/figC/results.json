@@ -85,23 +85,25 @@
    }
   },
   "hume_minimal": {
-   "us_per_mol": 158.99057642,
-   "measured_on": "c7i.4xlarge, 16 vCPU",
-   "alias_of": "hume",
-   "note": "the ablation masks columns after the block is computed, so its featurisation cost is identical to the arm it is an ablation of"
-  },
-  "hume": {
-   "us_per_mol": 158.99057642,
+   "us_per_mol": 137.90090840099998,
    "measured_on": "c7i.4xlarge, 16 vCPU",
    "breakdown": {
-    "hume": 158.99057642
+    "hume_minimal": 137.90090840099998
+   }
+  },
+  "hume": {
+   "us_per_mol": 155.375038007,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "breakdown": {
+    "hume": 155.375038007
    }
   },
   "hume_no_new": {
-   "us_per_mol": 158.99057642,
+   "us_per_mol": 161.59420197500003,
    "measured_on": "c7i.4xlarge, 16 vCPU",
-   "alias_of": "hume",
-   "note": "the ablation masks columns after the block is computed, so its featurisation cost is identical to the arm it is an ablation of"
+   "breakdown": {
+    "hume_no_new": 161.59420197500003
+   }
   },
   "minimol": {
    "us_per_mol": 1544.659867544,
