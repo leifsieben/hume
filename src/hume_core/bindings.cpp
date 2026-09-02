@@ -751,17 +751,27 @@ enum : unsigned { OPT_QED = 1u, OPT_AVGIPC = 2u };
 inline constexpr unsigned OPT_DEFAULT = OPT_AVGIPC;
 
 //! Families that need the hydrogen-added blob parsed. Autocorrelation descriptors that graph
-//! directly; constit reads only its Gasteiger charges off it (RNCG/RPCG). Keeping the two in one
+//! directly; constit reads only its Gasteiger charges off it (RNCG/RPCG); spectral needs their
+//! SUM, which is mordred's heavy-graph `c` getter, for BCUTc-1h and BCUTc-1l. Keeping them in one
 //! predicate is what stops `["constit"]` from silently getting a null charge array -- and what
 //! stops it from paying for Autocorrelation's 540 columns to get one.
-static constexpr unsigned F_NEEDS_H = F_AC | F_CONSTIT;
+//!
+//! ⚠️ F_SPECTRAL WAS MISSING HERE AND IT WAS A SILENT WRONG VALUE, not a missing one. With the
+//! charge arrays null, `a.c` falls back to AC_C_MISSING and BCUTc-1h/-1l come out as finite,
+//! plausible, wrong numbers -- 650 differing cells over 400 molecules of cpp/hard.smi. It never
+//! reached production because `families` had exactly one caller, cpp/bench_e2e.py, where the
+//! consequence was an understated spectral timing. It would have reached production the moment
+//! the mask was derived from a column selection, which is what molhume.featurize now does, so
+//! tests/test_families.py checks EVERY family against the ungated run rather than trusting this
+//! list to be right.
+static constexpr unsigned F_NEEDS_H = F_AC | F_CONSTIT | F_SPECTRAL;
 
 static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, const int *BS,
                     const double *BD, int a0, int b0, int n, int nb, int chg_ok,
                     const int *ring_ptr, const int *ring_at, int n_rings,
                     const double *ACO, const double *ACH, int h_chg_ok,
                     const int *SA, const int *SB, unsigned fams,
-                    unsigned opts, double *out) {
+                    unsigned opts, const bool *spec_want, double *out) {
   const int *ai = AI + (std::ptrdiff_t)a0 * N_ATOM_INT;
   const int *bi = BI + (std::ptrdiff_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
@@ -1224,7 +1234,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.spm.adj[r[B_V]].push_back(r[B_U]);
     }
     W.buf_spectral.assign(spectral::N_COLS, std::nan(""));
-    spectral::compute(W.spm, W.buf_spectral.data(), W.sps_);
+    spectral::compute(W.spm, W.buf_spectral.data(), W.sps_, spec_want);
     for (int c = 0; c < N_SPECTRAL_COLS; c++)
       out[OFF_SPECTRAL + c] = W.buf_spectral[KEEP_SPECTRAL[c]];
   }
@@ -1318,7 +1328,8 @@ static unsigned optional_mask(const py::object &optional) {
 static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff, ArrI ring_ptr,
                                             ArrI ring_at, py::sequence h_pickles, ArrI stereo_a,
                                             ArrI stereo_b, py::object families,
-                                            py::object optional, int n_threads) {
+                                            py::object optional, py::object select,
+                                            int n_threads) {
   Blobs b = borrow(pickles);
   // `h_pickles` IS ACCEPTED AND IGNORED. It used to carry Chem.AddHs + a second
   // ComputeGasteigerCharges + a second ToBinary, 53.8 us/mol for one family; all_row() now
@@ -1326,6 +1337,38 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   // old signature keep working, and an EMPTY sequence is the expected value.
   (void)h_pickles;
   const unsigned fams = family_mask(families);
+  // WITHIN-FAMILY GATING, FOR THE ONE FAMILY WHERE IT PAYS. `select` is a length-N_EMIT_COLS
+  // boolean over the EMITTED columns, or None for all of them. Only spectral reads it: it is the
+  // most expensive of the nineteen families (201 us/mol of 929) and it is almost entirely
+  // independent O(n^3) eigensolves, so a caller who wants BCUT and not the Barysz spectra can
+  // decline five of them. Every other family is either cheap or a single fused pass whose
+  // columns fall out of shared work.
+  //
+  // A SLOT NOT COMPUTED IS NaN, NOT ZERO -- unlike the family mask. That is spectral::compute's
+  // own initialisation and it is why this is safe to derive from a column selection while
+  // `families` is not.
+  bool spec_want_buf[spectral::N_COLS];
+  const bool *spec_want = nullptr;
+  if (!select.is_none()) {
+    auto sel = py::cast<py::array_t<bool, py::array::c_style | py::array::forcecast>>(select);
+    if (sel.ndim() != 1 || sel.shape(0) != (py::ssize_t)N_EMIT_COLS)
+      throw std::invalid_argument(
+          "hume._core.all_from_pickles: `select` must be a 1-D boolean array of length " +
+          std::to_string((int)N_EMIT_COLS) + " (one entry per emitted column), got shape with " +
+          std::to_string((long)(sel.ndim() ? sel.shape(0) : 0)) + " entries in " +
+          std::to_string((int)sel.ndim()) + " dimension(s).");
+    const bool *sp = sel.data();
+    for (int i = 0; i < spectral::N_COLS; i++) spec_want_buf[i] = false;
+    // EMIT_KEEP maps emitted index -> full-row index; the spectral family occupies
+    // [OFF_SPECTRAL, OFF_SPECTRAL + N_SPECTRAL_COLS) of that row, and KEEP_SPECTRAL maps its
+    // c-th emitted column back to one of spectral.h's 65 slots.
+    for (int e = 0; e < N_EMIT_COLS; e++) {
+      const int r = EMIT_KEEP[e];
+      if (r >= OFF_SPECTRAL && r < OFF_SPECTRAL + N_SPECTRAL_COLS && sp[e])
+        spec_want_buf[KEEP_SPECTRAL[r - OFF_SPECTRAL]] = true;
+    }
+    spec_want = spec_want_buf;
+  }
   const unsigned opts = optional_mask(optional);
   const std::ptrdiff_t nm = (std::ptrdiff_t)b.ptr.size();
   need(ring_moff.ndim() == 1 && ring_ptr.ndim() == 1 && ring_at.ndim() == 1,
@@ -1395,7 +1438,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                 f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
                 need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
                 need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
-                f.chg_ok[k], SA, SB, fams, opts,
+                f.chg_ok[k], SA, SB, fams, opts, spec_want,
                 row.data());
         double *dst = O + (std::ptrdiff_t)k * N_ALL_COLS;
         for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
@@ -1615,7 +1658,8 @@ PYBIND11_MODULE(_core, mod) {
   mod.def("all_from_pickles", &all_from_pickles, py::arg("pickles"), py::arg("ring_moff"),
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"), py::arg("stereo_a"),
           py::arg("stereo_b"), py::arg("families") = py::none(),
-          py::arg("optional") = py::none(), py::arg("threads") = 0,
+          py::arg("optional") = py::none(), py::arg("select") = py::none(),
+          py::arg("threads") = 0,
           "Every natively computed column for a batch of ToBinary() blobs, as "
           "(n_mol, N_ALL_COLS). Pickle-only: RingCount needs the SSSR ring lists, which are in "
           "the pickle and not in the extract() boundary arrays. `stereo_a` / `stereo_b` are "
@@ -1628,7 +1672,9 @@ PYBIND11_MODULE(_core, mod) {
           "'AvgIpc' at 64.6, against 629.9 for all of them -- can be declined per column. None "
           "means the default set ('AvgIpc' on, 'qed' off); () means neither; ('qed', 'AvgIpc') "
           "means the full suite. A declined column is NaN in its usual position and no offset, "
-          "name or column count changes.");
+          "name or column count changes. `select` is a length-N_ALL_COLS boolean over the "
+          "EMITTED columns; only the spectral family reads it, and only to skip whole "
+          "eigensolves nobody asked for. Uncomputed spectral slots are NaN, not zero.");
   mod.def("all_column_names_tail", &all_column_names_tail,
           "Column names for everything after the first 182; src/hume/_columns.py names those.");
 }

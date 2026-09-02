@@ -100,14 +100,16 @@ def test_bad_on_error_names_the_choices():
 
 def test_all_bad_input_still_returns_an_aligned_block():
     with pytest.warns(UserWarning):
-        X = molhume.featurize([BAD, BAD], standardize="none", fingerprint=False)
+        X = molhume.featurize([BAD, BAD], standardize="none", fingerprint=False,
+                              columns="full")
     assert X.shape == (2, len(molhume.ALL_COLUMNS)) and np.all(np.isnan(X))
 
 
 def test_empty_input():
-    X = molhume.featurize([], standardize="none", fingerprint=False)
+    X = molhume.featurize([], standardize="none", fingerprint=False, columns="full")
     assert X.shape == (0, len(molhume.ALL_COLUMNS))
-    assert molhume.featurize([], standardize="none").shape == (0, len(molhume.ALL_COLUMNS) + 2048)
+    assert molhume.featurize([], standardize="none", columns="full").shape == (
+        0, len(molhume.ALL_COLUMNS) + 2048)
 
 
 # ---------------------------------------------------------------- columns
@@ -117,7 +119,7 @@ def test_columns_selects_and_orders():
     X = _quiet(SMIS, standardize="none", columns=want, fingerprint=False)
     assert molhume.feature_names(columns=want, fingerprint=False) == tuple(want), (
         "the caller's order is the output order")
-    full = _quiet(SMIS, standardize="none", fingerprint=False)
+    full = _quiet(SMIS, standardize="none", fingerprint=False, columns="full")
     idx = [molhume.ALL_COLUMNS.index(c) for c in want]
     assert np.array_equal(X, full[:, idx], equal_nan=True)
 
@@ -137,36 +139,65 @@ def test_repeated_column_is_emitted_once_with_a_warning():
 
 
 def test_empty_selection_is_an_error():
-    with pytest.raises(ValueError, match="no columns"):
+    with pytest.raises(ValueError, match="empty sequence"):
         molhume.featurize(SMIS, standardize="none", columns=[])
 
 
-# ------------------------------------------------- additional_descriptors
+# ------------------------------------------------------------- column sets
 
-def test_additional_off_removes_exactly_our_own_columns():
+def test_the_three_sets_are_nested_and_the_sizes_are_the_documented_ones():
+    mn, nn, full = (molhume.column_set(k) for k in ("minimal", "full_no_new", "full"))
+    assert (len(mn), len(nn), len(full)) == (622, 1109, 1269)
+    assert set(mn) <= set(full) and set(nn) <= set(full)
+    assert full is molhume.ALL_COLUMNS
+
+
+def test_full_no_new_removes_exactly_our_own_columns():
     from molhume._additional import ADDITIONAL_COLUMNS
-    on = molhume.feature_names()
-    off = molhume.feature_names(additional_descriptors=False)
+    on, off = molhume.column_set("full"), molhume.column_set("full_no_new")
     ours = set(ADDITIONAL_COLUMNS) & set(on)
     assert set(on) - set(off) == ours
     assert len(off) < len(on) and ours, "there must be some of our own columns to remove"
 
 
-def test_additional_off_does_not_change_the_columns_it_keeps():
-    a = _quiet(SMIS, standardize="none")
-    b = _quiet(SMIS, standardize="none", additional_descriptors=False)
-    on, off = molhume.feature_names(), molhume.feature_names(additional_descriptors=False)
-    idx = [on.index(c) for c in off]
+@pytest.mark.parametrize("name", ["minimal", "full_no_new"])
+def test_a_set_does_not_change_the_columns_it_keeps(name):
+    """The gated run must agree with the ungated one on every column it emits."""
+    a = _quiet(SMIS, standardize="none", columns="full", fingerprint=False)
+    b = _quiet(SMIS, standardize="none", columns=name, fingerprint=False)
+    idx = [molhume.ALL_COLUMNS.index(c) for c in molhume.column_set(name)]
     assert np.array_equal(a[:, idx], b, equal_nan=True)
 
 
-def test_the_two_filters_are_combined_with_and():
-    from molhume._additional import ADDITIONAL_COLUMNS
-    mine = next(c for c in ADDITIONAL_COLUMNS if c in molhume.ALL_COLUMNS)
-    with pytest.warns(UserWarning, match="additional_descriptors=False removed"):
-        X = molhume.featurize(SMIS, standardize="none", fingerprint=False,
-                              additional_descriptors=False, columns=["TPSA", mine])
-    assert X.shape[1] == 1
+def test_minimal_is_the_default():
+    assert np.array_equal(_quiet(SMIS, standardize="none", fingerprint=False),
+                          _quiet(SMIS, standardize="none", fingerprint=False, columns="minimal"),
+                          equal_nan=True)
+
+
+def test_an_unknown_set_name_lists_the_three():
+    with pytest.raises(ValueError, match="minimal.*full_no_new.*full"):
+        molhume.column_set("small")
+    with pytest.raises(ValueError, match="minimal.*full_no_new.*full"):
+        molhume.featurize(SMIS, standardize="none", columns="tiny")
+
+
+def test_columns_none_is_an_error_rather_than_meaning_everything():
+    """It used to mean 'all of them'. Once the default changed, silence would be a wrong answer."""
+    with pytest.raises(ValueError, match="columns='full'"):
+        molhume.featurize(SMIS, standardize="none", columns=None)
+
+
+@pytest.mark.parametrize("kw", ["additional_descriptors", "optional"])
+def test_removed_keywords_say_what_replaced_them(kw):
+    with pytest.raises(TypeError, match="0.7.0"):
+        molhume.featurize(SMIS, standardize="none", **{kw: False})
+
+
+def test_qed_is_named_as_unreachable_rather_than_just_unknown():
+    """It is computable and not emitted, which is worth saying out loud -- see the 0.7.0 notes."""
+    with pytest.raises(ValueError, match="deduplication dropped their slots"):
+        molhume.featurize(SMIS, standardize="none", columns=["TPSA", "qed"])
 
 
 # ---------------------------------------------------------------- fingerprint
@@ -174,7 +205,8 @@ def test_the_two_filters_are_combined_with_and():
 def test_fingerprint_is_on_by_default_and_the_bits_go_last():
     on = _quiet(SMIS, standardize="none")
     off = _quiet(SMIS, standardize="none", fingerprint=False)
-    assert off.shape[1] == len(molhume.ALL_COLUMNS)
+    assert off.shape[1] == len(molhume.column_set("minimal")), (
+        "the default descriptor block is the minimal set")
     assert on.shape[1] == off.shape[1] + 2048, "default output is descriptors + 2048 ECFP bits"
     assert np.array_equal(on[:, :off.shape[1]], off, equal_nan=True), (
         "fingerprint bits must go LAST, so descriptor column indices do not shift with the flag")
@@ -189,7 +221,7 @@ def test_fingerprint_is_on_by_default_and_the_bits_go_last():
 def test_fp_radius_and_size_reach_the_fingerprint(size, radius):
     from rdkit import Chem
     from rdkit.Chem import rdFingerprintGenerator as rfg
-    n_desc = len(molhume.ALL_COLUMNS)
+    n_desc = len(molhume.column_set("minimal"))
     X = _quiet(SMIS, standardize="none", fingerprint=True, fp_radius=radius, fp_size=size)
     assert X.shape == (len(SMIS), n_desc + size)
     gen = rfg.GetMorganGenerator(radius=radius, fpSize=size)
@@ -209,8 +241,9 @@ def test_the_alias_package_is_the_same_module():
 def test_all_columns_is_unique_and_matches_the_output_width():
     cols = molhume.ALL_COLUMNS
     assert len(set(cols)) == len(cols), "ALL_COLUMNS contains a duplicate name"
-    X = _quiet(["CCO"], standardize="none", fingerprint=False)
-    assert X.shape[1] == len(cols) == len(molhume.feature_names(fingerprint=False))
+    X = _quiet(["CCO"], standardize="none", fingerprint=False, columns="full")
+    assert X.shape[1] == len(cols) == len(
+        molhume.feature_names(fingerprint=False, columns="full"))
 
 
 def test_featurize_is_exported():

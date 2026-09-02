@@ -114,11 +114,14 @@ def all_cols(mols) -> np.ndarray:
     # default. The default declines `qed` -- 81.9 us/mol for one column -- and a declined column
     # is NaN by design, so a grader that took the default would compare NaN against RDKit's
     # `qed` and report a failure that is really a configuration. This file's job is to grade
-    # every column that exists, so it asks for every column that exists.
+    # every column that exists, so it asks for every column that exists -- with the one
+    # exception that `qed` does NOT exist as an output. The extension can compute it, at 69.3
+    # us/mol, into a row slot the deduplication dropped; it has no name in ALL_COLUMNS and is
+    # read by nobody. Asking for it verified nothing and cost the most of any column.
     p = extract_pickles(mols)
     return _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr,
                                   p.rings.ring_at, p.h_blobs, p.stereo_a, p.stereo_b,
-                                  optional=("qed", "AvgIpc"))
+                                  optional=("AvgIpc",))
 
 
 def col(name: str) -> int:

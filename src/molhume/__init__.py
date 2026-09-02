@@ -31,7 +31,7 @@ from ._extract import Batch, extract, extract_pickles
 __all__ = [
     # the public API
     "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
-    "minimal_columns",
+    "column_set", "COLUMN_SETS", "minimal_columns",
     # lower level: the (fp, X, names) form, and the 178-column block on its own
     "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
     "COLUMNS", "N_COLS", "FAMILY_OFFSETS", "RAW_FAMILY_OFFSETS",
@@ -238,7 +238,7 @@ def featurize_blocks(smiles: Iterable[str], batch_size: int = 4096, reader: str 
 
 def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: int = 3,
                             threads: int = 0, fingerprint: bool = True,
-                            fp_size: int = 2048, optional=None):
+                            fp_size: int = 2048, optional=None, families=None, select=None):
     """-> ``(fp, X, ALL_COLUMNS)``: the ECFP and every natively computed descriptor column.
 
     ``fp`` is ``(len(mols), fp_size)`` uint8 Morgan/ECFP with chirality; ``X`` is
@@ -253,7 +253,15 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         optional=()                  neither
         optional=("qed", "AvgIpc")   the full suite, and what the exactness claims are measured on
 
-    A declined column is NaN in its usual position. THE SHAPE AND THE COLUMN LIST DO NOT MOVE:
+    ``families`` NAMES THE FAMILIES TO COMPUTE, `None` meaning all of them. Unlike `optional`,
+    the columns of a family left out are ZERO, not NaN -- so this is only safe when the caller
+    discards them, which is why `featurize` derives it from `columns` rather than exposing it.
+    Dependencies are forced on by the extension (`family_mask()` in bindings.cpp): asking for
+    `constit` also computes vsa, ringcount and frag, because constit reads their output out of
+    the row and would otherwise reduce over zeros.
+
+    A declined optional column is NaN in its usual position. THE SHAPE AND THE COLUMN LIST DO NOT
+    MOVE:
     `ALL_COLUMNS`, `N_ALL_COLS` and every family offset are the same whichever way this is set,
     because a column set that shifts with a keyword argument is how two callers end up
     disagreeing about what a column index means.
@@ -300,7 +308,8 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         # of 3,682,060). Pass threads=1 if the caller is already parallel and would oversubscribe.
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
             p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs,
-            p.stereo_a, p.stereo_b, optional=optional, threads=threads)
+            p.stereo_a, p.stereo_b, families=families, optional=optional, select=select,
+            threads=threads)
         if fingerprint:
             for i, m in enumerate(chunk):
                 fp[lo + i] = gen.GetFingerprintAsNumPy(m)
@@ -309,7 +318,7 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
 
 def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int = 3,
                   fp_size: int = 2048, optional=None, threads: int = 0,
-                  fingerprint: bool = True):
+                  fingerprint: bool = True, families=None, select=None):
     """`featurize_all_from_mols` from SMILES. Unparseable input raises; see `featurize_blocks`."""
     from rdkit import Chem
 
@@ -320,7 +329,7 @@ def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int 
             raise ValueError(f"could not parse SMILES at index {i}: {s!r}")
         mols.append(m)
     return featurize_all_from_mols(mols, batch_size=batch_size, fp_radius=fp_radius,
-                                   fingerprint=fingerprint,
+                                   fingerprint=fingerprint, families=families, select=select,
                                    fp_size=fp_size, optional=optional, threads=threads)
 
 
@@ -419,22 +428,91 @@ def _standardize_mols(mols, how):
         "taking and returning an rdkit Mol.")
 
 
-def _column_index(columns, additional_descriptors):
-    """-> (index array into ALL_COLUMNS, names), or (None, ALL_COLUMNS) when nothing is filtered.
+#: The family that owns each emitted column, as a tuple parallel to ALL_COLUMNS. Built from
+#: FAMILY_OFFSETS, which tiles the emitted row exactly -- every column belongs to exactly one
+#: family, and the test suite asserts that rather than assuming it. This is what turns a column
+#: selection into a compute plan.
+_COLUMN_FAMILY: tuple = tuple(
+    next(f for f, (a, b) in FAMILY_OFFSETS.items() if a <= i < b)
+    for i in range(len(ALL_COLUMNS)))
 
-    `columns` fixes the output order: the caller gets the columns they asked for, in the order
-    they asked for them. Without it the order is ALL_COLUMNS.
+
+#: The three named column sets. Values are resolved lazily because `minimal` lives in a generated
+#: module and `full_no_new` needs the additional-descriptor list, and neither is worth importing
+#: for a caller who only ever asks for `full`.
+COLUMN_SETS: tuple[str, ...] = ("minimal", "full_no_new", "full")
+
+
+def column_set(name: str) -> tuple:
+    """The names in one of the three predefined sets, in ALL_COLUMNS order.
+
+        molhume.featurize(smiles, columns="minimal")     # the default
+        molhume.column_set("minimal")                    # the same names, to inspect
+
+    ``minimal``
+        622 columns. The reduced set, and what `featurize` emits unless told otherwise. A SET,
+        not a ranking: a column was removed only for being the same physical quantity in
+        different units, already carried by the ECFP that ships alongside, or an exact
+        arithmetic identity of columns that remain. See HUME_Minimal_definition.md.
+    ``full_no_new``
+        1,109 columns. Everything RDKit or Mordred already defines -- the full set minus the 160
+        descriptors that are ours. This is the arm to use when the question is "what do the new
+        descriptors add", and it is the only honest baseline for that comparison.
+    ``full``
+        1,269 columns. Every column this build emits.
     """
-    drop = set() if additional_descriptors else set(_additional_names())
-    if columns is None:
-        if not drop:
+    if name == "full":
+        return ALL_COLUMNS
+    if name == "minimal":
+        from . import _minimal
+        return _minimal.MINIMAL_COLUMNS
+    if name == "full_no_new":
+        drop = set(_additional_names())
+        return tuple(c for c in ALL_COLUMNS if c not in drop)
+    raise ValueError(
+        f"column_set({name!r}) is not a set this build carries. The three are 'minimal' "
+        f"({len(ALL_COLUMNS)} -> 622 columns, the default), 'full_no_new' (1,109 -- everything "
+        "RDKit or Mordred already defines, without the 160 that are ours) and 'full' (all "
+        "1,269). For anything else, pass a list of column names; molhume.ALL_COLUMNS lists "
+        "every available name.")
+
+
+def _resolve_columns(columns):
+    """-> (index array into ALL_COLUMNS or None, names). `None` index means "emit everything".
+
+    `columns` is a set name or a sequence of names. A sequence fixes the output ORDER: the caller
+    gets the columns they asked for, in the order they asked for them.
+    """
+    if isinstance(columns, str):
+        names = column_set(columns)
+        if names is ALL_COLUMNS:
             return None, ALL_COLUMNS
-        idx = [i for i, c in enumerate(ALL_COLUMNS) if c not in drop]
-        return np.asarray(idx, dtype=np.intp), tuple(ALL_COLUMNS[i] for i in idx)
+        pos = {c: i for i, c in enumerate(ALL_COLUMNS)}
+        return np.asarray([pos[c] for c in names], dtype=np.intp), tuple(names)
+
+    if columns is None:
+        raise ValueError(
+            "columns=None is no longer how you ask for everything -- it was ambiguous once the "
+            "default stopped being the full set. Pass columns='full' for all 1,269 columns, "
+            "'full_no_new' for the 1,109 that are not ours, 'minimal' for the 622-column default, "
+            "or a list of column names.")
+
+    try:
+        want_in = list(columns)
+    except TypeError as e:
+        raise TypeError(
+            f"columns must be one of {COLUMN_SETS} or a sequence of column names, not "
+            f"{type(columns).__name__}.") from e
+    if not want_in:
+        raise ValueError("columns is an empty sequence, which selects no descriptors at all.")
 
     pos = {c: i for i, c in enumerate(ALL_COLUMNS)}
     want, seen, dup = [], set(), []
-    for c in columns:
+    for c in want_in:
+        if not isinstance(c, str):
+            raise TypeError(
+                f"columns contains a {type(c).__name__} ({c!r}); it takes column NAMES. If you "
+                f"meant a predefined set, pass one of {COLUMN_SETS} as a string.")
         if c in seen:
             dup.append(c); continue
         seen.add(c); want.append(c)
@@ -444,24 +522,48 @@ def _column_index(columns, additional_descriptors):
             UserWarning, stacklevel=3)
     missing = [c for c in want if c not in pos]
     if missing:
+        hint = ""
+        if any(m in ("qed", "Ipc", "Log2Ipc") for m in missing):
+            hint = (" `qed`, `Ipc` and `Log2Ipc` are computed by the extension but are NOT among "
+                    "the emitted columns -- the deduplication dropped their slots, and they have "
+                    "no name in the output row. Asking for them was silently impossible before "
+                    "0.7.0; now it is an error.")
         raise ValueError(
             f"columns names {len(missing)} descriptor(s) this build does not emit: "
-            f"{missing[:8]}{' ...' if len(missing) > 8 else ''}. "
-            f"molhume.ALL_COLUMNS lists all {len(ALL_COLUMNS)} available names.")
-    kept = [c for c in want if c not in drop]
-    if len(kept) != len(want):
-        warnings.warn(
-            f"additional_descriptors=False removed {len(want) - len(kept)} column(s) that "
-            f"`columns` asked for, e.g. {[c for c in want if c in drop][:4]}. The two filters "
-            "are combined with AND.", UserWarning, stacklevel=3)
-    if not kept:
-        raise ValueError(
-            "the columns / additional_descriptors filters together select no columns at all.")
-    return np.asarray([pos[c] for c in kept], dtype=np.intp), tuple(kept)
+            f"{missing[:8]}{' ...' if len(missing) > 8 else ''}.{hint} "
+            f"molhume.ALL_COLUMNS lists all {len(ALL_COLUMNS)} available names, and "
+            f"molhume.column_set(...) gives the three predefined ones.")
+    return np.asarray([pos[c] for c in want], dtype=np.intp), tuple(want)
 
 
-def feature_names(*, fingerprint: bool = True, fp_size: int = 2048,
-                  additional_descriptors: bool = True, columns=None) -> tuple:
+def _compute_plan(idx):
+    """-> (families, optional, select) for a column selection: what the extension must compute.
+
+    ONLY COMPUTE WHAT IS EMITTED. A family none of whose columns were asked for is not computed
+    at all, and `AvgIpc` -- 64.6 us/mol on its own -- is computed only when it is selected.
+
+    THE SAFETY ARGUMENT IS A TEST, NOT THIS FUNCTION. Families are not independent: constit reads
+    vsa's and frag's output out of the row, counts reads constit's, spectral needs the H-added
+    Gasteiger charges. `family_mask()` in bindings.cpp forces those dependencies on, and a family
+    left out writes ZEROS rather than NaN -- so an incomplete dependency list is a finite,
+    plausible, wrong descriptor with no symptom. That list WAS incomplete: F_SPECTRAL was missing
+    from F_NEEDS_H and BCUTc-1h/-1l came out wrong under gating. tests/test_families.py now
+    compares every family, and every predefined set, against the ungated run cell for cell.
+    """
+    if idx is None:
+        return None, ("AvgIpc",), None
+    fams = sorted({_COLUMN_FAMILY[i] for i in idx.tolist()})
+    avgipc = ALL_COLUMNS.index("AvgIpc")
+    # `select` is the per-column mask. Only the spectral family reads it -- see the note in
+    # bindings.cpp -- and an uncomputed spectral slot is NaN rather than zero, which is what
+    # makes a per-column plan safe there and a per-family one the limit everywhere else.
+    select = np.zeros(len(ALL_COLUMNS), dtype=bool)
+    select[idx] = True
+    return fams, (("AvgIpc",) if avgipc in idx else ()), select
+
+
+def feature_names(*, columns="minimal", fingerprint: bool = True,
+                  fp_size: int = 2048) -> tuple:
     """The column names `featurize` produces for the same flags, in the same order.
 
     `featurize` returns a bare array, because the names do not change from call to call and a
@@ -471,8 +573,11 @@ def feature_names(*, fingerprint: bool = True, fp_size: int = 2048,
 
         X = molhume.featurize(smiles, standardize="none")
         df = pandas.DataFrame(X, columns=molhume.feature_names())
+
+    `columns` means exactly what it means in `featurize`, and the default is the same: pass the
+    two functions the same value and the names line up with the array.
     """
-    _, names = _column_index(columns, additional_descriptors)
+    _, names = _resolve_columns(columns)
     if fingerprint:
         if int(fp_size) <= 0:
             raise ValueError(f"fp_size must be positive, got {fp_size!r}")
@@ -481,9 +586,12 @@ def feature_names(*, fingerprint: bool = True, fp_size: int = 2048,
 
 
 def minimal_columns(spec: str = "minimal-v2") -> tuple:
-    """The HUME_minimal reduced column set -- 550 of the 1,269, as names for `columns=`.
+    """The HUME_minimal reduced column set -- 622 of the 1,269. Same as `column_set("minimal")`.
 
-        X = molhume.featurize(smiles, columns=molhume.minimal_columns())
+    Since 0.7.0 this is the DEFAULT, so you no longer need to pass it::
+
+        X = molhume.featurize(smiles)                     # these two are the same call
+        X = molhume.featurize(smiles, columns="minimal")
 
     A SET, not a ranking. Every column was removed for one of three reasons: it is the same
     physical quantity in different units (three electronegativity scales, mass against atomic
@@ -493,10 +601,10 @@ def minimal_columns(spec: str = "minimal-v2") -> tuple:
 
     See HUME_Minimal_definition.md for the evidence behind each decision.
 
-    Note this selects what is RETURNED, not what is computed: the block is monolithic, so a
-    reduced spec narrows the output and speeds up whatever consumes it, not the featurization.
-    The exception is worth knowing -- the Burden weights dropped here would save about 59 of
-    BCUT's 163 us/mol if the extension stopped computing them, which it does not yet.
+    Up to 0.6.0 this selected what was RETURNED and not what was computed. Since 0.7.0 it
+    selects both: three families -- autocorrelation, ETA and pathcount -- have no column in the
+    set and are not computed at all. What is still computed and thrown away is the part of a
+    family the set only partly keeps, and the measured cost of that is in the 0.7.0 changelog.
     """
     from . import _minimal
     if spec == "minimal-v1":
@@ -515,10 +623,33 @@ def minimal_columns(spec: str = "minimal-v2") -> tuple:
     return _minimal.MINIMAL_COLUMNS
 
 
-def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
+def _removed_kwarg(removed):
+    """Raise on a keyword `featurize` used to take. Silence here would be a wrong answer."""
+    msgs = {
+        "additional_descriptors":
+            "additional_descriptors= was removed in 0.7.0. It is now a column set: pass "
+            "columns='full_no_new' for what additional_descriptors=False used to mean (the 1,109 "
+            "columns RDKit or Mordred already define) and columns='full' for what True meant. "
+            "The behavior is not identical and the difference is the point -- the old flag "
+            "narrowed the output of a full run, the new one narrows the run.",
+        "optional":
+            "optional= was removed from featurize() in 0.7.0, because what is computed is now "
+            "derived from `columns`. 'AvgIpc' is computed when you select it and not otherwise. "
+            "'qed' was never reachable: the extension could compute it, at 69.3 us/mol -- the "
+            "most expensive column in the suite -- but the deduplication dropped its output slot, "
+            "so it has no name in ALL_COLUMNS and was written nowhere. Paying for it was a pure "
+            "loss and that is why the knob is gone rather than rewired. featurize_all_from_mols() "
+            "still takes `optional` if you want the raw switch.",
+    }
+    bad = sorted(removed)
+    lines = [msgs.get(k, f"{k}= is not a featurize() keyword.") for k in bad]
+    raise TypeError("featurize(): " + " ".join(lines))
+
+
+def featurize(smiles: Iterable, *, columns="minimal", standardize=_UNSET, threads: int = 0,
               fingerprint: bool = True, fp_radius: int = 3, fp_size: int = 2048,
-              additional_descriptors: bool = True, columns=None, optional=None,
-              on_error: str = "nan", dtype=np.float64, batch_size: int = 4096) -> np.ndarray:
+              on_error: str = "nan", dtype=np.float64, batch_size: int = 4096,
+              **removed) -> np.ndarray:
     """SMILES -> one ``(n_molecules, n_features)`` array. The entry point.
 
     Feed it straight to a model::
@@ -526,8 +657,8 @@ def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
         X = molhume.featurize(smiles, standardize="none")
         xgboost.XGBRegressor().fit(X, y)
 
-    By default that is 1,269 descriptors followed by 2,048 ECFP bits. Pass
-    ``fingerprint=False`` for the descriptors alone.
+    By default that is the 622 `minimal` descriptors followed by 2,048 ECFP bits. Pass
+    ``fingerprint=False`` for the descriptors alone, and ``columns="full"`` for all 1,269.
 
     Column names are not returned, because they are the same on every call for a given set of
     flags. `molhume.feature_names(...)` gives them for the same flags, in the same order.
@@ -545,21 +676,30 @@ def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
     threads : int, default 0
         Workers for the descriptor block; 0 is one per hardware thread. Pass 1 if the caller is
         already parallel, or 16 processes x 12 threads will spend the run in the scheduler.
+    columns : {'minimal', 'full_no_new', 'full'} or sequence of str, default 'minimal'
+        WHICH DESCRIPTORS TO EMIT -- and, since 0.7.0, which ones to compute.
+
+            'minimal'      622 columns. The default. See `column_set` for what was removed.
+            'full_no_new'  1,109 -- everything RDKit or Mordred already defines, without ours.
+            'full'         all 1,269.
+            [names...]     exactly these, in this order.
+
+        A sequence fixes the output order; the three named sets come out in ALL_COLUMNS order.
+        Fingerprint bits are appended after whatever this selects, so their indices move with the
+        number of descriptors and the descriptor indices never move.
+
+        THIS IS NOT A VIEW ONTO A FULL RUN ANY MORE. A descriptor family none of whose columns
+        are selected is not computed, and `AvgIpc` is computed only when it is asked for. The
+        output is identical either way -- tests/test_families.py checks every family and every
+        set against an ungated run, cell for cell -- but a narrow selection is now cheaper as
+        well as smaller. Measured on 1,200 molecules of cpp/hard.smi at one thread, best of 12
+        alternated repetitions: 918 us/mol ungated, 762 for 'minimal' (17% faster), 288 for a
+        three-column selection (69%). The two full sets gain nothing, which is the honest
+        result -- they ask for every family, so there is nothing to skip.
     fingerprint : bool, default True
-        Append `fp_size` ECFP bit columns after the descriptors, giving 1,269 + `fp_size`
-        columns. They go LAST, so descriptor column indices do not shift when the flag changes.
-        Turning it off saves about 30 us/molecule that cannot be threaded, and drops the output
-        to descriptors alone.
-    additional_descriptors : bool, default True
-        Include the descriptors that are ours rather than RDKit's or Mordred's. This selects
-        what is returned, not what is computed -- the block is monolithic, so turning it off
-        narrows the output without making the run faster.
-    columns : sequence of str, optional
-        Emit only these descriptors, in this order. Combined with `additional_descriptors` by
-        AND. Applies to descriptors only; fingerprint bits are appended after whatever it
-        selects.
-    optional : sequence of str, optional
-        Expensive columns to compute. Default: 'AvgIpc' on, 'qed' off.
+        Append `fp_size` ECFP bit columns after the descriptors. They go LAST, so descriptor
+        column indices do not shift when the flag changes. Turning it off saves about 30
+        us/molecule that cannot be threaded, and drops the output to descriptors alone.
     on_error : {'nan', 'raise', 'skip'}, default 'nan'
         What to do with a SMILES rdkit cannot parse. 'nan' keeps the row and fills it with NaN,
         so the output aligns with the input. 'skip' drops the row, so it does not.
@@ -571,6 +711,8 @@ def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
     """
     from rdkit import Chem
 
+    if removed:
+        _removed_kwarg(removed)
     if on_error not in ("nan", "raise", "skip"):
         raise ValueError(
             f"on_error={on_error!r} is not a choice. Use 'nan' (keep the row, fill with NaN), "
@@ -607,11 +749,16 @@ def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,
     keep_rows = [i for i, m in enumerate(mols) if m is not None]
     good = [mols[i] for i in keep_rows]
 
+    # RESOLVE FIRST, COMPUTE SECOND. The selection decides the compute plan, so a bad `columns`
+    # raises before any molecule is featurized rather than after.
+    idx, names = _resolve_columns(columns)
+    families, optional, select = _compute_plan(idx)
+
     fp_g, X_g, _ = featurize_all_from_mols(
         good, batch_size=batch_size, fp_radius=fp_radius, fp_size=fp_size,
-        optional=optional, threads=threads, fingerprint=fingerprint)
+        families=families, optional=optional, select=select, threads=threads,
+        fingerprint=fingerprint)
 
-    idx, names = _column_index(columns, additional_descriptors)
     if idx is not None:
         X_g = X_g[:, idx]
     if fingerprint:

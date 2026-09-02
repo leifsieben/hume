@@ -126,6 +126,7 @@
 #include <vector>
 
 #include "../../cpp/ac_weights.h"   // AtomRec, ac_weights(), the AC_* element tables, NW
+#include <initializer_list>
 #include "../../cpp/eigen_small.h"  // hume_eig::{Work, sytd2_upper, sterf_min_max, extremal}
 #include "../../cpp/lu_small.h"     // hume_lin::{getf2, getrs_n}
 #include "topomisc.h"               // topomisc::npPairwiseSum -- numpy's association
@@ -660,7 +661,29 @@ inline bool barysz(const Mol &m, const std::vector<double> &w, int q, bool need_
 //   redundant Barysz    (11): SpAbs/SpDiam/SpMAD_Dzv, _Dzse, _Dzp   SpAbs_Dzi  SpMAD_Dzi
 //
 // 36 columns are emitted.
-inline void compute(const Mol &m, double *out, Scratch &S) {
+//! True when any of the (up to nine) output slots listed is wanted. `-1` means "not one of the
+//! 65", and a null mask means "want everything", which is what every verification caller passes.
+inline bool any_wanted(const bool *want, std::initializer_list<int> slots) {
+  if (!want) return true;
+  for (int s : slots)
+    if (s >= 0 && want[s]) return true;
+  return false;
+}
+
+//! All N_COLS values for one molecule, computing only the slots `want` asks for.
+//!
+//! `want` IS A COMPUTE PLAN, NOT A FILTER, and it is the reason this parameter exists rather
+//! than the caller just ignoring columns. This family is the most expensive of the nineteen --
+//! 201 us/mol of 929 measured over 800 molecules of cpp/hard.smi -- and almost all of it is
+//! O(n^3) eigensolves on matrices whose columns a given caller may not have asked for. The four
+//! sections below (adjacency, eleven Burden diagonals, six Barysz matrices, the distance matrix)
+//! are independent: each builds its own matrix into the same scratch and writes only its own
+//! slots, so skipping one cannot change another. A slot not wanted keeps the NaN it is
+//! initialised with -- never a zero, because a zero here would be a finite plausible wrong
+//! eigenvalue aggregate.
+//!
+//! Passing nullptr computes all 65, which is what cpp/verify_spectral.py does.
+inline void compute(const Mol &m, double *out, Scratch &S, const bool *want = nullptr) {
   using namespace detail;
   const int n = m.n;
   const double NaN = nan_();
@@ -679,21 +702,24 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
 
   // ---------------------------------------------------------------- adjacency, columns 0..9
   // Chem.GetAdjacencyMatrix(useBO=False): 1 for a bond of any order, 0 otherwise.
+  if (any_wanted(want, {0, 1, 2, 3, 4, 5, 6, 7, 8, 9})) {
   for (std::size_t k = 0; k < (std::size_t)n * n; k++) M[k] = 0.0;
   for (int b = 0; b < m.nb; b++) {
     M[(std::size_t)m.bu[b] * n + m.bv[b]] = 1.0;
     M[(std::size_t)m.bv[b] * n + m.bu[b]] = 1.0;
   }
-  eval_matrix(m, M, /*want_vec=*/true, a, S);
+  eval_matrix(m, M, /*want_vec=*/any_wanted(want, {4, 5, 6, 7, 8, 9}), a, S);
   out[0] = a.spabs; out[1] = a.spmax; out[2] = a.spdiam; out[3] = a.spmad;
   out[4] = a.ve1;   out[5] = a.ve2;   out[6] = a.ve3;
   out[7] = a.vr1;   out[8] = a.vr2;   out[9] = a.vr3;
+  }
 
   // ---------------------------------------------------------------- Burden / BCUT, columns 10..29
   // The dense 0.001 background and the bond overwrites are the same for every property; only
   // the diagonal changes, so the off-diagonal half of the matrix is built ONCE and copied.
   // Fact 2: this is mordred's Burden matrix, not RDKit's.
-  {
+  if (any_wanted(want, {10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
+                        20, 21, 22, 23, 24, 25, 26, 27, 28, 29})) {
     double *base = S.fw.data();                    // reused as the Burden template
     for (std::size_t k = 0; k < (std::size_t)n * n; k++) base[k] = 0.001;
     for (int b = 0; b < m.nb; b++) {
@@ -713,6 +739,7 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
         {P_i, 28, 29},
     };
     for (const Slot &sl : SL) {
+      if (!any_wanted(want, {sl.hi, sl.lo})) continue;   // nobody asked for this weight
       if (!prop_ok(w, n, sl.q)) continue;          // AtomicProperty.calculate() fails -> NaN
       for (std::size_t k = 0; k < (std::size_t)n * n; k++) M[k] = base[k];
       for (int i = 0; i < n; i++)
@@ -771,6 +798,8 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
     };
 #endif
     for (const Bar &b : BR) {
+      if (!any_wanted(want, {b.spabs, b.spdiam, b.spmad, b.sm1,
+                             b.ve1, b.ve2, b.vr1, b.vr2, b.vr3})) continue;
       if (!prop_ok(w, n, b.q)) continue;
       if (!barysz(m, w, b.q, b.paths, M)) continue;
       if (!b.paths) {
@@ -780,7 +809,7 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
         if (b.sm1 >= 0) out[b.sm1] = topomisc::npPairwiseSum(S.tmp.data(), n);
         continue;
       }
-      eval_matrix(m, M, b.vec, a, S);
+      eval_matrix(m, M, b.vec && any_wanted(want, {b.ve1, b.ve2, b.vr1, b.vr2, b.vr3}), a, S);
       if (b.spabs >= 0) out[b.spabs] = a.spabs;
       if (b.spdiam >= 0) out[b.spdiam] = a.spdiam;
       if (b.spmad >= 0) out[b.spmad] = a.spmad;
@@ -794,10 +823,12 @@ inline void compute(const Mol &m, double *out, Scratch &S) {
   }
 
   // ---------------------------------------------------------------- distance, columns 60..64
-  topological_distances(m, M, S.q);
-  eval_matrix(m, M, /*want_vec=*/true, a, S);
-  out[60] = a.spabs; out[61] = a.spdiam; out[62] = a.spmad;
-  out[63] = a.ve1;   out[64] = a.ve2;
+  if (any_wanted(want, {60, 61, 62, 63, 64})) {
+    topological_distances(m, M, S.q);
+    eval_matrix(m, M, /*want_vec=*/any_wanted(want, {63, 64}), a, S);
+    out[60] = a.spabs; out[61] = a.spdiam; out[62] = a.spmad;
+    out[63] = a.ve1;   out[64] = a.ve2;
+  }
 }
 
 }  // namespace spectral

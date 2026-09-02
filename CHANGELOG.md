@@ -1,5 +1,80 @@
 # Changelog
 
+## 0.7.0 — 2026-09-02
+
+**`minimal` is now the default, and `columns` decides what is COMPUTED rather than only what is
+returned.** Four flags collapse into one.
+
+```python
+molhume.featurize(smiles)                         # 622 columns, the minimal set
+molhume.featurize(smiles, columns="full_no_new")  # 1,109 -- what RDKit or Mordred already define
+molhume.featurize(smiles, columns="full")         # all 1,269
+molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # exactly these, in order
+```
+
+### Breaking
+
+- **The default output is 622 descriptors, not 1,269.** Pass `columns="full"` to get what 0.6.0
+  returned.
+- **`additional_descriptors=` is removed.** `columns="full_no_new"` is what `False` meant and
+  `columns="full"` is what `True` meant. Passing the old keyword raises and says so.
+- **`optional=` is removed from `featurize`.** What is computed now follows from `columns`.
+  `featurize_all_from_mols()` still takes it.
+- **`columns=None` is an error.** It used to mean "everything", which stopped being obvious the
+  moment the default stopped being everything. The message names the replacement.
+
+### `qed` was never reachable, and paying for it was a pure loss
+
+`optional=("qed",)` computed 116 structural-alert SMARTS at 69.3 us/mol -- the most expensive
+column in the suite -- and wrote the result into a row slot the deduplication had dropped. `qed`
+is not in `ALL_COLUMNS`, has no name anywhere in the output row, and was returned to nobody. The
+knob is gone rather than rewired; asking for `"qed"` by name now raises and explains why. `Ipc`
+and `Log2Ipc` are in the same position and get the same message.
+
+Making `qed` emittable is a schema change -- it shifts every column index above it -- so it is a
+decision for a later spec, not a bug fix.
+
+### ⚠️ A silent wrong value found on the way in, in code the gate now depends on
+
+`family_mask()` in bindings.cpp listed the families needing the hydrogen-added Gasteiger charges
+as `F_AC | F_CONSTIT`. `F_SPECTRAL` was missing, so a gated run computed `BCUTc-1h` and
+`BCUTc-1l` from a null charge array and produced finite, plausible, **wrong** numbers -- 650
+differing cells over 400 molecules of `cpp/hard.smi`. It had never reached anyone: `families`
+had exactly one caller, `cpp/bench_e2e.py`, where the only consequence was an understated
+spectral timing. Deriving the mask from a column selection is what would have made it reachable.
+
+The fix is one line. The response to it is `tests/test_families.py`, which does not review the
+dependency list at all -- it compares every family, every predefined set and hand-picked manual
+selections against an ungated run, cell for cell. A family left out writes ZEROS rather than
+NaN, so an incomplete dependency list is exactly the failure mode that class of test exists for.
+
+### What the gating actually saves
+
+Measured on 1,200 molecules of `cpp/hard.smi`, one thread, best of 12 alternated repetitions,
+against 918 us/mol ungated:
+
+| selection | us/mol | |
+| --- | --- | --- |
+| `columns="minimal"` (622) | 762 | **17% faster** |
+| `columns="full_no_new"` (1,109) | 908 | 1% -- within noise |
+| `columns="full"` (1,269) | 900 | 2% -- within noise |
+| `columns=["TPSA", "ExactMolWt", "SLogP"]` | 288 | **69% faster** |
+
+The two full sets gain nothing. That is the honest result and not a disappointment: they ask for
+every family, so there is nothing to skip.
+
+Two mechanisms produce it. Whole families are skipped when no column of theirs is selected --
+`minimal` skips autocorrelation, ETA and pathcount. Inside `spectral`, the most expensive family
+of the nineteen at 201 us/mol of 929, individual eigensolves are skipped per column: it is four
+independent sections (adjacency, eleven Burden diagonals, six Barysz matrices, the distance
+matrix) and `minimal` wants only part of one of them. A spectral slot that is not computed stays
+**NaN**, never zero, which is what makes per-column gating safe there where the family mask is
+not.
+
+The other eighteen families are gated only as wholes. They are either cheap, or a single fused
+pass whose columns fall out of shared work -- `infocontent` costs 190 us/mol and `minimal` keeps
+all 22 of its emitted columns, so there is nothing there to win.
+
 ## 0.6.0 — 2026-09-02
 
 **`minimal-v2` now has 622 columns, up from 612 in 0.5.0.** ⚠️ That is the **third** change to the

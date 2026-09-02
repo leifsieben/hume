@@ -3,7 +3,7 @@
 *Why each flag is what it is. The reference documentation is `README.md` and the docstrings;
 this file is the argument behind them.*
 
-**Status: superseded in part.** This began as a specification written before the package
+**Status: superseded in part.** (Last reconciled against 0.7.0.) This began as a specification written before the package
 existed, and much of it has now been built, measured, and in three places decided differently.
 Read it for the reasoning, not for the signature. Where the two disagree, `molhume.featurize`
 is right and this file is history.
@@ -14,7 +14,7 @@ What changed between the specification and the implementation, and why:
 | --- | --- | --- |
 | `featurize` returns `(fp, X, names)` | returns one `ndarray` | the names are identical on every call for a given set of flags, so returning them is something every caller unpacks and discards. `feature_names(**flags)` gives them on demand, the way sklearn's `get_feature_names_out` does. |
 | the fingerprint is returned separately, as `fp` | one array, bits appended after the descriptors | the fingerprint stays on by default, but it is now part of the same matrix rather than a second return value, which is what makes the output usable directly. Appending rather than prepending keeps descriptor column indices stable when the flag changes. |
-| `descriptors` selects a mode | `additional_descriptors` (bool) plus `columns` (names) | two orthogonal questions — *whose* descriptors, and *which* ones — were one parameter. They are combined with AND. |
+| `descriptors` selects a mode | `columns`: `"minimal"` / `"full_no_new"` / `"full"` / a list of names | this file split one parameter into two (`additional_descriptors` plus `columns`) on the argument that *whose* descriptors and *which* ones are orthogonal questions. They are, and it was still the wrong shape: every real call answered both at once, the AND between them needed a warning to be comprehensible, and the common case — "the reduced set" — could only be said by passing 622 strings. 0.7.0 collapsed them back into one parameter with three named answers and an escape hatch, and **this file's original single-parameter instinct was closer to right than the revision.** |
 | `standardize` has no default and raises | defaults to a sentinel that behaves as `"none"` and warns once | section 3 below is still the right argument; only the enforcement changed. Raising makes the library unusable in a one-liner; a silent default makes the wrong molecule the quiet case. The sentinel keeps the decision explicit — passing `"none"` yourself is silent, omitting it is not — without making the first call fail. |
 
 Two things section 5 promised and the implementation kept: the column set is versioned, and the

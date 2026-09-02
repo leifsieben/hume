@@ -272,8 +272,12 @@ def arm_hume(n_mols: int, n_reps: int) -> dict:
         # computes all 864 names, so it must pay for all 864. Taking the default here would cut
         # 69 us off HUME's total and quietly compare 863 columns against 864 -- a better ratio
         # obtained by computing less, which is the one way this benchmark must not be wrong.
+        # `qed` IS NOT ASKED FOR, and dropping it makes this number MORE honest rather than
+        # less. It costs 69.3 us/mol and the deduplication dropped its output slot, so it is not
+        # one of the 1,269 this benchmark divides by -- paying for it inflated the numerator
+        # against a denominator that never contained it. See the 0.7.0 changelog.
         return _core.all_from_pickles(pk.blobs, *rings, pk.h_blobs, pk.stereo_a, pk.stereo_b,
-                                      families=sel, optional=("qed", "AvgIpc"))
+                                      families=sel, optional=("AvgIpc",))
 
     res["cpp_all_columns"] = _timed(lambda _b: _all(), lambda: None)
     res["cpp_all_columns"]["columns"] = len(cols)

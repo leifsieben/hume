@@ -2,9 +2,12 @@
 
 Molecular descriptors computed in C++, verified column by column against RDKit and Mordred.
 
-`mol-hume` emits **1,269 descriptors** per molecule in about **285 microseconds**, from a single
-call, plus a 2,048-bit ECFP alongside them. Of the descriptors, 1,109 reproduce ones that RDKit
-or Mordred already define, and 160 are new. Nothing is computed in Python.
+`mol-hume` computes up to **1,269 descriptors** per molecule in about **285 microseconds**, from
+a single call, plus a 2,048-bit ECFP alongside them. Of the descriptors, 1,109 reproduce ones
+that RDKit or Mordred already define, and 160 are new. Nothing is computed in Python.
+
+The default is the reduced **622-column `minimal` set**, which is also 17% faster to compute
+because the columns it drops are no longer calculated. Pass `columns="full"` for all 1,269.
 
 ```bash
 pip install mol-hume
@@ -14,7 +17,7 @@ pip install mol-hume
 import molhume
 
 X = molhume.featurize(["CCO", "CC(=O)Oc1ccccc1C(=O)O"], standardize="none")
-# X -> (2, 3317) float64: 1,269 descriptors then 2,048 ECFP bits, ready for a model
+# X -> (2, 2670) float64: the 622 `minimal` descriptors then 2,048 ECFP bits, ready for a model
 
 xgboost.XGBRegressor().fit(X, y)
 ```
@@ -28,7 +31,38 @@ df = pandas.DataFrame(X, columns=molhume.feature_names())
 ```
 
 Pass the same flags to both and the names line up: `feature_names(fingerprint=False)` for the
-1,269 descriptors alone, `feature_names(columns=[...])` for a subset.
+descriptors alone, `feature_names(columns="full")` for all 1,269.
+
+## Which columns
+
+One parameter, four ways to answer it:
+
+```python
+molhume.featurize(smiles, columns="minimal")      # 622 -- the default
+molhume.featurize(smiles, columns="full_no_new")  # 1,109 -- what RDKit or Mordred already define
+molhume.featurize(smiles, columns="full")         # all 1,269
+molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # exactly these, in this order
+```
+
+`molhume.column_set(name)` returns the names in any of the three sets, and `molhume.ALL_COLUMNS`
+lists every name a manual selection can use.
+
+**Since 0.7.0 this decides what is COMPUTED, not just what is returned.** A descriptor family
+none of whose columns you asked for is not calculated at all, and neither are the individual
+eigensolves of the `spectral` family, which is the most expensive of the nineteen. The output is
+identical either way -- `tests/test_families.py` checks every family and every set against an
+ungated run, cell for cell -- but a narrow selection is now cheaper as well as smaller. Measured
+on 1,200 molecules of `cpp/hard.smi` at one thread, against the ungated 918 us/mol:
+
+| selection | us/mol | |
+| --- | --- | --- |
+| `columns="minimal"` (622) | 762 | **17% faster** |
+| `columns="full_no_new"` (1,109) | 908 | 1% -- within noise |
+| `columns="full"` (1,269) | 900 | 2% -- within noise |
+| `columns=["TPSA", "ExactMolWt", "SLogP"]` | 288 | **69% faster** |
+
+The two full sets gain nothing, which is the honest result: they ask for every family, so there
+is nothing to skip.
 
 ## The one decision you have to make
 
@@ -54,9 +88,7 @@ Passing `"none"` explicitly is a decision and is silent; omitting it is not, and
 | `fingerprint` | `True` | append `fp_size` ECFP bit columns *after* the descriptors, so descriptor column indices never shift when the flag changes. Turning it off saves about 30 us/molecule that cannot be threaded |
 | `fp_radius` | `3` | ECFP radius |
 | `fp_size` | `2048` | ECFP bits |
-| `additional_descriptors` | `True` | include the 160 descriptors that are ours rather than RDKit's or Mordred's. Selects what is returned, not what is computed |
-| `columns` | `None` | emit only these names, in this order. Combined with `additional_descriptors` by AND |
-| `optional` | `None` | expensive columns to compute. `AvgIpc` is on by default, `qed` off |
+| `columns` | `"minimal"` | `"minimal"` (622), `"full_no_new"` (1,109), `"full"` (1,269), or a list of names in the order you want them. Decides what is computed as well as what is returned |
 | `on_error` | `"nan"` | unparseable SMILES: `"nan"` keeps the row and fills it, so the output stays aligned with the input; `"raise"`; `"skip"` drops the row, so it does not |
 | `dtype` | `float64` | `float32` halves the memory and is what the boosting libraries convert to internally anyway |
 | `batch_size` | `4096` | rows per batch. Affects memory, not values |
@@ -144,10 +176,11 @@ unusable. What survives is 1,269.
 
 ## A reduced column set
 
-`minimal-v2` is a 622-column subset of the 1,269:
+`minimal-v2` is a 622-column subset of the 1,269, and since 0.7.0 it is the default:
 
 ```python
-X = molhume.featurize(smiles, columns=list(molhume.minimal_columns()))
+X = molhume.featurize(smiles)                     # these two are the same call
+X = molhume.featurize(smiles, columns="minimal")
 ```
 
 It is a **set, not a ranking**. Every column was removed for one of three reasons, and none of

@@ -61,7 +61,7 @@ def test_a_repeated_molecule_gives_repeated_rows(smiles):
 
 def test_fingerprint_bits_do_not_depend_on_descriptor_flags(smiles):
     n_all = len(molhume.ALL_COLUMNS)
-    n_few = len(molhume.feature_names(additional_descriptors=False, fingerprint=False))
-    a = molhume.featurize(smiles, standardize="none")
-    b = molhume.featurize(smiles, standardize="none", additional_descriptors=False)
+    n_few = len(molhume.feature_names(columns="full_no_new", fingerprint=False))
+    a = molhume.featurize(smiles, standardize="none", columns="full")
+    b = molhume.featurize(smiles, standardize="none", columns="full_no_new")
     assert np.array_equal(a[:, n_all:], b[:, n_few:])

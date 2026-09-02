@@ -39,11 +39,11 @@ RTOL = 1e-9
 @pytest.fixture(scope="module")
 def actual(smiles):
     # the fixture is descriptors-only; see tools/gen_fixture.py
-    return molhume.featurize(smiles, standardize="none", fingerprint=False)
+    return molhume.featurize(smiles, standardize="none", fingerprint=False, columns="full")
 
 
 def test_columns_match(expected):
-    assert molhume.feature_names(fingerprint=False) == expected["names"]
+    assert molhume.feature_names(fingerprint=False, columns="full") == expected["names"]
 
 
 def _this_platform():

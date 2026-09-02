@@ -8,11 +8,21 @@ in three places revises. Delivered as a file because the peer session had exited
 ## What it is
 
 ```bash
-pip install --upgrade mol-hume        # 0.4.0
+pip install --upgrade mol-hume        # 0.7.0
 ```
 ```python
-X = molhume.featurize(smiles, columns=list(molhume.minimal_columns()))   # 550 of 1,269
+X = molhume.featurize(smiles, standardize="none")     # 622 of 1,269 -- minimal is the DEFAULT
 ```
+
+⚠️ **The set grew twice after this document was written, under the same spec name.** 550 columns
+in 0.4.0, 612 in 0.5.0, 622 in 0.6.0 — `minimal-v2` throughout, so the package version is the
+only thing distinguishing them. Both changes restored `fr_*` substructure flags, and all 15 of
+the flags this project asked for are present from 0.6.0 on (`fr_sulfone` was the last one
+missing). Pin `mol-hume>=0.6.0` and recompute any features cached under 0.4.0 or 0.5.0.
+
+Since 0.7.0 `minimal` is the default and `columns` also decides what is **computed** — it runs
+17% faster than an ungated call. `columns="full"` gives all 1,269, `columns="full_no_new"` the
+1,109 that RDKit or Mordred already define.
 
 ## Breaking, if you used minimal-v1
 
