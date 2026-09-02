@@ -125,15 +125,17 @@ $A -c "
 import molhume, torch, rdkit, numpy
 print('envA rdkit', rdkit.__version__, 'numpy', numpy.__version__, 'torch', torch.__version__,
       'cuda', torch.cuda.is_available())
-print('molhume', molhume.__version__ if hasattr(molhume, "__version__") else "?",
-      'columns', len(molhume.ALL_COLUMNS))
+print('molhume emittable columns', len(molhume.ALL_COLUMNS))
 import numpy as np
-# EVERY HUME ARM SMOKE-TESTED SEPARATELY. The three differ only in `columns`, which since 0.7.0
-# also decides what is COMPUTED -- so a broken compute plan would show up in exactly one of them
-# and a single-arm preflight would not see it.
-for cs, want in (("full", 1269), ("full_no_new", 1109), ("minimal", 622)):
-    X = molhume.featurize(['CC(=O)Oc1ccccc1C(=O)O'], columns=cs, standardize="none",
-                          fingerprint=False)
+# EVERY HUME ARM 'CC(=O)Oc1ccccc1C(=O)O'-TESTED SEPARATELY. The three differ only in the column set, which since
+# 0.7.0 also decides what is COMPUTED -- so a broken compute plan shows up in exactly one of
+# them and a single-arm preflight would not see it.
+#
+# NOTE FOR ANYONE EDITING THIS BLOCK: it is inside a DOUBLE-QUOTED shell string, so a double
+# quote here ends the string and the rest becomes shell. That is not hypothetical -- it killed a
+# boot two minutes in, on a line containing a bare quoted question mark.
+for cs, want in (('full', 1269), ('full_no_new', 1109), ('minimal', 622)):
+    X = molhume.featurize(['CC(=O)Oc1ccccc1C(=O)O'], columns=cs, standardize='none', fingerprint=False)
     assert X.shape[1] == want, (cs, X.shape, want)
     assert np.isfinite(X).sum() > want // 2, ('hume produced no values', cs)
     print('  smoke ok', cs, X.shape, 'finite', int(np.isfinite(X).sum()))
