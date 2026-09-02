@@ -137,6 +137,69 @@ normalizations x 9 lags. Whether 9 lags are needed, and whether `MATS`/`GATS` (M
 two classical spatial-autocorrelation coefficients) are near-duplicates, is a separate question
 answerable by measurement. **The 519 -> 327 figure is the constructual cut only.**
 
+### 3.1b Normalizations and lags (decisions 2 and 3)
+
+**Normalizations.** The six are `ATS` (sum of w_i*w_j over pairs at lag k), `AATS` (divided by
+the pair count), `ATSC` / `AATSC` (the same on centered weights), `MATS` (Moran = AATSC divided
+by the variance of w) and `GATS` (Geary, which uses squared differences rather than products).
+Median |r| over kept weights x lags 1-8:
+
+| pair | median \|r\| |
+| --- | ---: |
+| `AATSC` ~ `MATS` | **0.921** |
+| `GATS` ~ `MATS` | 0.784 |
+| `ATSC` ~ `AATSC` | 0.760 |
+| `ATS` ~ `AATS` | 0.269 |
+| `ATS` ~ `ATSC` | 0.189 |
+| `ATS` ~ `GATS` | 0.129 |
+
+Only one pair is strongly redundant, and it is the one the definitions predict: `MATS` is
+`AATSC` divided by a per-molecule scalar. **Decision: drop `MATS`, keep `AATSC`.** Note
+`ATS`~`AATS` is only 0.269 -- dividing by the pair count is not cosmetic, and an earlier
+assumption that those two were near-duplicates was wrong.
+
+**Lags.** The redundancy across lags is NOT uniform, and this is the useful finding:
+
+| normalization | adjacent lags | lag k vs k+2 |
+| --- | ---: | ---: |
+| `ATS` | **0.966** | **0.938** |
+| `AATS` | **0.852** | |
+| `ATSC` | 0.172 | |
+| `AATSC` | 0.209 | |
+| `MATS` | 0.231 | 0.132 |
+| `GATS` | 0.207 | 0.121 |
+
+The uncentered forms are nearly flat across lags, because `ATS_k` is approximately
+`(sum w)^2 * (fraction of pairs at distance k)` and is therefore dominated by molecular size.
+The centered forms are the opposite: every lag carries distinct information.
+
+**Decision: keep lags {0, 2, 4, 6, 8}.** ⚠️ **Applied to `ATS` and `AATS` only** -- see §5
+question 5. Applying it to the centered forms as well would discard columns whose adjacent-lag
+correlation is 0.17-0.23, which is signal rather than redundancy.
+
+### 3.1c Does the lag cut undermine the weight cut? No -- measured
+
+The case for dropping `se`/`are`/`i`/`p`/`m` rested on the aggregation injecting a topology term
+that other columns carry. **That second half was asserted without checking, and checking shows
+there is no constant-weight autocorrelation emitted**, so the pair-count-at-lag-k profile is not
+directly present -- only partially, through path counts (`MPC*`, `piPC*`), topological charge
+(`GGI*`, `JGI*`) and distance functionals.
+
+Tested directly by consumer inversion: can XGBoost rebuild a dropped-weight column from the kept
+columns, with all 9 lags versus with `ATS`/`AATS` cut to {0,2,4,6,8}?
+
+| design | median R^2 | min | below 0.95 |
+| --- | ---: | ---: | ---: |
+| all 9 lags | 0.9885 | 0.8625 | 12 of 48 |
+| `ATS`/`AATS` cut | 0.9857 | 0.8603 | 12 of 48 |
+
+**Median change +0.0001, worst +0.0417. The two decisions are independent.**
+
+⚠️ **But note what this also shows about the weight cut on its own: 12 of 48 sampled
+dropped-weight columns reconstruct below R^2 0.95, worst 0.86.** The dropped weights are not
+fully recoverable from the kept ones even with every lag present. That is a real cost of the
+weight decision, unchanged by the lag decision, and it is open.
+
 ### 3.2 Substructure matching (`fr_*`, 75 columns)
 
 Tested by consumer inversion against the ECFP6 that mol-hume emits alongside them, using the
@@ -160,7 +223,31 @@ The only thing `fr_*` adds is **counts** — median Spearman 0.31 on molecules w
 occurs, 35 of 63 below 0.5 — and that is an artifact of shipping *binary* bits. A count
 fingerprint would likely close it.
 
-**Decision: drop the family, with one stated condition.** See §5, open question 1.
+**Decision: drop the family** (user decision, 2026-09-02). Condition in §5 question 1 stands.
+
+### 3.3 No other family is redundant with the ECFP, and the boundary is principled
+
+The same test applied to every other family whose columns are counts of local environments:
+
+| family | columns | median value R^2 | at >= 0.95 | median detection AUROC |
+| --- | ---: | ---: | ---: | ---: |
+| `fr_*` substructure | 75 | — | — | **1.000** |
+| E-state atom type | 100 | 0.896 | 13 | 1.000 |
+| ring perception | 74 | 0.813 | **0** | 0.996 |
+| rdkit core counts | 9 | 0.878 | **0** | 0.999 |
+| constitutional | 27 | 0.881 | 2 | 0.999 |
+
+**Nothing else is droppable, and the reason explains why `fr_*` was.** Detection is near-perfect
+everywhere -- a circular fingerprint knows *whether* a local environment is present. What it does
+not carry is a **magnitude**: E-state columns are a continuous electronic index rather than a
+count (`SdssC` R^2 0.69 despite firing on 81% of molecules), ring counts are global topology that
+no radius-3 environment sees (`n6FRing` R^2 −0.36), and `HeavyAtomCount` sits at 0.863 because a
+binary bit vector cannot count.
+
+`fr_*` was uniquely redundant because it is the one family that is a **pure presence flag for a
+local pattern** -- precisely what a binary circular fingerprint encodes and nothing more. The
+boundary falls exactly where the mechanism says it should, which is evidence the drop was
+principled rather than a threshold artifact.
 
 ## 4. Running total
 
@@ -185,5 +272,11 @@ remaining reduction lives.
    products, agrochemicals and materials are also absent, so "validate across chemical spaces"
    is currently aspirational.
 3. **The parametric cut** — lags and normalizations — is untouched.
-4. **`minimal-v1` is published** in mol-hume 0.2.0+ as a frozen contract. Whatever replaces it
+5. **Which normalizations does the lag cut apply to?** Recorded as `ATS`/`AATS` only, because
+   the centered forms have adjacent-lag correlation 0.17-0.23. If it was meant for all six, that
+   discards signal and the numbers in 3.1b are the evidence against it. **Needs confirmation.**
+6. **The weight cut has an unresolved residual**: 12 of 48 sampled dropped-weight columns
+   reconstruct at R^2 below 0.95 from the kept set, worst 0.86 (§3.1c). Independent of the lag
+   decision, but not zero.
+7. **`minimal-v1` is published** in mol-hume 0.2.0+ as a frozen contract. Whatever replaces it
    ships under a new name; the old one is not edited.
