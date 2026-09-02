@@ -274,3 +274,46 @@ def test_family_offsets_land_on_the_right_columns():
 def test_raw_offsets_are_kept_but_separate():
     assert max(v for v in molhume.RAW_FAMILY_OFFSETS.values() if isinstance(v, int)) > \
         len(molhume.ALL_COLUMNS), "RAW_FAMILY_OFFSETS describes the wider pre-dedup row"
+
+
+# ---------------------------------------------------------------- the minimal spec
+
+def test_minimal_columns_is_a_prefix_of_one_ordering():
+    full = molhume.minimal_columns(1267)
+    for n in (1, 50, 400, 800):
+        assert molhume.minimal_columns(n) == full[:n], (
+            "minimal_columns(n) must be a prefix of the published ranking, or the curve does "
+            "not describe what a caller actually gets")
+    assert set(full) <= set(molhume.ALL_COLUMNS)
+
+
+def test_minimal_columns_default_matches_the_frozen_spec():
+    from molhume import _minimal
+    assert len(molhume.minimal_columns()) == _minimal.N_DEFAULT == 800
+
+
+def test_minimal_recovery_covers_exactly_the_dropped_columns():
+    kept = set(molhume.minimal_columns())
+    rec = molhume.minimal_recovery()
+    assert set(rec).isdisjoint(kept), "a kept column is present, not reconstructed"
+    gated = set(molhume.minimal_gated())
+    assert set(rec) | kept | gated == set(molhume.ALL_COLUMNS), (
+        "kept / scored / gated must PARTITION ALL_COLUMNS; a column in none of the three is "
+        "invisible to anyone reasoning about the spec")
+    assert not (gated & kept) and not (gated & set(rec)), "the three sets must not overlap"
+    assert all(0.0 <= v <= 1.0 for v in rec.values())
+
+
+def test_minimal_recovery_filters_and_rejects_unknown_names():
+    kept = molhume.minimal_columns()[0]
+    dropped = next(iter(molhume.minimal_recovery()))
+    got = molhume.minimal_recovery([kept, dropped])
+    assert set(got) == {dropped}, "a kept column is absent rather than reported at 1.0"
+    with pytest.raises(ValueError, match="does not emit"):
+        molhume.minimal_recovery(["NotAColumn"])
+
+
+def test_minimal_spec_name_is_checked():
+    for fn in (molhume.minimal_columns, molhume.minimal_curve, molhume.minimal_recovery):
+        with pytest.raises(ValueError, match="minimal-v1"):
+            fn(spec="v2") if fn is not molhume.minimal_columns else fn(None, spec="v2")

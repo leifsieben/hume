@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.2.1 — 2026-09-02
+
+- **`molhume.minimal_recovery(columns=None)`** — held-out reconstruction R² per dropped column.
+  `minimal_curve()` reports a worst case over 467 columns, which cannot answer "is the
+  descriptor I care about safe"; this can. Kept columns are absent rather than reported at 1.0,
+  since a kept column is present, not reconstructed. At n=800: median 0.995, 44 below 0.99,
+  none below 0.95.
+- **`molhume.minimal_gated()`** — the 2 columns excluded from the ranking before it was derived,
+  with the reason. `MDEC-11` is finite on 41% of molecules, below the usability gate;
+  `n5FHRing` is constant on all three derivation samples. With these,
+  `minimal_columns() | minimal_recovery() | minimal_gated()` partitions `ALL_COLUMNS` exactly,
+  and there is a test asserting it.
+
 ## 0.2.0 — 2026-09-01
 
 Adds a reduced column specification. No change to any descriptor value, and no change to the

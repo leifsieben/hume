@@ -31,7 +31,7 @@ from ._extract import Batch, extract, extract_pickles
 __all__ = [
     # the public API
     "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
-    "minimal_columns", "minimal_curve",
+    "minimal_columns", "minimal_curve", "minimal_recovery", "minimal_gated",
     # lower level: the (fp, X, names) form, and the 178-column block on its own
     "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
     "COLUMNS", "N_COLS", "FAMILY_OFFSETS", "RAW_FAMILY_OFFSETS",
@@ -524,6 +524,67 @@ def minimal_curve(spec: str = "minimal-v1") -> tuple:
     if spec != "minimal-v1":
         raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
     return _minimal.CURVE
+
+
+def minimal_recovery(columns=None, spec: str = "minimal-v1") -> dict:
+    """How well each column dropped by `minimal_columns()` is reconstructed from the ones kept.
+
+        molhume.minimal_recovery(["MolLogP", "TPSA"])
+        {'MolLogP': 0.9963}          # TPSA is KEPT, so it is not in the result
+
+    `minimal_curve()` answers "is this n safe overall" with a worst case and a count.
+    This answers the question a user with one descriptor in mind actually has: **is the column I
+    care about safe.** A worst case over 467 columns cannot answer that.
+
+    Returns ``{name: R^2}`` for dropped columns only -- a kept column is not reconstructed, it is
+    present, so including it at 1.0 would blur the distinction that matters. Pass `columns` to
+    ask about specific names; anything kept, or not emitted at all, is simply absent from the
+    result, so ``set(asked) - set(result)`` is the set that survives the spec.
+
+    The numbers are HELD OUT: the reconstruction is fitted on the derivation samples and scored
+    on a disjoint draw. In-sample values would be meaningless here -- the kept set is numerically
+    singular, and an unregularised in-sample fit reports R^2 = 0.99 alongside a held-out
+    -1e20. See docs/MINIMAL_SPEC.md section 6.
+
+    At the shipped default of 800 columns: median 0.995, 44 of 467 below 0.99, none below 0.90.
+
+    Note that `minimal_columns()`, this table, and `minimal_gated()` PARTITION ALL_COLUMNS: 800
+    kept, 467 scored, 2 gated out before the ranking was derived. A column absent from all three
+    would be a bug, and there is a test for it.
+    """
+    from . import _minimal
+    if spec != "minimal-v1":
+        raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
+    table = _minimal.RECOVERY_AT_DEFAULT
+    if columns is None:
+        return dict(table)
+    asked = list(columns)
+    known = set(ALL_COLUMNS)
+    unknown = [c for c in asked if c not in known]
+    if unknown:
+        raise ValueError(
+            f"minimal_recovery was asked about {len(unknown)} name(s) this build does not emit: "
+            f"{unknown[:6]}{' ...' if len(unknown) > 6 else ''}. molhume.ALL_COLUMNS lists all "
+            f"{len(ALL_COLUMNS)}.")
+    return {c: table[c] for c in asked if c in table}
+
+
+def minimal_gated(spec: str = "minimal-v1") -> dict:
+    """Columns left out of the ranking before it was derived, and why. ``{name: reason}``.
+
+    Two columns are emitted by `featurize` but appear in neither `minimal_columns()` nor
+    `minimal_recovery()`: one is finite on too few molecules to gate through, the other is
+    constant on all three derivation samples. Reporting them rather than quietly omitting them
+    is what makes the three sets partition ALL_COLUMNS.
+
+    **Both are facts about the derivation samples, not verdicts about the descriptors.** A
+    column constant across 72,000 drug-like and adversarial molecules may vary on yours, in
+    which case it is one the spec cannot speak for either way.
+    """
+    from . import _minimal
+    if spec != "minimal-v1":
+        raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
+    return dict(_minimal.GATED)
 
 
 def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,

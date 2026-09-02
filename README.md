@@ -160,6 +160,20 @@ than inherit one:
 molhume.minimal_columns(400)      # smaller, and minimal_curve() says exactly what you gave up
 ```
 
+**Is the column *you* care about safe?** `minimal_curve()` gives a worst case over 467 dropped
+columns, which cannot answer that. `minimal_recovery()` can:
+
+```python
+molhume.minimal_recovery(["SLogP", "TPSA", "BalabanJ"])
+# {'SLogP': 0.9882, 'TPSA': 0.9937}      BalabanJ is KEPT, so it is absent
+```
+
+Held-out R², fitted on the derivation samples and scored on a disjoint draw. At n=800 the median
+is 0.995, 44 of 467 fall below 0.99 and none below 0.95. `minimal_columns()`,
+`minimal_recovery()` and `minimal_gated()` partition all 1,269 columns — 800 kept, 467 scored,
+and 2 excluded before ranking (one too often non-finite, one constant on every derivation
+sample).
+
 ### What it costs, measured
 
 Benchmarked as an independent test — the datasets played no part in choosing the columns — with
