@@ -107,7 +107,12 @@ for ds in todo:
     higher = task == "binary"
     rel = (a.mean() - b.mean()) / abs(a.mean()) if higher else (b.mean() - a.mean()) / abs(a.mean())
     rows.append(dict(dataset=ds, panel=panel[ds], task=task, hume=a.mean(),
-                     minimal=b.mean(), rel=rel, sd=a.std(ddof=1) / abs(a.mean())))
+                     minimal=b.mean(), rel=rel, sd=a.std(ddof=1) / abs(a.mean()),
+                     # PER-FOLD too, so these can be written back into the downstream grid as
+                     # hume_minimal records. The grid merges on (dataset, arm, FOLD), so a mean
+                     # alone cannot replace the AWS records it supersedes.
+                     hume_folds=a.tolist(), minimal_folds=b.tolist(),
+                     metric="auroc" if task == "binary" else "rmse"))
     print(f"    {ds:16s} {panel[ds]:9s} {a.mean():9.4f} {b.mean():9.4f} {rel*100:+7.2f}%", flush=True)
 json.dump(rows, open("results/reanalysis/minimal_local_grid.json", "w"), indent=1)
 print()
