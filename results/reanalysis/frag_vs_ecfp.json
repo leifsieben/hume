@@ -1,0 +1,377 @@
+[
+ {
+  "column": "fr_C_O",
+  "fires": 0.7174,
+  "r2": 0.9222002616817166
+ },
+ {
+  "column": "fr_C_O_noCOO",
+  "fires": 0.6986,
+  "r2": 0.9199855004349297
+ },
+ {
+  "column": "fr_Al_OH",
+  "fires": 0.13115,
+  "r2": 0.888001524202836
+ },
+ {
+  "column": "fr_Ar_OH",
+  "fires": 0.0617,
+  "r2": 0.8789157072470516
+ },
+ {
+  "column": "fr_methoxy",
+  "fires": 0.20135,
+  "r2": 0.928990045800891
+ },
+ {
+  "column": "fr_oxime",
+  "fires": 0.008,
+  "r2": 0.7823253597569466
+ },
+ {
+  "column": "fr_ester",
+  "fires": 0.2138,
+  "r2": 0.9211602020051606
+ },
+ {
+  "column": "fr_Al_COO",
+  "fires": 0.04325,
+  "r2": 0.9349255692971831
+ },
+ {
+  "column": "fr_Ar_COO",
+  "fires": 0.0182,
+  "r2": 0.9356973647624598
+ },
+ {
+  "column": "fr_COO2",
+  "fires": 0.06095,
+  "r2": 0.9438870593244988
+ },
+ {
+  "column": "fr_ketone",
+  "fires": 0.11975,
+  "r2": 0.8934864767376243
+ },
+ {
+  "column": "fr_ether",
+  "fires": 0.52705,
+  "r2": 0.9195149249188
+ },
+ {
+  "column": "fr_phenol",
+  "fires": 0.0481,
+  "r2": 0.8450961877748995
+ },
+ {
+  "column": "fr_aldehyde",
+  "fires": 0.00775,
+  "r2": 0.925443649211572
+ },
+ {
+  "column": "fr_quatN",
+  "fires": 0.04355,
+  "r2": 0.927790724785921
+ },
+ {
+  "column": "fr_NH2",
+  "fires": 0.1171,
+  "r2": 0.943111573494773
+ },
+ {
+  "column": "fr_NH1",
+  "fires": 0.53035,
+  "r2": 0.9248179881691494
+ },
+ {
+  "column": "fr_NH0",
+  "fires": 0.70915,
+  "r2": 0.9342867889416137
+ },
+ {
+  "column": "fr_Ar_N",
+  "fires": 0.4004,
+  "r2": 0.9456014315928264
+ },
+ {
+  "column": "fr_aniline",
+  "fires": 0.38545,
+  "r2": 0.9090438161939913
+ },
+ {
+  "column": "fr_Imine",
+  "fires": 0.0212,
+  "r2": 0.6740321715935543
+ },
+ {
+  "column": "fr_nitrile",
+  "fires": 0.0359,
+  "r2": 0.9513303471199364
+ },
+ {
+  "column": "fr_hdrzine",
+  "fires": 0.02035,
+  "r2": 0.6621930509165814
+ },
+ {
+  "column": "fr_hdrzone",
+  "fires": 0.0162,
+  "r2": 0.8829879138314675
+ },
+ {
+  "column": "fr_N_O",
+  "fires": 0.00995,
+  "r2": 0.6991318612747908
+ },
+ {
+  "column": "fr_nitro",
+  "fires": 0.04685,
+  "r2": 0.9589115168952711
+ },
+ {
+  "column": "fr_azide",
+  "fires": 0.00155,
+  "r2": 0.9999998022869918
+ },
+ {
+  "column": "fr_priamide",
+  "fires": 0.0225,
+  "r2": 0.9444495878520724
+ },
+ {
+  "column": "fr_amidine",
+  "fires": 0.0191,
+  "r2": 0.5942690568929578
+ },
+ {
+  "column": "fr_guanido",
+  "fires": 0.00675,
+  "r2": 0.7499116896397704
+ },
+ {
+  "column": "fr_Nhpyrrole",
+  "fires": 0.0774,
+  "r2": 0.9256304087700873
+ },
+ {
+  "column": "fr_imide",
+  "fires": 0.05355,
+  "r2": 0.8558697911415725
+ },
+ {
+  "column": "fr_halogen",
+  "fires": 0.27215,
+  "r2": 0.9085916546078753
+ },
+ {
+  "column": "fr_alkyl_halide",
+  "fires": 0.0724,
+  "r2": 0.9271669955093906
+ },
+ {
+  "column": "fr_sulfide",
+  "fires": 0.1141,
+  "r2": 0.9309212507559035
+ },
+ {
+  "column": "fr_SH",
+  "fires": 0.0018,
+  "r2": 0.884644322192773
+ },
+ {
+  "column": "fr_C_S",
+  "fires": 0.01125,
+  "r2": 0.8810679312647355
+ },
+ {
+  "column": "fr_sulfone",
+  "fires": 0.0176,
+  "r2": 0.8445366152894763
+ },
+ {
+  "column": "fr_sulfonamd",
+  "fires": 0.14055,
+  "r2": 0.941313937806489
+ },
+ {
+  "column": "fr_urea",
+  "fires": 0.05135,
+  "r2": 0.8654485700305397
+ },
+ {
+  "column": "fr_term_acetylene",
+  "fires": 0.0079,
+  "r2": 0.9977482841953931
+ },
+ {
+  "column": "fr_imidazole",
+  "fires": 0.05085,
+  "r2": 0.8522372354128976
+ },
+ {
+  "column": "fr_furan",
+  "fires": 0.06895,
+  "r2": 0.9248897324027269
+ },
+ {
+  "column": "fr_thiophene",
+  "fires": 0.04935,
+  "r2": 0.925956252526208
+ },
+ {
+  "column": "fr_thiazole",
+  "fires": 0.03005,
+  "r2": 0.8885572947534912
+ },
+ {
+  "column": "fr_oxazole",
+  "fires": 0.0089,
+  "r2": 0.8404623874693421
+ },
+ {
+  "column": "fr_pyridine",
+  "fires": 0.1119,
+  "r2": 0.855710621259497
+ },
+ {
+  "column": "fr_piperdine",
+  "fires": 0.08005,
+  "r2": 0.8693021099437116
+ },
+ {
+  "column": "fr_piperzine",
+  "fires": 0.0547,
+  "r2": 0.9006300388821094
+ },
+ {
+  "column": "fr_morpholine",
+  "fires": 0.0518,
+  "r2": 0.9417184299668699
+ },
+ {
+  "column": "fr_lactone",
+  "fires": 0.0108,
+  "r2": 0.6283958319162268
+ },
+ {
+  "column": "fr_tetrazole",
+  "fires": 0.01215,
+  "r2": 0.9202876456872893
+ },
+ {
+  "column": "fr_epoxide",
+  "fires": 0.01495,
+  "r2": 0.8162444336019427
+ },
+ {
+  "column": "fr_unbrch_alkane",
+  "fires": 0.0385,
+  "r2": 0.7803819115984352
+ },
+ {
+  "column": "fr_bicyclic",
+  "fires": 0.4559,
+  "r2": 0.9140074955704558
+ },
+ {
+  "column": "fr_benzene",
+  "fires": 0.7715,
+  "r2": 0.8958125478405803
+ },
+ {
+  "column": "fr_phos_acid",
+  "fires": 0.0028,
+  "r2": 0.9975547207110613
+ },
+ {
+  "column": "fr_nitro_arom_nonortho",
+  "fires": 0.0205,
+  "r2": 0.9129331555565957
+ },
+ {
+  "column": "fr_Al_OH_noTert",
+  "fires": 0.1154,
+  "r2": 0.850006517701715
+ },
+ {
+  "column": "fr_para_hydroxylation",
+  "fires": 0.19285,
+  "r2": 0.936144285850544
+ },
+ {
+  "column": "fr_allylic_oxid",
+  "fires": 0.10295,
+  "r2": 0.7827811485013265
+ },
+ {
+  "column": "fr_aryl_methyl",
+  "fires": 0.27645,
+  "r2": 0.8901841093239033
+ },
+ {
+  "column": "fr_Ndealkylation1",
+  "fires": 0.0756,
+  "r2": 0.8193542250643253
+ },
+ {
+  "column": "fr_Ndealkylation2",
+  "fires": 0.0801,
+  "r2": 0.876737007510444
+ },
+ {
+  "column": "fr_alkyl_carbamate",
+  "fires": 0.00365,
+  "r2": 0.5987001391083475
+ },
+ {
+  "column": "fr_ketone_Topliss",
+  "fires": 0.1024,
+  "r2": 0.8263196430082616
+ },
+ {
+  "column": "fr_ArN",
+  "fires": 0.05155,
+  "r2": 0.9208752520345205
+ },
+ {
+  "column": "fr_HOCCN",
+  "fires": 0.0062,
+  "r2": 0.3885367906006686
+ },
+ {
+  "column": "fr_lactam",
+  "fires": 0.01405,
+  "r2": 0.894266734272155
+ },
+ {
+  "column": "fr_benzodiazepine",
+  "fires": 0.0005,
+  "r2": 0.2695875036944888
+ },
+ {
+  "column": "fr_barbitur",
+  "fires": 0.00295,
+  "r2": 0.6944302263667465
+ },
+ {
+  "column": "fr_azo",
+  "fires": 0.008,
+  "r2": 0.9010689824746307
+ },
+ {
+  "column": "fr_nitro_arom",
+  "fires": 0.0345,
+  "r2": 0.9409157545177296
+ },
+ {
+  "column": "fr_phenol_noOrthoHbond",
+  "fires": 0.04725,
+  "r2": 0.8290057917906963
+ },
+ {
+  "column": "fr_phos_ester",
+  "fires": 0.0028,
+  "r2": 0.9975547207110613
+ }
+]

@@ -60,6 +60,41 @@ _TK = (1, 2, 3, 4)              # lags for bond-bond and atom-bond terms
 _E = {Chem.BondStereo.STEREOE: 1.0, Chem.BondStereo.STEREOTRANS: 1.0,
       Chem.BondStereo.STEREOZ: -1.0, Chem.BondStereo.STEREOCIS: -1.0}
 
+# KNOWN, MEASURED, UPSTREAM, AND DELIBERATELY NOT PATCHED HERE.
+#
+# T_sum, XATS2 and XATS4 are not invariant to how the molecule is written, on about 0.03% of
+# molecules -- 3 of 3,000 in tools/notation_stability.py, worst deviation 9.4 (T_sum) to 29.3
+# (XATS2/XATS4) times the column's own SD. That is a much larger deviation on a much rarer set
+# than the conjugation tie-break bug was, and it is a different bug entirely: this one is not
+# ours and there is nothing in this file to fix.
+#
+# The cause is that RDKit's SMILES round-trip is not idempotent for a Z double bond inside a
+# medium ring when the randomized rewriting happens to carry the bond's direction marker on a
+# RING-CLOSURE bond. Re-parsing then reads the geometry as E. Reproduced with no molhume code
+# in the loop at all, on rdkit 2025.09.2:
+#
+#     s = "COc1ccc(C2/C=C\\CN(S(=O)(=O)c3ccc(C)cc3)CC(=O)N2Cc2cccc(F)c2)cc1"
+#     m = Chem.MolFromSmiles(s)
+#     r = Chem.MolToSmiles(m, canonical=False, doRandom=True)   # "...C1\\C(...)...C\\C=1..."
+#     Chem.MolToSmiles(Chem.MolFromSmiles(r)) != Chem.MolToSmiles(m)
+#
+# 10 of 200 random rewritings of that one molecule come back as the OTHER diastereomer. The
+# bond keeps the same two stereo-reference atoms (15 and 18 vs 10 and 1, the same chemical
+# neighbours) and merely flips STEREOZ -> STEREOE.
+#
+# So the molecule object we are handed really is a different molecule, and t_b = -1 -> +1 is
+# this block reporting it correctly. T_absum and n_EZ_any do not move, which is the signature:
+# the COUNT of defined double bonds is stable and only the SIGN flips, and XATS_k moves only
+# because it is Sum s_i * t_b and inherits that sign. Every affected molecule found was a cis
+# double bond in an 8- to 10-membered ring.
+#
+# Contrast with the conjugation tie-break, which WAS ours: there the molecule was the same and
+# our own rule picked differently. Here the input differs before we see it. Canonicalizing t_b
+# ourselves would mean overriding RDKit's stereo perception with our own, on the small set of
+# ring double bonds where RDKit is self-inconsistent -- a much larger and riskier change than
+# the payoff justifies at 0.03%. Recorded rather than patched. The shipped C++ port in
+# src/hume_core/hume_blocks.h reads the same RDKit bond stereo flags and inherits this exactly.
+
 
 def _names() -> list[str]:
     out = ["S_sum", "S_absum", "S_sum_norm", "S_central", "S_mass"]

@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.3.0 — 2026-09-02
+
+**Six descriptor values change.** `linearity`, `diam_max`, `het_in_max`, `het_frac_max`,
+`extra_arom_max` and `sys_max_rings` were not invariant to how a molecule is written: rewriting
+the same molecule with a different atom ordering changed them, on roughly 1.2% of molecules.
+That is label noise no amount of training data removes, since the same compound from a different
+source file got a different number.
+
+- The six descriptors pick a "largest" conjugated pi system. When two systems tie on size, the
+  winner was decided by RDKit's atom numbering. A previous fix pinned the sort to `kind="stable"`,
+  which made the value **reproducible** (same SMILES, same answer) but not **canonical** (same
+  molecule, same answer) — stable sort keeps the last maximal system *in atom order*. The two
+  properties were conflated.
+- Ties now break on chemical invariants: size, then diameter, then heteroatom count, then
+  aromatic-atom count, then the sorted multiset of atomic numbers. The first four pin all six
+  outputs; the fifth makes the order total on chemically distinct systems.
+- Verified with `tools/notation_stability.py`: all six now move on **zero** cells across 3,000
+  molecules x 4 random rewritings, down from 126-179 cells and up to 4.2x their own SD.
+- The test fixture is regenerated. Exactly those six columns moved, on 2 of 200 rows.
+
+Also recorded, not fixed: `XATS2`, `XATS4` and `T_sum` remain notation-unstable on ~0.03% of
+molecules. The cause is upstream — RDKit's SMILES round-trip is not idempotent for a Z double
+bond in a medium ring when the randomized form carries the direction marker on a ring-closure
+bond, so the molecule is read back as the E isomer. Reproduced with no mol-hume code involved.
+Fixing it would mean overriding RDKit's stereo perception, which is not worth the 0.03%.
+
 ## 0.2.1 — 2026-09-02
 
 - **`molhume.minimal_recovery(columns=None)`** — held-out reconstruction R² per dropped column.

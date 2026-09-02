@@ -24,48 +24,6 @@
    "nan_flips": 0
   },
   {
-   "column": "het_frac_max",
-   "worst_abs": 0.6666666666666666,
-   "worst_over_sd": 4.2480612645406595,
-   "cells_moved": 151,
-   "nan_flips": 0
-  },
-  {
-   "column": "het_in_max",
-   "worst_abs": 5.0,
-   "worst_over_sd": 2.845969303133903,
-   "cells_moved": 151,
-   "nan_flips": 0
-  },
-  {
-   "column": "extra_arom_max",
-   "worst_abs": 6.0,
-   "worst_over_sd": 2.717309558468905,
-   "cells_moved": 126,
-   "nan_flips": 0
-  },
-  {
-   "column": "linearity",
-   "worst_abs": 0.25,
-   "worst_over_sd": 1.8779765928585184,
-   "cells_moved": 179,
-   "nan_flips": 0
-  },
-  {
-   "column": "sys_max_rings",
-   "worst_abs": 6.0,
-   "worst_over_sd": 1.7304890729310565,
-   "cells_moved": 126,
-   "nan_flips": 0
-  },
-  {
-   "column": "diam_max",
-   "worst_abs": 2.0,
-   "worst_over_sd": 0.880471534324145,
-   "cells_moved": 179,
-   "nan_flips": 0
-  },
-  {
    "column": "ETA_dEpsilon_B",
    "worst_abs": 0.008921370967742037,
    "worst_over_sd": 0.35851183627940164,

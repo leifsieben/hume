@@ -101,30 +101,65 @@ def featurize(mol) -> np.ndarray:
         hets.append(int(het[idx].sum()))
         rings.append(int(arom[idx].sum()))
 
-    # kind="stable" is load-bearing, not decoration. When two pi systems tie on size, order[0]
-    # decides which one's diameter becomes `linearity` and which one's counts become
-    # `extra_arom_max` / `het_in_max` / `sys_max_rings` -- so the tie-break IS part of the
-    # feature definition and has to be a definition rather than an accident.
+    # ---- picking THE largest system, by a key that is a function of the system's contents ----
     #
-    # np.argsort defaults to kind="quicksort", which is an introsort and is NOT stable. It
-    # insertion-sorts partitions of <= 15 elements, so for the fewer-than-16-systems molecules
-    # that are ~all of chemistry it is stable by accident and reversing it picks the LAST
-    # maximal system. Past that it partitions, and which of the tied systems survives to the
-    # end depends on where they happen to sit in the list -- i.e. on RDKit's atom numbering.
-    # Found on a 115-atom cyclic depsipeptide with 21 conjugated systems, two of size 9 (at
-    # positions 1 and 19) whose diameters are 4 and 5: quicksort returned the size-9 system
-    # with diameter 4, giving linearity 0.5, where every stable sort returns the other and
-    # gives 0.625. Nothing chemical distinguishes them; only the sort did.
+    # Six emitted columns -- diam_max, linearity, het_in_max, het_frac_max, extra_arom_max and
+    # sys_max_rings -- are read off ONE chosen pi system, so the rule that chooses it is part of
+    # the feature definition. It has to be a property of the molecule. It was not.
     #
-    # Pinning to "stable" keeps the LAST maximal system, which is what the unstable sort
-    # already did on 98,904 of 98,905 adversarial molecules, so this is the existing behaviour
-    # made total rather than a new convention.
-    order = np.argsort(sizes, kind="stable")[::-1]
+    # This used to be `np.argsort(sizes, kind="stable")[::-1]`, with a long comment pinning
+    # kind="stable" because argsort's default introsort is not stable past 16 elements. That
+    # comment was right about what it fixed and wrong about it being enough. Stable sorting made
+    # the answer REPRODUCIBLE -- the same SMILES always gave the same number -- but not
+    # CANONICAL: a reversed stable ascending sort takes the LAST maximal system in list order,
+    # `groups` is filled by scanning atoms in RDKit's atom order, so "last" means "last in the
+    # atom numbering". Rewrite the same molecule with the atoms permuted -- a randomized SMILES,
+    # a different SD file, another toolkit's ordering -- and the tie goes to a different system
+    # and the column moves. tools/notation_stability.py over 3,000 molecules x 4 random
+    # rewritings: het_frac_max moved by 4.25 of its own SD on 151 of 12,000 cells, het_in_max by
+    # 2.85, extra_arom_max by 2.72, linearity by 1.88, sys_max_rings by 1.73, diam_max by 0.88.
+    # Which of two tied systems wins was being decided by atom numbering, which is not a
+    # property of the molecule.
+    #
+    # The tie is now broken on invariants of the system itself. Each key is a count or an
+    # extremum over the system's own atoms and bond-graph distances, so permuting the atom
+    # numbering permutes the members of a group and leaves every key untouched. Largest wins on
+    # each in turn:
+    #
+    #   1. size             -- the definition of "largest"; the rest is only a tie-break.
+    #   2. diameter         -- decides diam_max, and through it linearity. First among the
+    #                          tie-breaks because shape is the axis this block exists to expose.
+    #   3. heteroatom count -- decides het_in_max, and with size decides het_frac_max.
+    #   4. aromatic count   -- decides sys_max_rings, and with size decides extra_arom_max
+    #                          (extra = size - aromatic), so once keys 1-4 are settled no further
+    #                          key can change any of the six columns.
+    #   5. atomic numbers, sorted descending, compared lexicographically -- the multiset of
+    #                          elements. Redundant for the six columns and included anyway, so
+    #                          the order is total on chemically distinct systems instead of
+    #                          falling back to position in the atom list.
+    #
+    # Two systems that tie on all five have the same size, the same diameter, and the same bag of
+    # elements with the same aromatic/heteroatom split; all six columns are then identical
+    # whichever we pick, so the residual tie is immaterial. The old rule could not say that.
+    #
+    # This must stay byte-identical in behavior to conjugation() in src/hume_core/hume_blocks.h,
+    # which is the code that actually ships. cpp/find_mismatch.py compares the two on linearity.
+    members = list(groups.values())
+    key = [(sizes[g], diams[g], hets[g], rings[g],
+            sorted((int(mol.GetAtomWithIdx(int(a)).GetAtomicNum()) for a in members[g]),
+                   reverse=True))
+           for g in range(len(members))]
+    gmax = max(range(len(members)), key=lambda g: key[g])
     sizes = np.asarray(sizes, np.float64)
-    smax = sizes[order[0]]
-    s2nd = sizes[order[1]] if sizes.size > 1 else 0.0
+    smax = sizes[gmax]
+    # sys_2nd is the second largest size WITH MULTIPLICITY, so two systems tied at the maximum
+    # make it equal to sys_max. Dropping only the ONE group the tie-break chose and taking the
+    # max of the rest reproduces that, and unlike gmax it does not depend on which of a tied
+    # pair won.
+    s2nd = max([sizes[g] for g in range(len(members)) if g != gmax], default=0.0) \
+        if sizes.size > 1 else 0.0
     tot = float(sizes.sum())
-    dmax = diams[order[0]]
+    dmax = diams[gmax]
 
     hist = [float(sum(1 for s in sizes if lo <= s <= hi)) for lo, hi in _SBINS]
 
@@ -135,8 +170,8 @@ def featurize(mol) -> np.ndarray:
     feats += [dmax, dmax / max(smax - 1.0, 1.0), float(sum(diams))]
     nbranch = int((ncbonds >= 3).sum())
     feats += [float(nbranch), nbranch / max(tot, 1.0)]
-    feats += [float(sum(extra)), sum(extra) / max(tot, 1.0), float(extra[order[0]])]
-    feats += [float(hets[order[0]]), hets[order[0]] / max(smax, 1.0), float(rings[order[0]])]
+    feats += [float(sum(extra)), sum(extra) / max(tot, 1.0), float(extra[gmax])]
+    feats += [float(hets[gmax]), hets[gmax] / max(smax, 1.0), float(rings[gmax])]
     return np.asarray(feats, np.float32)
 
 

@@ -1,0 +1,530 @@
+[
+ {
+  "column": "fr_C_O",
+  "fires": 0.7174,
+  "n_atoms": 2,
+  "auroc": 0.9999677416900615,
+  "count_rho": 0.8782221927999373
+ },
+ {
+  "column": "fr_C_O_noCOO",
+  "fires": 0.6986,
+  "n_atoms": 2,
+  "auroc": 0.9993443172648562,
+  "count_rho": 0.8743521687661461
+ },
+ {
+  "column": "fr_Al_OH",
+  "fires": 0.13115,
+  "n_atoms": 2,
+  "auroc": 0.9998160925473925,
+  "count_rho": 0.78591776761151
+ },
+ {
+  "column": "fr_Ar_OH",
+  "fires": 0.0617,
+  "n_atoms": 2,
+  "auroc": 0.9999783263616463,
+  "count_rho": 0.5867456071550678
+ },
+ {
+  "column": "fr_methoxy",
+  "fires": 0.20135,
+  "n_atoms": 3,
+  "auroc": 0.9999593368624244,
+  "count_rho": 0.7069989546439724
+ },
+ {
+  "column": "fr_oxime",
+  "fires": 0.008,
+  "n_atoms": 3,
+  "auroc": 0.9996493310315062,
+  "count_rho": NaN
+ },
+ {
+  "column": "fr_ester",
+  "fires": 0.2138,
+  "n_atoms": 5,
+  "auroc": 0.9996714742477454,
+  "count_rho": 0.5484522173571162
+ },
+ {
+  "column": "fr_Al_COO",
+  "fires": 0.04325,
+  "n_atoms": 4,
+  "auroc": 0.9996315568623265,
+  "count_rho": 0.4155005547743708
+ },
+ {
+  "column": "fr_Ar_COO",
+  "fires": 0.0182,
+  "n_atoms": 4,
+  "auroc": 0.999390943877551,
+  "count_rho": -0.03203658531264993
+ },
+ {
+  "column": "fr_COO2",
+  "fires": 0.06095,
+  "n_atoms": 3,
+  "auroc": 0.9999415731837606,
+  "count_rho": 0.2534336904430292
+ },
+ {
+  "column": "fr_ketone",
+  "fires": 0.11975,
+  "n_atoms": 4,
+  "auroc": 0.9962074201525024,
+  "count_rho": 0.8134538735537982
+ },
+ {
+  "column": "fr_ether",
+  "fires": 0.52705,
+  "n_atoms": 3,
+  "auroc": 0.9997224748530407,
+  "count_rho": 0.8217887760359698
+ },
+ {
+  "column": "fr_phenol",
+  "fires": 0.0481,
+  "n_atoms": 7,
+  "auroc": 0.9999766473661472,
+  "count_rho": 0.6119118099287607
+ },
+ {
+  "column": "fr_aldehyde",
+  "fires": 0.00775,
+  "n_atoms": 3,
+  "auroc": 0.9999851680460383,
+  "count_rho": 0.3649786269478707
+ },
+ {
+  "column": "fr_quatN",
+  "fires": 0.04355,
+  "n_atoms": 1,
+  "auroc": 0.9992919921875,
+  "count_rho": 0.15942589724578743
+ },
+ {
+  "column": "fr_NH2",
+  "fires": 0.1171,
+  "n_atoms": 1,
+  "auroc": 0.999944666254801,
+  "count_rho": 0.439841219460616
+ },
+ {
+  "column": "fr_NH1",
+  "fires": 0.53035,
+  "n_atoms": 1,
+  "auroc": 0.9994490159515014,
+  "count_rho": 0.7799508797542614
+ },
+ {
+  "column": "fr_NH0",
+  "fires": 0.70915,
+  "n_atoms": 1,
+  "auroc": 0.9992454101204318,
+  "count_rho": 0.9295670200987143
+ },
+ {
+  "column": "fr_Ar_N",
+  "fires": 0.4004,
+  "n_atoms": 1,
+  "auroc": 0.9998230093548119,
+  "count_rho": 0.9223913478369695
+ },
+ {
+  "column": "fr_aniline",
+  "fires": 0.38545,
+  "n_atoms": 2,
+  "auroc": 0.9989508737760303,
+  "count_rho": 0.6708566259735431
+ },
+ {
+  "column": "fr_Imine",
+  "fires": 0.0212,
+  "n_atoms": 3,
+  "auroc": 0.9859139076574713,
+  "count_rho": 0.43661819877899816
+ },
+ {
+  "column": "fr_nitrile",
+  "fires": 0.0359,
+  "n_atoms": 2,
+  "auroc": 1.0,
+  "count_rho": 0.3964199575058614
+ },
+ {
+  "column": "fr_hdrzine",
+  "fires": 0.02035,
+  "n_atoms": 2,
+  "auroc": 0.9705175612246167,
+  "count_rho": null
+ },
+ {
+  "column": "fr_hdrzone",
+  "fires": 0.0162,
+  "n_atoms": 3,
+  "auroc": 0.9996790746186395,
+  "count_rho": 0.39946798774335235
+ },
+ {
+  "column": "fr_N_O",
+  "fires": 0.00995,
+  "n_atoms": 3,
+  "auroc": 0.987587495812543,
+  "count_rho": 0.8051879468207983
+ },
+ {
+  "column": "fr_nitro",
+  "fires": 0.04685,
+  "n_atoms": 2,
+  "auroc": 1.0,
+  "count_rho": 0.45043935893498077
+ },
+ {
+  "column": "fr_azide",
+  "fires": 0.00155,
+  "n_atoms": 1,
+  "auroc": null,
+  "count_rho": null,
+  "note": "too few positives to score"
+ },
+ {
+  "column": "fr_priamide",
+  "fires": 0.0225,
+  "n_atoms": 3,
+  "auroc": 0.9998914073606066,
+  "count_rho": 0.16904437792279298
+ },
+ {
+  "column": "fr_amidine",
+  "fires": 0.0191,
+  "n_atoms": 4,
+  "auroc": 0.9927582908163265,
+  "count_rho": 0.0679201882220448
+ },
+ {
+  "column": "fr_guanido",
+  "fires": 0.00675,
+  "n_atoms": 4,
+  "auroc": 0.9999885735179853,
+  "count_rho": 0.5805607356660377
+ },
+ {
+  "column": "fr_Nhpyrrole",
+  "fires": 0.0774,
+  "n_atoms": 1,
+  "auroc": 0.9998248351858339,
+  "count_rho": 0.1933858104890838
+ },
+ {
+  "column": "fr_imide",
+  "fires": 0.05355,
+  "n_atoms": 5,
+  "auroc": 0.9992674134844435,
+  "count_rho": 0.4485176079317952
+ },
+ {
+  "column": "fr_halogen",
+  "fires": 0.27215,
+  "n_atoms": 1,
+  "auroc": 0.9998682177874461,
+  "count_rho": 0.8244849754551477
+ },
+ {
+  "column": "fr_alkyl_halide",
+  "fires": 0.0724,
+  "n_atoms": 2,
+  "auroc": 0.9991804035323769,
+  "count_rho": 0.9075626782959745
+ },
+ {
+  "column": "fr_sulfide",
+  "fires": 0.1141,
+  "n_atoms": 3,
+  "auroc": 0.9998573326391424,
+  "count_rho": 0.2420894816778451
+ },
+ {
+  "column": "fr_SH",
+  "fires": 0.0018,
+  "n_atoms": 1,
+  "auroc": null,
+  "count_rho": null,
+  "note": "too few positives to score"
+ },
+ {
+  "column": "fr_C_S",
+  "fires": 0.01125,
+  "n_atoms": 2,
+  "auroc": 1.0,
+  "count_rho": null
+ },
+ {
+  "column": "fr_sulfone",
+  "fires": 0.0176,
+  "n_atoms": 5,
+  "auroc": 0.9987417505798343,
+  "count_rho": -0.05867146488488575
+ },
+ {
+  "column": "fr_sulfonamd",
+  "fires": 0.14055,
+  "n_atoms": 5,
+  "auroc": 0.9995525252817752,
+  "count_rho": 0.30675702941671307
+ },
+ {
+  "column": "fr_urea",
+  "fires": 0.05135,
+  "n_atoms": 4,
+  "auroc": 0.997798249757324,
+  "count_rho": 0.21028160536749413
+ },
+ {
+  "column": "fr_term_acetylene",
+  "fires": 0.0079,
+  "n_atoms": 2,
+  "auroc": 0.9999999999999999,
+  "count_rho": null
+ },
+ {
+  "column": "fr_imidazole",
+  "fires": 0.05085,
+  "n_atoms": 5,
+  "auroc": 0.9983063140611799,
+  "count_rho": 0.18501333200580117
+ },
+ {
+  "column": "fr_furan",
+  "fires": 0.06895,
+  "n_atoms": 5,
+  "auroc": 0.9997470960023574,
+  "count_rho": 0.26043490492231697
+ },
+ {
+  "column": "fr_thiophene",
+  "fires": 0.04935,
+  "n_atoms": 5,
+  "auroc": 0.999850175734242,
+  "count_rho": 0.06432567179386132
+ },
+ {
+  "column": "fr_thiazole",
+  "fires": 0.03005,
+  "n_atoms": 5,
+  "auroc": 0.9990645174781152,
+  "count_rho": 0.1223416115700131
+ },
+ {
+  "column": "fr_oxazole",
+  "fires": 0.0089,
+  "n_atoms": 5,
+  "auroc": 0.9992583227981459,
+  "count_rho": null
+ },
+ {
+  "column": "fr_pyridine",
+  "fires": 0.1119,
+  "n_atoms": 6,
+  "auroc": 0.9970447475250918,
+  "count_rho": 0.38221170709738034
+ },
+ {
+  "column": "fr_piperdine",
+  "fires": 0.08005,
+  "n_atoms": 6,
+  "auroc": 0.9971867469239997,
+  "count_rho": 0.39372847575503306
+ },
+ {
+  "column": "fr_piperzine",
+  "fires": 0.0547,
+  "n_atoms": 6,
+  "auroc": 0.9988709427803649,
+  "count_rho": 0.10967800538202208
+ },
+ {
+  "column": "fr_morpholine",
+  "fires": 0.0518,
+  "n_atoms": 6,
+  "auroc": 0.9999532658253598,
+  "count_rho": 0.15463060527806036
+ },
+ {
+  "column": "fr_lactone",
+  "fires": 0.0108,
+  "n_atoms": 4,
+  "auroc": 0.9980345692179995,
+  "count_rho": 0.3327577586136788
+ },
+ {
+  "column": "fr_tetrazole",
+  "fires": 0.01215,
+  "n_atoms": 5,
+  "auroc": 0.9982282966337636,
+  "count_rho": null
+ },
+ {
+  "column": "fr_epoxide",
+  "fires": 0.01495,
+  "n_atoms": 3,
+  "auroc": 0.9994879001524389,
+  "count_rho": 0.3541573915293071
+ },
+ {
+  "column": "fr_unbrch_alkane",
+  "fires": 0.0385,
+  "n_atoms": 4,
+  "auroc": 0.9998698752410597,
+  "count_rho": 0.9039415323405747
+ },
+ {
+  "column": "fr_bicyclic",
+  "fires": 0.4559,
+  "n_atoms": 2,
+  "auroc": 0.9975356112731433,
+  "count_rho": 0.8435572321701554
+ },
+ {
+  "column": "fr_benzene",
+  "fires": 0.7715,
+  "n_atoms": 6,
+  "auroc": 0.9995972168941729,
+  "count_rho": 0.8604763266669149
+ },
+ {
+  "column": "fr_phos_acid",
+  "fires": 0.0028,
+  "n_atoms": null,
+  "auroc": 1.0,
+  "count_rho": null
+ },
+ {
+  "column": "fr_nitro_arom_nonortho",
+  "fires": 0.0205,
+  "n_atoms": 1,
+  "auroc": 0.9997907922436224,
+  "count_rho": -0.027982759677515057
+ },
+ {
+  "column": "fr_Al_OH_noTert",
+  "fires": 0.1154,
+  "n_atoms": 1,
+  "auroc": 0.9995165792305623,
+  "count_rho": 0.7422245409680893
+ },
+ {
+  "column": "fr_para_hydroxylation",
+  "fires": 0.19285,
+  "n_atoms": null,
+  "auroc": 0.9996768186269549,
+  "count_rho": 0.7064546542738838
+ },
+ {
+  "column": "fr_allylic_oxid",
+  "fires": 0.10295,
+  "n_atoms": 1,
+  "auroc": 0.995990383456604,
+  "count_rho": 0.8630028661246355
+ },
+ {
+  "column": "fr_aryl_methyl",
+  "fires": 0.27645,
+  "n_atoms": 1,
+  "auroc": 0.9990743952464257,
+  "count_rho": 0.7075611376623904
+ },
+ {
+  "column": "fr_Ndealkylation1",
+  "fires": 0.0756,
+  "n_atoms": null,
+  "auroc": 0.9964802434735363,
+  "count_rho": 0.13202947867245132
+ },
+ {
+  "column": "fr_Ndealkylation2",
+  "fires": 0.0801,
+  "n_atoms": null,
+  "auroc": 0.9990322580645161,
+  "count_rho": 0.15656483698227383
+ },
+ {
+  "column": "fr_alkyl_carbamate",
+  "fires": 0.00365,
+  "n_atoms": 6,
+  "auroc": 0.9571894487850333,
+  "count_rho": null
+ },
+ {
+  "column": "fr_ketone_Topliss",
+  "fires": 0.1024,
+  "n_atoms": 1,
+  "auroc": 0.9972774466133892,
+  "count_rho": 0.5256498346008553
+ },
+ {
+  "column": "fr_ArN",
+  "fires": 0.05155,
+  "n_atoms": 1,
+  "auroc": 0.9998526639445727,
+  "count_rho": 0.4460099924226441
+ },
+ {
+  "column": "fr_HOCCN",
+  "fires": 0.0062,
+  "n_atoms": 1,
+  "auroc": 0.9981909547738693,
+  "count_rho": -0.05263157894736842
+ },
+ {
+  "column": "fr_lactam",
+  "fires": 0.01405,
+  "n_atoms": null,
+  "auroc": 0.9999956992761881,
+  "count_rho": 0.4630163737770685
+ },
+ {
+  "column": "fr_benzodiazepine",
+  "fires": 0.0005,
+  "n_atoms": null,
+  "auroc": null,
+  "count_rho": null,
+  "note": "too few positives to score"
+ },
+ {
+  "column": "fr_barbitur",
+  "fires": 0.00295,
+  "n_atoms": null,
+  "auroc": 0.9997803714859438,
+  "count_rho": null
+ },
+ {
+  "column": "fr_azo",
+  "fires": 0.008,
+  "n_atoms": null,
+  "auroc": 0.9892049109265318,
+  "count_rho": 0.8470562748457936
+ },
+ {
+  "column": "fr_nitro_arom",
+  "fires": 0.0345,
+  "n_atoms": null,
+  "auroc": 0.9997485932942587,
+  "count_rho": 0.44490147062522944
+ },
+ {
+  "column": "fr_phenol_noOrthoHbond",
+  "fires": 0.04725,
+  "n_atoms": null,
+  "auroc": 0.9998250000000001,
+  "count_rho": 0.6333038989364232
+ },
+ {
+  "column": "fr_phos_ester",
+  "fires": 0.0028,
+  "n_atoms": null,
+  "auroc": 1.0,
+  "count_rho": null
+ }
+]
