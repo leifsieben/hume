@@ -515,6 +515,34 @@ combinations, and 0.4.0 assumed a consumer that decodes hashed fingerprint bits.
 consumer exists. A curated, named, cheap feature carries identity, count and provenance; a
 fingerprint bit is an anonymous hash shared with everything that collides into it.
 
+## 4c. The 612-column spec on the full grid (all 33 datasets)
+
+Run locally rather than on EC2: `hume` against `hume_minimal` needs only HUME descriptors, the
+ECFP, `y` and the stored scaffold folds -- no learned embeddings -- so it is 330 XGBoost fits on
+a laptop. `tools/minimal_local_grid.py` caches every dataset's feature matrix on the way through,
+which makes any future column subset a slice rather than an EC2 wave.
+
+| panel | datasets | mean | worst |
+| --- | ---: | ---: | ---: |
+| classification | 13 | −0.65% | +0.11% |
+| quantum | 4 | **−0.11%** | +1.05% |
+| ADME & tox | 10 | +0.39% | +10.88% |
+| physicochemical | 6 | +0.75% | +3.50% |
+| **overall** | **33** | **−0.02%** | — |
+
+Negative is better. **1 of 33 datasets exceeds its own fold-to-fold spread**, and that one is
+`qmugs_gap` at −0.75%, where the reduced set wins. There is no dataset in the grid where
+dropping 657 columns measurably hurts.
+
+**§3.9 is no longer provisional.** The autocorrelation cut was decided on five physicochemical
+datasets; quantum was the panel where it was most at risk, since a distance-resolved property
+correlation is the plausible input to an electronic-structure endpoint. It lands at −0.11%.
+
+⚠️ Two numbers not to over-read. `vdss_lombardo` shows +10.88% against a fold SD of **101.86%**
+of its own RMSE -- that dataset cannot resolve a 10% effect. And physicochemical is the only
+panel with a positive mean (+0.75%, `esol` at +3.50% inside its 6.6% fold noise); it is the panel
+`minimal-v1` broke, so it is the one to watch rather than dismiss.
+
 ## 5. Open questions
 
 1. **`fr_*` redundancy is conditional on the fingerprint being present**, and `fingerprint=False`

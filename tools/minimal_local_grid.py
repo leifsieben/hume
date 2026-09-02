@@ -67,7 +67,13 @@ def score(ds, cols):
     z = np.load(OUT / f"{ds}.npz", allow_pickle=False)
     X, fp, y, folds = z["X"], z["fp"], z["y"], z["folds"]
     X = np.where(np.isfinite(X), X, np.nan)
-    task = str(z["task"])
+    # The first six cache files were written before `task` was a top-level key -- they carry a
+    # JSON `meta` blob instead. Read either rather than re-featurizing 40,000 molecules to
+    # change a field name.
+    if "task" in z:
+        task = str(z["task"])
+    else:
+        task = json.loads(str(z["meta"]))["task"]
     sel = [i for i, c in enumerate(names) if c in cols]
     F = np.hstack([X[:, sel], fp]).astype(np.float32)
     out = []

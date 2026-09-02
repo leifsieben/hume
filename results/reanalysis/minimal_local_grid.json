@@ -1,0 +1,299 @@
+[
+ {
+  "dataset": "pb_hum_mic_cl",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 0.5644188775373896,
+  "minimal": 0.5494389302087828,
+  "rel": -0.026540478932890615,
+  "sd": 0.09491747270369642
+ },
+ {
+  "dataset": "pb_mou_mic_cl",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 0.771168611800971,
+  "minimal": 0.7591521495351088,
+  "rel": -0.015582146474814604,
+  "sd": 0.11379770071722074
+ },
+ {
+  "dataset": "pb_rat_mic_cl",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 0.6816385945987136,
+  "minimal": 0.6749584484571407,
+  "rel": -0.009800128975246071,
+  "sd": 0.09720714083619691
+ },
+ {
+  "dataset": "pb_ppb",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 0.19478439521085705,
+  "minimal": 0.19403816334156437,
+  "rel": -0.0038310659767425014,
+  "sd": 0.22360545275292482
+ },
+ {
+  "dataset": "vdss_lombardo",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 17.054587801139604,
+  "minimal": 18.909770053824314,
+  "rel": 0.10877907307503173,
+  "sd": 1.0185596559274694
+ },
+ {
+  "dataset": "ld50_zhu",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 0.708004986783006,
+  "minimal": 0.6984594945587898,
+  "rel": -0.013482238688160349,
+  "sd": 0.13331352483776318
+ },
+ {
+  "dataset": "cycpept_pampa",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 0.9002590340780123,
+  "minimal": 0.9054281447936836,
+  "rel": 0.005741803769806264,
+  "sd": 0.05586844113018097
+ },
+ {
+  "dataset": "pb_cyp2c9",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 17.181011529104104,
+  "minimal": 17.6634435895502,
+  "rel": 0.028079374699730115,
+  "sd": 0.05093651900266541
+ },
+ {
+  "dataset": "pb_cyp2d6",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 18.581389223218046,
+  "minimal": 19.17111843318774,
+  "rel": 0.03173762751994924,
+  "sd": 0.0633307631815718
+ },
+ {
+  "dataset": "pb_cyp3a4",
+  "panel": "adme",
+  "task": "regression",
+  "hume": 16.43262513219445,
+  "minimal": 15.347494528738398,
+  "rel": -0.06603513405354121,
+  "sd": 0.16096021156497842
+ },
+ {
+  "dataset": "ames",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.8725427676047801,
+  "minimal": 0.8727162354389602,
+  "rel": -0.00019880725692819412,
+  "sd": 0.039765286643965364
+ },
+ {
+  "dataset": "pb_ames",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.8760530723685596,
+  "minimal": 0.8783696564417985,
+  "rel": -0.0026443421595174583,
+  "sd": 0.03583732368226533
+ },
+ {
+  "dataset": "cyp2d6_inh",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.8713425071323628,
+  "minimal": 0.8746822266066259,
+  "rel": -0.003832843510933767,
+  "sd": 0.014667339282724635
+ },
+ {
+  "dataset": "bioavail",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.6644647405938814,
+  "minimal": 0.7009293396698373,
+  "rel": -0.05487815507466172,
+  "sd": 0.07825308421130184
+ },
+ {
+  "dataset": "hia",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.9776299608326487,
+  "minimal": 0.9809129741967932,
+  "rel": -0.0033581349750659716,
+  "sd": 0.011346974485574857
+ },
+ {
+  "dataset": "pb_bbb",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.9372842880054449,
+  "minimal": 0.9394761767704407,
+  "rel": -0.0023385527668026277,
+  "sd": 0.014796779404522377
+ },
+ {
+  "dataset": "bace",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.8724885551307354,
+  "minimal": 0.8714889933919994,
+  "rel": 0.0011456445277798265,
+  "sd": 0.030368607920162275
+ },
+ {
+  "dataset": "hiv",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.7964148291028346,
+  "minimal": 0.8015365175146687,
+  "rel": -0.006430930495861992,
+  "sd": 0.04100469189849253
+ },
+ {
+  "dataset": "herg",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.8541114129188692,
+  "minimal": 0.8558373930338311,
+  "rel": -0.0020207903662866674,
+  "sd": 0.07153857942593056
+ },
+ {
+  "dataset": "wong_hepg2",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.8487486702297712,
+  "minimal": 0.8498942342926176,
+  "rel": -0.0013497094051838198,
+  "sd": 0.024404532628573818
+ },
+ {
+  "dataset": "wong_imr90",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.7603031513689226,
+  "minimal": 0.7597038317763442,
+  "rel": 0.0007882639858842429,
+  "sd": 0.016205000809894555
+ },
+ {
+  "dataset": "wong_hskmc",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.9158334610697393,
+  "minimal": 0.9184688940764234,
+  "rel": -0.0028776334548923344,
+  "sd": 0.01828429102078257
+ },
+ {
+  "dataset": "wong_saureus",
+  "panel": "classif",
+  "task": "binary",
+  "hume": 0.9306977761225088,
+  "minimal": 0.93662320030544,
+  "rel": -0.00636664697708616,
+  "sd": 0.019615577400974672
+ },
+ {
+  "dataset": "qm8",
+  "panel": "quantum",
+  "task": "regression",
+  "hume": 0.009564800725929813,
+  "minimal": 0.009488103672853668,
+  "rel": -0.008018677573514097,
+  "sd": 0.031318263101425894
+ },
+ {
+  "dataset": "qm9",
+  "panel": "quantum",
+  "task": "regression",
+  "hume": 0.00844415522178724,
+  "minimal": 0.008448498518501492,
+  "rel": 0.0005143553854915107,
+  "sd": 0.0659729467725099
+ },
+ {
+  "dataset": "qm9_gap",
+  "panel": "quantum",
+  "task": "regression",
+  "hume": 0.011106286130203894,
+  "minimal": 0.011223149945917651,
+  "rel": 0.010522312710451622,
+  "sd": 0.05403753916094266
+ },
+ {
+  "dataset": "qmugs_gap",
+  "panel": "quantum",
+  "task": "regression",
+  "hume": 0.012000877360114837,
+  "minimal": 0.011911336093569614,
+  "rel": -0.007461226696876005,
+  "sd": 0.004185815938048424
+ },
+ {
+  "dataset": "aqsoldb",
+  "panel": "physchem",
+  "task": "regression",
+  "hume": 1.077616066000527,
+  "minimal": 1.0672832763572533,
+  "rel": -0.009588563097080453,
+  "sd": 0.07864955248188243
+ },
+ {
+  "dataset": "esol",
+  "panel": "physchem",
+  "task": "regression",
+  "hume": 0.7595967213514841,
+  "minimal": 0.7861655073050492,
+  "rel": 0.034977488984277764,
+  "sd": 0.04126705317708712
+ },
+ {
+  "dataset": "lipophilicity",
+  "panel": "physchem",
+  "task": "regression",
+  "hume": 0.7176574541160043,
+  "minimal": 0.7229822669099033,
+  "rel": 0.007419713629893182,
+  "sd": 0.010703052046015809
+ },
+ {
+  "dataset": "pb_logd",
+  "panel": "physchem",
+  "task": "regression",
+  "hume": 0.7903266245682912,
+  "minimal": 0.7951439596847659,
+  "rel": 0.006095372427958097,
+  "sd": 0.06248978278239425
+ },
+ {
+  "dataset": "pb_water_sol",
+  "panel": "physchem",
+  "task": "regression",
+  "hume": 0.9660495601125388,
+  "minimal": 0.9512435024424486,
+  "rel": -0.015326395540582235,
+  "sd": 0.02174663663565348
+ },
+ {
+  "dataset": "photoswitch",
+  "panel": "physchem",
+  "task": "regression",
+  "hume": 43.99715422621145,
+  "minimal": 44.92782578035533,
+  "rel": 0.02115299433592519,
+  "sd": 0.4495707864751022
+ }
+]
