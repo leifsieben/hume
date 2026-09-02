@@ -44,7 +44,7 @@ for n, p in pats.items():
     q = Chem.MolFromSmarts(p)
     size[n] = q.GetNumAtoms() if q is not None else None
 
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 smis = json.load(open("data/exactness_corpus.json"))["smiles"][:N]
 mols = [m for m in (Chem.MolFromSmiles(s) for s in smis) if m is not None]
 fp, X, _ = molhume.featurize_all_from_mols(mols, optional=("AvgIpc",))

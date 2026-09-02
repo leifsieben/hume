@@ -21,7 +21,7 @@ import molhume
 
 RDLogger.DisableLog("rdApp.*")
 warnings.simplefilter("ignore")
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 idx = {c: i for i, c in enumerate(names)}
 smis = json.load(open("data/exactness_corpus.json"))["smiles"][:15000]
 X = molhume.featurize(smis, standardize="none", fingerprint=False)

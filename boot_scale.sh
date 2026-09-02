@@ -122,13 +122,21 @@ fi
 # --- PREFLIGHT: every arm must actually import and produce a value on 200 molecules -------
 echo "=== preflight ==="
 $A -c "
-import hume, torch, rdkit, numpy
+import molhume, torch, rdkit, numpy
 print('envA rdkit', rdkit.__version__, 'numpy', numpy.__version__, 'torch', torch.__version__,
       'cuda', torch.cuda.is_available())
-print('hume columns', len(hume.ALL_COLUMNS))
-fp, X, _ = hume.featurize_all(['CC(=O)Oc1ccccc1C(=O)O'])
-import numpy as np; assert np.isfinite(X).sum() > 700, 'hume produced no values'
-print('hume smoke ok, finite cells', int(np.isfinite(X).sum()))
+print('molhume', molhume.__version__ if hasattr(molhume, "__version__") else "?",
+      'columns', len(molhume.ALL_COLUMNS))
+import numpy as np
+# EVERY HUME ARM SMOKE-TESTED SEPARATELY. The three differ only in `columns`, which since 0.7.0
+# also decides what is COMPUTED -- so a broken compute plan would show up in exactly one of them
+# and a single-arm preflight would not see it.
+for cs, want in (("full", 1269), ("full_no_new", 1109), ("minimal", 622)):
+    X = molhume.featurize(['CC(=O)Oc1ccccc1C(=O)O'], columns=cs, standardize="none",
+                          fingerprint=False)
+    assert X.shape[1] == want, (cs, X.shape, want)
+    assert np.isfinite(X).sum() > want // 2, ('hume produced no values', cs)
+    print('  smoke ok', cs, X.shape, 'finite', int(np.isfinite(X).sum()))
 " || die "envA preflight imports"
 if want chemeleon; then
 $A -c "
@@ -189,7 +197,7 @@ ONLY_ARMS="${ONLY_ARMS:-}"
 want () { [ -z "$ONLY_ARMS" ] && return 0; case " $ONLY_ARMS " in *" $1 "*) return 0;; *) return 1;; esac; }
 EXPECT=""
 if [ "$ROLE" = "cpu" ]; then
-  for ARM in ecfp ecfp_r2 hume descriptastorus chemberta chemprop chemeleon; do
+  for ARM in ecfp ecfp_r2 hume hume_minimal hume_no_new descriptastorus chemberta chemprop chemeleon; do
     want "$ARM" && { run $A "$ARM" cpu; EXPECT="$EXPECT ${ARM}_cpu"; }
   done
   want mordred && { run $B mordred cpu; EXPECT="$EXPECT mordred_cpu"; }

@@ -29,7 +29,7 @@ import molhume
 RDLogger.DisableLog("rdApp.*")
 warnings.simplefilter("ignore")
 N = 7500
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 smis = json.load(open("data/exactness_corpus.json"))["smiles"][:N]
 mols = [m for m in (Chem.MolFromSmiles(s) for s in smis) if m is not None]
 X = molhume.featurize(mols, standardize="none", fingerprint=False)

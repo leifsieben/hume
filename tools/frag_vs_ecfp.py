@@ -35,7 +35,7 @@ warnings.simplefilter("ignore")
 N = int(sys.argv[1]) if len(sys.argv) > 1 else 20000
 OUT = Path("results/reanalysis")
 
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 smis = json.load(open("data/exactness_corpus.json"))["smiles"][:N]
 mols = [m for m in (Chem.MolFromSmiles(s) for s in smis) if m is not None]
 print(f"  {len(mols)} molecules")

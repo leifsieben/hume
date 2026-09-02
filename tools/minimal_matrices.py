@@ -69,7 +69,7 @@ XB, sB = featurize(repB_s, "repB")
 XV, sV = featurize(adv_s[:N], "adv")
 
 np.savez_compressed(OUT / "matrices.npz", repA=XA, repB=XB, adv=XV,
-                    names=np.array(molhume.feature_names(fingerprint=False)))
+                    names=np.array(molhume.feature_names(fingerprint=False, columns="full")))
 json.dump({"n": N, "seed": SEED, "standardize": "none",
            "molhume_version": "0.1.1",
            "rdkit": Chem.rdBase.rdkitVersion,

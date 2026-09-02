@@ -93,22 +93,37 @@ def _init_hume():
     import molhume  # noqa: F401
 
 
-def _run_hume(job):
+def _run_hume(job, columns="full"):
     """`threads=1` IS DELIBERATE AND IS NOT LEAVING PERFORMANCE ON THE TABLE.
 
-    hume.featurize_all now threads its row loop, one worker per hardware thread by default.
-    This harness ALREADY runs one process per vCPU, so the box is saturated before the
-    featuriser sees it -- leaving threads=0 would give 16 processes x 12 threads and spend the
-    run in the scheduler. The in-process threading is for a single-process caller; here the
-    parallelism is at the process level and threads=1 is the honest configuration.
+    molhume.featurize threads its row loop, one worker per hardware thread by default. This
+    harness ALREADY runs one process per vCPU, so the box is saturated before the featuriser
+    sees it -- leaving threads=0 would give 16 processes x 12 threads and spend the run in the
+    scheduler. The in-process threading is for a single-process caller; here the parallelism is
+    at the process level and threads=1 is the honest configuration.
+
+    `columns` IS THE ONLY DIFFERENCE BETWEEN THE THREE HUME ARMS, and that is the point. Since
+    mol-hume 0.7.0 the column selection is a compute plan -- a descriptor family none of whose
+    columns are selected is not calculated -- so the three arms are the same code on the same
+    molecules in the same processes, differing in one argument. Anything else would be measuring
+    two implementations rather than one specification at three widths.
     """
     shard, bs = job
-    import numpy as np, hume
+    import numpy as np, molhume
     tot = 0.0
     for lo in range(0, len(shard), bs):
-        fp, X, _ = hume.featurize_all(shard[lo:lo + bs], threads=1)
-        tot += float(np.nansum(X[:, ::197])) + float(fp[:, ::13].sum())
+        X = molhume.featurize(shard[lo:lo + bs], columns=columns, standardize="none",
+                              threads=1, on_error="nan")
+        tot += float(np.nansum(X[:, ::197]))
     return tot
+
+
+def _run_hume_minimal(job):
+    return _run_hume(job, columns="minimal")
+
+
+def _run_hume_no_new(job):
+    return _run_hume(job, columns="full_no_new")
 
 
 def _init_ecfp_r2():
@@ -383,7 +398,12 @@ ARMS = {
     # is r=3, which is what HUME carries INTERNALLY -- two different baselines that were being
     # used interchangeably. Both are measured so each figure can cite the one it actually ran.
     "ecfp_r2":   (_init_ecfp_r2,   _run_ecfp,      [4096]),
-    "hume":      (_init_hume,      _run_hume,      [1024, 4096, 16384]),
+    # THE THREE HUME ARMS. Same code, same molecules, one argument apart -- see _run_hume.
+    # `hume` is HUME_full in the figures; the other two are the sets Figure C already plots and
+    # whose cost, until 0.7.0, was genuinely identical because the block was monolithic.
+    "hume":         (_init_hume, _run_hume,         [1024, 4096, 16384]),
+    "hume_minimal": (_init_hume, _run_hume_minimal, [1024, 4096, 16384]),
+    "hume_no_new":  (_init_hume, _run_hume_no_new,  [1024, 4096, 16384]),
     "mordred":   (_init_mordred,   _run_mordred,   [4096]),
     "chemberta": (_init_chemberta, _run_chemberta, [1, 32, 128, 512]),
     "chemeleon": (_init_chemeleon, _run_chemeleon, [64, 256, 1024]),

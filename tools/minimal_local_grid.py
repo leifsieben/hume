@@ -38,7 +38,7 @@ TASKS = {"physchem": ["aqsoldb","esol","lipophilicity","pb_logd","pb_water_sol",
              "wong_hepg2","wong_imr90","wong_hskmc","wong_saureus"],
  "quantum": ["qm8","qm9","qm9_gap","qmugs_gap"]}
 panel = {d: t for t, ds in TASKS.items() for d in ds}
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 
 def cache(ds):
     dest = OUT / f"{ds}.npz"

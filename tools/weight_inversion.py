@@ -34,7 +34,7 @@ DROPW = ["se", "are", "i", "p", "m"]
 OPS = ["AATSC", "AATS", "ATSC", "ATS", "MATS", "GATS"]
 LAGS_KEEP = {0, 2, 4, 6, 8}
 
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 def parse(c):
     for op in OPS:
         m = re.fullmatch(rf"{op}(\d)([A-Za-z]+)", c)

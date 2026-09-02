@@ -48,7 +48,7 @@ if "CHEMPFN_DATA_ROOT" not in os.environ:
 import bench_downstream as BD  # noqa: E402
 from chempfn.eval.splits import scaffold_folds  # noqa: E402
 
-names = molhume.feature_names(fingerprint=False)
+names = molhume.feature_names(fingerprint=False, columns="full")
 minimal = set(molhume.minimal_columns())
 mask = np.array([c in minimal for c in names], dtype=bool)
 

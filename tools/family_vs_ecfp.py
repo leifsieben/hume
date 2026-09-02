@@ -21,7 +21,7 @@ import molhume
 
 RDLogger.DisableLog("rdApp.*")
 warnings.simplefilter("ignore")
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 
 FAM = {
     "E-state atom type": lambda c: re.match(r"^(N|S)[a-z]{1,3}[A-Z]", c) or re.match(r"^(MAX|MIN)", c),

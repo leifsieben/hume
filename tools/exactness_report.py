@@ -105,7 +105,7 @@ def coverage():
     import molhume as mh
     sel = json.load(open(ROOT / "results" / "dedupe2" / "dedupe2.json"))["kept"]
     dropped = set(json.load(open(ROOT / "results" / "dedupe2" / "dropped_columns.json")))
-    emitted = list(mh.feature_names(fingerprint=False))
+    emitted = list(mh.feature_names(fingerprint=False, columns="full"))
     elo = {c.lower() for c in emitted}
 
     def names(k):

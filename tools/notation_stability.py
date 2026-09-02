@@ -38,7 +38,7 @@ N = int(sys.argv[1]) if len(sys.argv) > 1 else 3000
 K = int(sys.argv[2]) if len(sys.argv) > 2 else 4
 OUT = Path("results/reanalysis")
 OUT.mkdir(parents=True, exist_ok=True)
-names = list(molhume.feature_names(fingerprint=False))
+names = list(molhume.feature_names(fingerprint=False, columns="full"))
 
 smis = json.load(open("data/exactness_corpus.json"))["smiles"][:N]
 mols = [Chem.MolFromSmiles(s) for s in smis]

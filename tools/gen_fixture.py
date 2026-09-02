@@ -50,7 +50,7 @@ picked = [Chem.MolToSmiles(Chem.MolFromSmiles(s)) for s in picked]
 # reproducible from rdkit in one line and would add 2,048 columns of stored zeros
 # and ones to a file that is already 1.2 MB.
 X = molhume.featurize(picked, standardize="none", fingerprint=False)
-names = molhume.feature_names(fingerprint=False)
+names = molhume.feature_names(fingerprint=False, columns="full")
 assert names == molhume.ALL_COLUMNS, "fixture must cover every emitted column"
 
 with open("tests/data/fixture_smiles.txt", "w") as fh:
