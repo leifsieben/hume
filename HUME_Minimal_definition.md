@@ -457,6 +457,33 @@ a variance ranking**, which is the property that made `minimal-v1` delete the ra
 non-fused 8+ cells had already gone as exactly determined. It needs new C++ columns in
 `ringcount.h` for that, which is a poor trade and should probably be dropped from the plan.
 
+## 4b. What the spec costs, measured (29 of 33 datasets)
+
+Same untuned XGBoost head, same 5-fold Murcko scaffold folds, `hume` against `hume_minimal` on
+identical molecules.
+
+| panel | datasets | mean | median | worst |
+| --- | ---: | ---: | ---: | ---: |
+| ADME & tox | 10 | **−1.55%** | −1.50% | +2.79% |
+| physicochemical | 6 | **−0.94%** | −0.67% | +1.49% |
+| classification | 13 | **−0.17%** | −0.18% | +1.99% |
+| overall | 29 | **−0.81%** | −0.38% | — |
+
+Negative is better. **0 of 29 datasets moved by more than their own fold SD**, and the sign test
+gives 11 of 29 worse, p = 0.265. The honest reading is *no measurable difference at 43% of the
+columns*, not that the reduction helps.
+
+**The physicochemical line is the one that matters.** `minimal-v1` cost +3.83% there with 800
+columns; v2 costs −0.94% with 550. The reduction is larger and the loss is gone, and the only
+thing that changed is the criterion — v1 cut on linear recoverability and removed columns a tree
+needed, v2 cut only on same-quantity-different-units, already-in-the-output, and exact identity.
+
+This also largely settles §3.9. The autocorrelation drop was decided on five physicochemical
+datasets and is now supported by 13 classification and 10 ADME sets that had no part in the
+decision. ⚠️ **Quantum (4 datasets) is still outstanding** and is the panel where the cut is most
+at risk, since autocorrelation is a distance-resolved property correlation and electronic
+structure is the plausible consumer of one.
+
 ## 5. Open questions
 
 1. **`fr_*` redundancy is conditional on the fingerprint being present**, and `fingerprint=False`

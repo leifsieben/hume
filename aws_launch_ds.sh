@@ -24,7 +24,7 @@ if ! command -v aws >/dev/null; then
   curl -sf "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/a.zip
   unzip -q /tmp/a.zip -d /tmp && /tmp/aws/install >/dev/null
 fi
-aws s3 cp s3://$B/boot/boot_ds.sh /root/boot_ds.sh
+aws s3 cp s3://$B/boot/${BOOT:-boot_ds.sh} /root/boot_ds.sh
 chmod +x /root/boot_ds.sh
 DS_ARMS="$ARMS" DS_DATASETS="$DSETS" /root/boot_ds.sh
 EOF

@@ -166,10 +166,30 @@ donors and acceptors, rotatable bonds, ring counts, Kappa shape, chi connectivit
 Balaban J, Lipinski. Of RDKit's 217 descriptors, 120 are present; 85 of the 97 absent are `fr_*`
 flags the fingerprint reproduces.
 
-⚠️ **One decision in it is provisional.** The 227-column autocorrelation block was dropped
-because removing it cost nothing measurable across five physicochemical datasets — not because
-anything else can rebuild it (nothing can; it is the least reproducible family in the library).
-Classification, ADME and quantum endpoints are untested. See `HUME_Minimal_definition.md`.
+### What it costs, measured
+
+Benchmarked against the full 1,269 with the same untuned XGBoost head and the same 5-fold
+scaffold splits, on 29 of the 33 grid datasets:
+
+| panel | datasets | mean cost | worst |
+| --- | ---: | ---: | ---: |
+| ADME & tox | 10 | −1.55% | +2.79% |
+| physicochemical | 6 | −0.94% | +1.49% |
+| classification | 13 | −0.17% | +1.99% |
+| **overall** | **29** | **−0.81%** | — |
+
+Negative means the reduced set scored *better*. **On none of the 29 datasets did the difference
+exceed that dataset's own fold-to-fold spread**, and a sign test puts the reduced set behind on
+11 of 29 (p = 0.27). So the claim is *no measurable difference at 43% of the columns* — not that
+fewer columns help.
+
+For contrast, the retired `minimal-v1` cost **+3.83%** on the physicochemical panel with 800
+columns. v2 is smaller and that loss is gone; the difference is what the two cut on.
+
+⚠️ **The quantum panel (`qm8`, `qm9`, `qm9_gap`, `qmugs_gap`) is not yet included**, and it is
+the one to watch: the 227-column autocorrelation block was dropped on a physicochemical ablation,
+and autocorrelation is a distance-resolved property correlation, which is the kind of thing an
+electronic-structure endpoint might lean on. See `HUME_Minimal_definition.md`.
 
 ## Platforms
 
