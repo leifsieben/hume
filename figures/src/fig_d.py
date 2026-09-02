@@ -143,6 +143,10 @@ def native(runs, arm):
     return min(v, key=v.get)
 HATCH = "///"
 
+#: How far a bar's value label sits above the bar, as a MULTIPLE of the bar height. Both panels
+#: are log-y, so this is a constant visual gap rather than a constant number of dollars.
+BAR_LABEL_LIFT = 1.08
+
 
 SHORT = {"ecfp_r2": "ECFP", "hume": "HUME_full", "hume_minimal": "HUME_minimal",
          "hume_no_new": "HUME_no_new", "chemprop": "chemprop",
@@ -269,6 +273,13 @@ def cells(runs, budget):
 
 
 def _bars(ax, rows, values, fmt):
+    """UNUSED -- nothing calls this. Left in place, flagged so nobody tunes it by mistake.
+
+    It is the bar drawer for an earlier layout, and it has its own value-label offset (1.25x
+    below) which is NOT the one the rendered plate uses. The live one is BAR_LABEL_LIFT, applied
+    in the panel loop further down. Someone changing the gap between a bar and its number will
+    find this function first and change nothing.
+    """
     x = np.arange(len(rows))
     v = np.array(values, float)
     ax.bar(x, v, width=0.72, color=[color(a) for a, _p, _c in rows],
@@ -371,8 +382,14 @@ def main(paths):
         for x, (a, bud, v, cop) in zip(xs, items):
             ax.bar(x, v, width=0.78, color=color(a), edgecolor=STYLE["ink"], lw=0.6,
                    hatch=(HATCH if cop else None), zorder=3)
-            ax.text(x, v, (f"{v:,.0f} \u00b5s" if kind == "hours" else _usd(v)), ha="center", va="bottom",
-                    rotation=90, fontsize=FS["annot"], color=STYLE["ink"], zorder=4)
+            # A SMALL GAP BETWEEN THE BAR AND ITS NUMBER (Leif 2026-09-02: "just slightly
+            # further up from the bar, just a bit"). MULTIPLICATIVE, not additive, because the
+            # y-axis is log -- a fixed offset in data units would be invisible on the tall bars
+            # and would lift the short ones clear off their bars. 1.08x is about 1% of the
+            # three-decade axis, the same gap for every bar.
+            ax.text(x, v * BAR_LABEL_LIFT,
+                    (f"{v:,.0f} \u00b5s" if kind == "hours" else _usd(v)), ha="center",
+                    va="bottom", rotation=90, fontsize=FS["annot"], color=STYLE["ink"], zorder=4)
         ncpu = sum(1 for _a, b, _v, _c in items if b == "cpu")
         if 0 < ncpu < len(items):
             ax.axvline((xs[ncpu - 1] + xs[ncpu]) / 2.0, color=STYLE["ink"], lw=0.7,
