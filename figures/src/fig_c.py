@@ -117,6 +117,12 @@ def pareto(xs, ys):
 
 
 #: THE HARDWARE THE COST AXIS WAS MEASURED ON, READ FROM THE MEASUREMENT ITSELF.
+#:
+#: NO LONGER PRINTED ON THE AXIS -- the instance type is an implementation detail of how the
+#: numbers were produced and belongs in the caption text of the paper, not on the figure. It is
+#: still computed, and _HW is still asserted below to be a SINGLE machine: an axis whose points
+#: came from two different boxes is a real problem rather than a formatting one, and that check
+#: is the reason this function exists.
 #: An earlier version of this read the LOCAL machine's core count and printed "8 cores" under an
 #: axis whose numbers all came from a 16-vCPU c7i.4xlarge. Every point on this axis is an AWS
 #: measurement; the machine rendering the figure has nothing to do with it, and asking the host
@@ -137,6 +143,11 @@ def main() -> None:
     check_font()
     d = load()
     _HW = _cost_hardware(d["cost"])
+    if "/" in _HW or _HW == "hardware not recorded":
+        raise SystemExit(
+            f"figure C: the cost axis mixes hardware ({_HW}). Every point on it must come from "
+            "one machine or the x positions are not comparable; check `measured_on` in "
+            "results/scale/*.json.")
     # how far above the runner-up a point must sit before the axis is cut for it
     TOP_GAP = 2.0
     # empty axis above the cut, as a fraction of the plotted range, so the
@@ -279,12 +290,15 @@ def main() -> None:
         # ONE shared x-label for the row. Four copies of a long label overprinted each other
         # into "featurization cost (µs / molecule, lfeg)aturisation cost ...".
         if nrow > 1 or t_i == 0:
-            # THE CORE COUNT BELONGS ON THIS AXIS, NOT IN A CAPTION. HUME's row loop is
-            # threaded, so µs/molecule is a function of how many cores it was measured on --
-            # 279 µs on 8 performance cores against 690 µs on one. A cost axis without the
-            # hardware on it is not a measurement anyone can reproduce or compare against.
+            # THE HARDWARE IS NO LONGER ON THIS AXIS. It used to be, on the argument that
+            # µs/molecule is meaningless without the core count -- HUME's row loop is threaded,
+            # and it is 282 µs on 12 threads against 861 µs on one. That argument is still true,
+            # but the instance type is an implementation detail of how the numbers were produced
+            # and reads as clutter on the figure; it belongs in the paper's caption text. What
+            # replaced it is stronger: _cost_hardware now RAISES if the axis mixes machines,
+            # so the property the label was there to advertise is enforced rather than displayed.
             ax.set_xlabel("" if nrow == 1 else
-                          f"featurization cost (µs / molecule, log; {_HW})",
+                          f"featurization cost (µs / molecule, log)",
                           fontsize=FS["label"])
         # The arrow carries "lower/higher is better" in two characters. Spelled out, panel b's
         # y-label was drawn on top of panel a's data.
@@ -315,7 +329,7 @@ def main() -> None:
     # Order follows arms.ARM_ORDER -- classical, then HUME, then graph models, then string
     # models -- so the key reads in the same left-to-right order as every other figure.
     if nrow == 1:
-        fig.supxlabel(f"featurization cost (µs / molecule, log; {_HW})",
+        fig.supxlabel(f"featurization cost (µs / molecule, log)",
                       fontsize=FS["label"], y=0.175)
     from matplotlib.lines import Line2D
     handles = []
@@ -325,7 +339,7 @@ def main() -> None:
                               color=kw["color"], label=A.short_label(a),
                               markeredgecolor=STYLE["ink"], markeredgewidth=0.7))
     if nrow == 1:
-        fig.supxlabel(f"featurization cost (µs / molecule, log; {_HW})",
+        fig.supxlabel(f"featurization cost (µs / molecule, log)",
                       fontsize=FS["label"], y=0.175)
     lax = fig.add_axes([0.005, 0.005, 0.99, 0.135 if nrow == 1 else 0.055])
     lax.axis("off")
