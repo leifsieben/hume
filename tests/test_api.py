@@ -278,42 +278,37 @@ def test_raw_offsets_are_kept_but_separate():
 
 # ---------------------------------------------------------------- the minimal spec
 
-def test_minimal_columns_is_a_prefix_of_one_ordering():
-    full = molhume.minimal_columns(1267)
-    for n in (1, 50, 400, 800):
-        assert molhume.minimal_columns(n) == full[:n], (
-            "minimal_columns(n) must be a prefix of the published ranking, or the curve does "
-            "not describe what a caller actually gets")
-    assert set(full) <= set(molhume.ALL_COLUMNS)
+def test_minimal_columns_is_a_subset_of_what_is_emitted():
+    c = molhume.minimal_columns()
+    assert len(c) == 550
+    assert set(c) <= set(molhume.ALL_COLUMNS)
+    assert len(set(c)) == len(c), "the spec contains a duplicate name"
 
 
-def test_minimal_columns_default_matches_the_frozen_spec():
-    from molhume import _minimal
-    assert len(molhume.minimal_columns()) == _minimal.N_DEFAULT == 800
+def test_minimal_columns_actually_selects():
+    X = _quiet(SMIS, standardize="none", columns=list(molhume.minimal_columns()),
+               fingerprint=False)
+    assert X.shape == (len(SMIS), 550)
 
 
-def test_minimal_recovery_covers_exactly_the_dropped_columns():
-    kept = set(molhume.minimal_columns())
-    rec = molhume.minimal_recovery()
-    assert set(rec).isdisjoint(kept), "a kept column is present, not reconstructed"
-    gated = set(molhume.minimal_gated())
-    assert set(rec) | kept | gated == set(molhume.ALL_COLUMNS), (
-        "kept / scored / gated must PARTITION ALL_COLUMNS; a column in none of the three is "
-        "invisible to anyone reasoning about the spec")
-    assert not (gated & kept) and not (gated & set(rec)), "the three sets must not overlap"
-    assert all(0.0 <= v <= 1.0 for v in rec.values())
+def test_minimal_v1_is_withdrawn_with_a_reason():
+    """v1 was an ordering on a linear-recoverability criterion no consumer satisfies."""
+    with pytest.raises(ValueError, match="withdrawn"):
+        molhume.minimal_columns(spec="minimal-v1")
+    with pytest.raises(ValueError, match="minimal-v2"):
+        molhume.minimal_columns(spec="something-else")
 
 
-def test_minimal_recovery_filters_and_rejects_unknown_names():
-    kept = molhume.minimal_columns()[0]
-    dropped = next(iter(molhume.minimal_recovery()))
-    got = molhume.minimal_recovery([kept, dropped])
-    assert set(got) == {dropped}, "a kept column is absent rather than reported at 1.0"
-    with pytest.raises(ValueError, match="does not emit"):
-        molhume.minimal_recovery(["NotAColumn"])
+def test_the_retired_v1_api_is_gone():
+    for gone in ("minimal_curve", "minimal_recovery", "minimal_gated"):
+        assert not hasattr(molhume, gone), (
+            f"{gone} belonged to minimal-v1 and its colinearity framing; leaving it exported "
+            "would offer users a coverage curve for a spec that no longer exists")
 
 
-def test_minimal_spec_name_is_checked():
-    for fn in (molhume.minimal_columns, molhume.minimal_curve, molhume.minimal_recovery):
-        with pytest.raises(ValueError, match="minimal-v1"):
-            fn(spec="v2") if fn is not molhume.minimal_columns else fn(None, spec="v2")
+def test_the_core_descriptors_survive_the_spec():
+    """A reduced spec that quietly loses MolWt or TPSA is a trap, not a reduction."""
+    c = set(molhume.minimal_columns())
+    for expected in ("ExactMolWt", "SLogP", "TPSA", "NumHDonors", "NumHAcceptors", "nRot",
+                     "RingCount", "LabuteASA", "BalabanJ", "Kappa1", "chi0n", "Lipinski"):
+        assert expected in c, f"{expected} is missing from minimal-v2"

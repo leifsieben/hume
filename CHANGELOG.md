@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.4.0 — 2026-09-02
+
+**Breaking: `minimal-v1` is withdrawn and its API is removed.**
+
+- `molhume.minimal_curve()`, `minimal_recovery()` and `minimal_gated()` are **gone**. They
+  described a coverage curve for a specification that no longer exists, and keeping them would
+  offer users a colinearity analysis we have retired.
+- `minimal_columns()` now returns the frozen 550-column `minimal-v2` set and takes no `n`.
+  Asking for `spec="minimal-v1"` raises an error explaining why it was withdrawn.
+
+**Why v1 went.** It was an ordering derived by rank-revealing QR on a *linear-recoverability*
+criterion: a column could be dropped if the kept ones could rebuild it linearly. That describes
+a consumer that does not exist — a depth-6 boosted tree cannot split on a linear combination of
+thirty columns — and when that was tested against a deeper tree and an MLP, neither recovered
+the loss.
+
+**What v2 is.** 550 columns, chosen only for being the same quantity in different units, already
+present in the output, or an exact arithmetic identity. Nothing removed on a variance ranking,
+which is what made v1 delete the rare tail. Full reasoning per decision in
+`HUME_Minimal_definition.md`; family provenance in `docs/DESCRIPTOR_MAP.md`.
+
+Also in this release: six conjugation descriptors are now notation-invariant (see 0.3.0 notes
+below, which were never published separately).
+
 ## 0.3.0 — 2026-09-02
 
 **Six descriptor values change.** `linearity`, `diam_max`, `het_in_max`, `het_frac_max`,

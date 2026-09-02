@@ -31,7 +31,7 @@ from ._extract import Batch, extract, extract_pickles
 __all__ = [
     # the public API
     "featurize", "feature_names", "ALL_COLUMNS", "N_ALL_COLS",
-    "minimal_columns", "minimal_curve", "minimal_recovery", "minimal_gated",
+    "minimal_columns",
     # lower level: the (fp, X, names) form, and the 178-column block on its own
     "featurize_all", "featurize_all_from_mols", "featurize_blocks", "featurize_blocks_from_mols",
     "COLUMNS", "N_COLS", "FAMILY_OFFSETS", "RAW_FAMILY_OFFSETS",
@@ -480,117 +480,39 @@ def feature_names(*, fingerprint: bool = True, fp_size: int = 2048,
     return names
 
 
-def minimal_columns(n: int = None, spec: str = "minimal-v1") -> tuple:
-    """The first `n` columns of a reduced spec, as names to hand to `featurize(columns=...)`.
+def minimal_columns(spec: str = "minimal-v2") -> tuple:
+    """The HUME_minimal reduced column set -- 550 of the 1,269, as names for `columns=`.
 
-        X = molhume.featurize(smiles, columns=molhume.minimal_columns())     # 800 columns
+        X = molhume.featurize(smiles, columns=molhume.minimal_columns())
 
-    THE ORDERING IS THE PRODUCT, NOT THE NUMBER. `n` defaults to the shipped operating point,
-    but the full ranking is published so a caller can pick their own: a memory-constrained user
-    can take 400 knowing exactly what they gave up, against the coverage curve in
-    `molhume.minimal_curve()`. A single frozen number would force everyone into one trade-off.
+    A SET, not a ranking. Every column was removed for one of three reasons: it is the same
+    physical quantity in different units (three electronegativity scales, mass against atomic
+    number), it is already carried by the ECFP that ships alongside (the 75 fr_* substructure
+    flags, at detection AUROC 1.000), or it is an exact arithmetic identity of columns that
+    remain. Nothing was removed on a variance ranking.
 
-    The set is chosen so that every column NOT in it is linearly recoverable from the ones that
-    are -- a COVERAGE criterion, not a compression one. A dropped column costs a model nothing
-    if the model can rebuild it; what is lost is only a column's unique variance. It is derived
-    label-free, from the descriptor matrix alone, on the training corpus stacked with an
-    adversarial salts-and-mixtures set. See docs/MINIMAL_SPEC.md.
+    See HUME_Minimal_definition.md for the evidence behind each decision.
 
     Note this selects what is RETURNED, not what is computed: the block is monolithic, so a
     reduced spec narrows the output and speeds up whatever consumes it, not the featurization.
+    The exception is worth knowing -- the Burden weights dropped here would save about 59 of
+    BCUT's 163 us/mol if the extension stopped computing them, which it does not yet.
     """
     from . import _minimal
-    if spec != "minimal-v1":
+    if spec == "minimal-v1":
         raise ValueError(
-            f"spec={spec!r} is not a spec this build carries. The only one is 'minimal-v1'; "
-            "a spec is a frozen contract, so new ones are added rather than edited.")
-    n = _minimal.N_DEFAULT if n is None else int(n)
-    if not 1 <= n <= len(_minimal.ORDER_NAMES):
+            "minimal-v1 is withdrawn. It was an ordering derived by rank-revealing QR on a "
+            "linear-recoverability criterion -- a column could go if the kept ones could rebuild "
+            "it linearly. No consumer works that way: a depth-6 tree cannot split on a linear "
+            "combination, and neither a deeper tree nor an MLP recovered the loss when it was "
+            "tested. Use minimal-v2, which is a set rather than a ranking and drops columns only "
+            "for being the same quantity in different units, already present in the output, or "
+            "an exact identity. See HUME_Minimal_definition.md.")
+    if spec != "minimal-v2":
         raise ValueError(
-            f"n={n} is out of range for spec {spec!r}, which ranks "
-            f"{len(_minimal.ORDER_NAMES)} columns. Pass 1..{len(_minimal.ORDER_NAMES)}, or None "
-            f"for the shipped default of {_minimal.N_DEFAULT}.")
-    return _minimal.ORDER_NAMES[:n]
-
-
-def minimal_curve(spec: str = "minimal-v1") -> tuple:
-    """What each operating point of `minimal_columns` gives up. See docs/MINIMAL_SPEC.md.
-
-    Each entry reports the WORST-CASE reconstruction R^2 over dropped columns, never the mean:
-    a set where 639 columns sit at 0.999 and one at 0.40 has lost something real, and an average
-    hides exactly that.
-    """
-    from . import _minimal
-    if spec != "minimal-v1":
-        raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
-    return _minimal.CURVE
-
-
-def minimal_recovery(columns=None, spec: str = "minimal-v1") -> dict:
-    """How well each column dropped by `minimal_columns()` is reconstructed from the ones kept.
-
-        molhume.minimal_recovery(["MolLogP", "TPSA"])
-        {'MolLogP': 0.9963}          # TPSA is KEPT, so it is not in the result
-
-    `minimal_curve()` answers "is this n safe overall" with a worst case and a count.
-    This answers the question a user with one descriptor in mind actually has: **is the column I
-    care about safe.** A worst case over 467 columns cannot answer that.
-
-    Returns ``{name: R^2}`` for dropped columns only -- a kept column is not reconstructed, it is
-    present, so including it at 1.0 would blur the distinction that matters. Pass `columns` to
-    ask about specific names; anything kept, or not emitted at all, is simply absent from the
-    result, so ``set(asked) - set(result)`` is the set that survives the spec.
-
-    The numbers are HELD OUT: the reconstruction is fitted on the derivation samples and scored
-    on a disjoint draw. In-sample values would be meaningless here -- the kept set is numerically
-    singular, and an unregularised in-sample fit reports R^2 = 0.99 alongside a held-out
-    -1e20. See docs/MINIMAL_SPEC.md section 6.
-
-    At the shipped default of 800 columns: median 0.995, 44 of 467 below 0.99, none below 0.90.
-
-    Note that `minimal_columns()`, this table, and `minimal_gated()` PARTITION ALL_COLUMNS: 800
-    kept, 467 scored, 2 gated out before the ranking was derived. A column absent from all three
-    would be a bug, and there is a test for it.
-    """
-    from . import _minimal
-    if spec != "minimal-v1":
-        raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
-    table = _minimal.RECOVERY_AT_DEFAULT
-    if columns is None:
-        return dict(table)
-    asked = list(columns)
-    known = set(ALL_COLUMNS)
-    unknown = [c for c in asked if c not in known]
-    if unknown:
-        raise ValueError(
-            f"minimal_recovery was asked about {len(unknown)} name(s) this build does not emit: "
-            f"{unknown[:6]}{' ...' if len(unknown) > 6 else ''}. molhume.ALL_COLUMNS lists all "
-            f"{len(ALL_COLUMNS)}.")
-    return {c: table[c] for c in asked if c in table}
-
-
-def minimal_gated(spec: str = "minimal-v1") -> dict:
-    """Columns left out of the ranking before it was derived, and why. ``{name: reason}``.
-
-    Two columns are emitted by `featurize` but appear in neither `minimal_columns()` nor
-    `minimal_recovery()`. Reporting them rather than quietly omitting them is what makes the
-    three sets partition ALL_COLUMNS.
-
-    **Neither is a dead column, and neither is a mistake in the emitted set.** Both are facts
-    about the molecules this spec was derived on. `n5FHRing` is nonzero on 0.78% of benchmark
-    and salt molecules but 0.0008% of the training corpus this spec was derived from -- a
-    thousand-fold difference, so a 24,000-molecule draw contained none and there was no variance
-    to rank. `MDEC-11` is 40% finite on the training corpus and 52% on the benchmark corpus,
-    falling either side of a 50% gate depending on which sample you ask.
-
-    So the honest reading is: **the spec has nothing to say about these two**, not that they are
-    worthless. If your chemistry contains fused five-membered rings of that class, `n5FHRing` is
-    informative and this ranking never saw it.
-    """
-    from . import _minimal
-    if spec != "minimal-v1":
-        raise ValueError(f"spec={spec!r} is not a spec this build carries; only 'minimal-v1'.")
-    return dict(_minimal.GATED)
+            f"spec={spec!r} is not a spec this build carries. The only one is 'minimal-v2'; a "
+            "spec is a frozen contract, so new ones are added rather than edited.")
+    return _minimal.MINIMAL_COLUMNS
 
 
 def featurize(smiles: Iterable, *, standardize=_UNSET, threads: int = 0,

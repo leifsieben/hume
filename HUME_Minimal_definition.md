@@ -392,6 +392,43 @@ autocorrelation to 3 columns and destroy the distance-resolved structure it exis
 Under the constructual-or-exact standard the block is finished; what remains untested is not
 redundancy but IMPORTANCE, which is a different question and needs an ablation.
 
+### 3.9 Autocorrelation dropped (provisional)
+
+The block is irreducible -- exact rank 227 of 227, and the least reproducible family in the
+library -- so nothing else can rebuild it. That establishes DISTINCTNESS, and distinctness was
+being treated as if it implied value. It does not, and the two come apart here.
+
+Mechanistically, the uncentered forms are barely about the property at all. Writing
+`w = wbar + delta`, `ATS_k = n_k*wbar^2 + ...`, and for a strictly positive weight the first term
+dominates. Measured, how much of each column is explained by the pair count at lag k plus
+composition alone:
+
+| form | R^2 from distance profile + composition |
+| --- | ---: |
+| `ATS` | **0.95 - 0.98** |
+| `AATS` | 0.62 - 0.94 |
+| `ATSC` / `AATSC` / `GATS` | 0.02 - 0.24 |
+
+So `ATS` is ~97% the distance distribution scaled by composition. The centered forms subtract the
+mean first and are the ones actually measuring arrangement.
+
+**The ablation.** Removing all 227 kept autocorrelation columns -- 29% of the library -- from five
+physicochemical datasets, same folds and head as the grid:
+
+| arm | mean | median | worst | above fold noise |
+| --- | ---: | ---: | ---: | --- |
+| minus 227 kept | **-0.64%** | -0.75% | +0.35% | **0 of 5 datasets** |
+| minus all 519 | -0.05% | -1.23% | +6.38% | 1 of 5 |
+
+Negative is better. Not one dataset moved by more than its own fold-to-fold spread.
+
+⚠️ **This is the only cut in the spec that rests on "we could not measure it helping" rather than
+on redundancy, and it is PROVISIONAL.** Five physicochemical datasets is not the grid;
+classification, ADME and quantum are untested. It is much stronger evidence than the ETA
+ablation -- a 227-column removal producing no signal is a result, where a 29-column one drowning
+in noise was a failed measurement -- but it should be re-run against all 33 datasets before it is
+treated as settled.
+
 ## 4. Running total
 
 | decision | columns removed |
@@ -402,10 +439,14 @@ redundancy but IMPORTANCE, which is a different question and needs an ablation.
 | autocorrelation: `ATS`/`AATS` odd lags (§3.1b) | 52 |
 | ring + constitutional, exactly determined (§3.4) | 29 |
 | ETA (§3.5) | 29 |
-| **total distinct columns dropped** | **425** |
-| ring 8+ re-binning, non-fused only (§3.4) | −2 net |
+| BCUT on cut weights (§3.7) | 7 |
+| path/walk counts + matrix spectrum (§3.7) | 46 |
+| AETA (§3.7) | 14 |
+| autocorrelation, all remaining (§3.9, **provisional**) | 227 |
+| **total distinct columns dropped** | **719** |
 
-**1,269 → 842.** Information content is kept whole (§3.6): the redundancy there is across radii
+**1,269 → 550, shipped as `minimal-v2`.** The ring 8+ re-binning was dropped from the plan: it
+removes 5 columns and adds 3, and needs new C++ to do it. Information content is kept whole (§3.6): the redundancy there is across radii
 rather than across series, and the block is not worth cutting for 10 columns.
 
 Every cut so far is **constructual or exact** — the same quantity in different units, information

@@ -144,58 +144,32 @@ unusable. What survives is 1,269.
 
 ## A reduced column set
 
-`minimal-v1` is an 800-column subset chosen so that every column it drops is linearly
-recoverable from the ones it keeps — derived label-free from the descriptor matrix alone, with
-no target, assay or benchmark involved:
+`minimal-v2` is a 550-column subset of the 1,269:
 
 ```python
-X = molhume.featurize(smiles, columns=molhume.minimal_columns())      # 800 instead of 1,269
+X = molhume.featurize(smiles, columns=list(molhume.minimal_columns()))
 ```
 
-**The ordering is the product, not the number.** `minimal_columns(n)` takes any prefix, and
-`minimal_curve()` publishes what each `n` costs, so you can pick your own operating point rather
-than inherit one:
+It is a **set, not a ranking**. Every column was removed for one of three reasons, and none of
+them is a variance threshold:
 
-```python
-molhume.minimal_columns(400)      # smaller, and minimal_curve() says exactly what you gave up
-```
+- **the same physical quantity in different units** — three electronegativity scales, atomic mass
+  against atomic number, polarizability against volume. Read from the definitions, because no
+  correlation cutoff separates "0.995, same construct" from "0.99, genuinely different";
+- **already carried by the ECFP** that ships alongside — the 75 `fr_*` substructure flags come
+  back from the fingerprint at detection AUROC 1.000;
+- **an exact arithmetic identity** of columns that remain — ring and constitutional counts that
+  are sums of others, verified on two chemical spaces.
 
-**Is the column *you* care about safe?** `minimal_curve()` gives a worst case over 467 dropped
-columns, which cannot answer that. `minimal_recovery()` can:
+All the descriptors you would expect are in it: molecular weight, Crippen logP, TPSA, H-bond
+donors and acceptors, rotatable bonds, ring counts, Kappa shape, chi connectivity, Labute ASA,
+Balaban J, Lipinski. Of RDKit's 217 descriptors, 120 are present; 85 of the 97 absent are `fr_*`
+flags the fingerprint reproduces.
 
-```python
-molhume.minimal_recovery(["SLogP", "TPSA", "BalabanJ"])
-# {'SLogP': 0.9882, 'TPSA': 0.9937}      BalabanJ is KEPT, so it is absent
-```
-
-Held-out R², fitted on the derivation samples and scored on a disjoint draw. At n=800 the median
-is 0.995, 44 of 467 fall below 0.99 and none below 0.95. `minimal_columns()`,
-`minimal_recovery()` and `minimal_gated()` partition all 1,269 columns — 800 kept, 467 scored,
-and 2 excluded before ranking (one too often non-finite, one constant on every derivation
-sample).
-
-### What it costs, measured
-
-Benchmarked as an independent test — the datasets played no part in choosing the columns — with
-an untuned XGBoost head on 5-fold scaffold splits, against the full 1,269:
-
-| endpoint family | datasets | mean cost | worst |
-| --- | --- | --- | --- |
-| Classification | 13 | −0.11% | +0.70% |
-| ADME & tox | 10 | +0.29% | +2.73% |
-| Quantum energy | 4 | +0.90% | +1.83% |
-| **Physicochemical** | 6 | **+3.83%** | **+7.33%** |
-| **All** | **35** | **+0.80%** (median +0.26%) | |
-
-So a 37% column reduction costs a **median of 0.26%** across 35 datasets — free on
-classification (where it is marginally *better*), ADME and quantum energy.
-
-**The exception is physicochemical endpoints**, at +3.83% mean and +7.33% worst, with all six
-datasets moving the same way (sign test p = 0.031). If you work on solubility or logP, take more
-than 800 columns — `minimal_curve()` tells you what each `n` buys. Linear recoverability says a
-dropped column can be *rebuilt*; it does not say a depth-6 tree can split on it, and solubility
-leans hardest on the additive atom-contribution descriptors that makes expensive to rebuild.
-See `docs/MINIMAL_SPEC.md`.
+⚠️ **One decision in it is provisional.** The 227-column autocorrelation block was dropped
+because removing it cost nothing measurable across five physicochemical datasets — not because
+anything else can rebuild it (nothing can; it is the least reproducible family in the library).
+Classification, ADME and quantum endpoints are untested. See `HUME_Minimal_definition.md`.
 
 ## Platforms
 
