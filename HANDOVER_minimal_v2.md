@@ -14,7 +14,7 @@ pip install --upgrade mol-hume        # 0.7.0
 X = molhume.featurize(smiles, standardize="none")     # 622 of 1,269 -- minimal is the DEFAULT
 ```
 
-⚠️ **The set grew twice after this document was written, under the same spec name.** 550 columns
+ **The set grew twice after this document was written, under the same spec name.** 550 columns
 in 0.4.0, 612 in 0.5.0, 622 in 0.6.0 — `minimal-v2` throughout, so the package version is the
 only thing distinguishing them. Both changes restored `fr_*` substructure flags, and all 15 of
 the flags this project asked for are present from 0.6.0 on (`fr_sulfone` was the last one
@@ -81,7 +81,7 @@ nuclear mass). Kept `Z`, Pauling EN and vdW volume, plus the four environment-de
 the reverse of what QR chose, because QR optimised on a corpus containing no transition metals.
 
 **Already in the output** — the 75 `fr_*` substructure flags come back from the ECFP that ships
-alongside them at detection AUROC **1.000**. ⚠️ Our first version of that test used R² and was
+alongside them at detection AUROC **1.000**.  Our first version of that test used R² and was
 wrong: for a column that is zero on 99.95% of molecules, R² measures rarity, not recoverability.
 No other family is droppable this way — E-state, ring counts and constitutional counts all have
 near-perfect *detection*, but a fingerprint carries no **magnitude** (`HeavyAtomCount` comes back
@@ -92,7 +92,7 @@ verified on two chemical spaces (rank says 23 determined on the benchmark corpus
 salts alone, but only **21 stacked**; the extras are corpus artifacts) and confirmed with the real
 consumer, which rebuilds them at median R² 1.0000 against a linear model's 0.9971.
 
-⚠️ **One cut is weaker and is flagged as such.** The 227-column autocorrelation block was dropped
+ **One cut is weaker and is flagged as such.** The 227-column autocorrelation block was dropped
 because removing it cost nothing measurable — *not* because anything can rebuild it. Nothing can:
 it is the least reproducible family in the library and has full exact rank (227 of 227).
 
@@ -111,7 +111,7 @@ Negative means the reduced set scored better. **No dataset moved by more than it
 fold-to-fold spread**; sign test 11 of 29 worse, p = 0.27. So: *no measurable difference at 43% of
 the columns*. For contrast, v1 cost **+3.83%** on physchem with 800 columns.
 
-⚠️ **The quantum panel (`qm8`, `qm9`, `qm9_gap`, `qmugs_gap`) is still running and is not in those
+ **The quantum panel (`qm8`, `qm9`, `qm9_gap`, `qmugs_gap`) is still running and is not in those
 numbers.** It is the one to watch: autocorrelation is a distance-resolved property correlation,
 which is the kind of signal an electronic-structure endpoint may lean on. If it fails there, that
 is a follow-up release.

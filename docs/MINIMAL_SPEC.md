@@ -1,6 +1,6 @@
 # HUME_minimal v1: deriving a reduced column spec — **SUPERSEDED**
 
-> ⚠️ **THIS DOCUMENT DESCRIBES `minimal-v1`, WHICH WAS WITHDRAWN. It is not how the shipped set
+>**THIS DOCUMENT DESCRIBES `minimal-v1`, WHICH WAS WITHDRAWN. It is not how the shipped set
 > was chosen.** `molhume.minimal_columns(spec="minimal-v1")` raises, and `minimal_curve()`,
 > `minimal_recovery()` and `minimal_gated()` no longer exist.
 >
@@ -94,7 +94,7 @@ dropped them and been wrong for anyone working with salts.
 Each sample is z-scored with its **own** statistics before stacking. Pooling first and scaling
 after lets whichever sample has the wider spread set the scale and dominate the pivoting.
 
-⚠️ The spec is tied to `standardize="none"`, recorded in `_minimal.py`. That setting changes
+ The spec is tied to `standardize="none"`, recorded in `_minimal.py`. That setting changes
 descriptor values for every multi-fragment input, so a spec derived under one does not transfer.
 
 **A concrete instance of the limitation, found while writing the per-column API.** Two of the
@@ -144,7 +144,7 @@ The fix is a ridge penalty of `0.01·n` on the reconstruction fit, chosen from a
 answer is flat from 1e-6 to 1e-2. It is not a knob on the answer — it exists so the question can
 be asked at all.
 
-⚠️ Linear recoverability errs in the safe direction. A column that is a *non-linear* function of
+ Linear recoverability errs in the safe direction. A column that is a *non-linear* function of
 the kept set looks unrecoverable and is kept unnecessarily, so the method keeps slightly too
 much — which is the right way to be wrong.
 

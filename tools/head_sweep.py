@@ -16,7 +16,7 @@ BASELINE FIRST. xgb_d6 reproduces the grid's own head, on the same molecules and
 FOLDS, so its gap must match the AWS number. A reanalysis that cannot reproduce the thing it is
 reanalysing is measuring its own pipeline.
 
-⚠️ Trees take NaN natively; ridge and the MLP do not. Those two get train-fold median
+ Trees take NaN natively; ridge and the MLP do not. Those two get train-fold median
 imputation and train-fold standardisation, both fitted on train only. That is a difference
 between heads, not between arms -- both arms get identical treatment inside a head -- so the
 GAP stays comparable even though absolute scores across heads are not.

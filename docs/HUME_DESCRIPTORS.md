@@ -128,7 +128,7 @@ once:
 | **total emitted** | **1,269** | `molhume.column_set("full")` |
 | opt-in, in no set | **1** | `qed` -- `molhume.OPTIONAL_COLUMNS`; `molhume.ALL_COLUMNS` is 1,270 |
 
-⚠️ **THE THREE COUNTS ABOVE ARE PRE-1,269 AND DO NOT ADD UP -- 865 + 206 + 193 is 1,264.** They
+ **THE THREE COUNTS ABOVE ARE PRE-1,269 AND DO NOT ADD UP -- 865 + 206 + 193 is 1,264.** They
 were written against an earlier emitted set and have not been re-derived; the total is correct
 and the split is not. What IS current, and is read straight off the package: 1,269 emitted, of
 which **160** have no RDKit or Mordred counterpart (`molhume.column_set("full_no_new")` is the
@@ -155,7 +155,7 @@ by whoever wants it.
 Measured on `c7i.4xlarge` (16 vCPU) at N=10⁶, one run, all three HUME arms together --
 `results/scale/`, and the same numbers Figure D draws.
 
-⚠️ **This table used to read "HUME (1,266 descriptors) 124 µs".** That measurement was of a
+ **This table used to read "HUME (1,266 descriptors) 124 µs".** That measurement was of a
 build with a different column set, on a different box, and it is superseded rather than
 corrected: the emitted set has since gone 1,266 -> 1,536 -> 1,269, and the run-to-run spread on
 this instance type is 2-3% on top of that.
@@ -194,7 +194,7 @@ Six of these are carried rather than re-derived, each for a measured reason:
 * **`nring` alongside the in-ring boolean.** SMARTS asks both questions independently: `[R]` is
   membership, `[R1]`/`[R2]` are counts, and the count cannot be recovered from the boolean.
 * **Total valence.** Recomputing it as `round(Σ bond orders) + nH` disagrees with RDKit on
-  **11,238 of 575,571** corpus atoms, because aromatic bonds and hydrogens go through RDKit's
+**11,238 of 575,571** corpus atoms, because aromatic bonds and hydrogens go through RDKit's
   own rounding rule — pyrrole's `[nH]` has two aromatic bonds summing to 3.0 and one hydrogen,
   and RDKit's total valence is 3, not 4. Three fragment patterns ask SMARTS `v`.
 * **`BondType` alongside the SMARTS bond code.** They answer different questions. The SMARTS

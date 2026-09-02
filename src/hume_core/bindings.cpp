@@ -770,7 +770,7 @@ inline constexpr unsigned OPT_DEFAULT = OPT_AVGIPC;
 //! predicate is what stops `["constit"]` from silently getting a null charge array -- and what
 //! stops it from paying for Autocorrelation's 540 columns to get one.
 //!
-//! ⚠️ F_SPECTRAL WAS MISSING HERE AND IT WAS A SILENT WRONG VALUE, not a missing one. With the
+//!  F_SPECTRAL WAS MISSING HERE AND IT WAS A SILENT WRONG VALUE, not a missing one. With the
 //! charge arrays null, `a.c` falls back to AC_C_MISSING and BCUTc-1h/-1l come out as finite,
 //! plausible, wrong numbers -- 650 differing cells over 400 molecules of cpp/hard.smi. It never
 //! reached production because `families` had exactly one caller, cpp/bench_e2e.py, where the

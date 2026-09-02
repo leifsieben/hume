@@ -192,7 +192,7 @@ ARMS = {
     "hume_no_new": dict(label="HUME_no_new", family="hume", color=SHADES["hume"][1]),
     # The 622-column reduced spec (minimal-v2).
     #
-    # ⚠️ ITS x POSITION IS NO LONGER HUME_full's, AND THAT IS A REAL CHANGE. Until mol-hume
+    #  ITS x POSITION IS NO LONGER HUME_full's, AND THAT IS A REAL CHANGE. Until mol-hume
     # 0.7.0 the column selection chose what was RETURNED and not what was COMPUTED, so all three
     # HUME arms sat on one point by construction and the panel read as "what does dropping the
     # columns cost, for free". Since 0.7.0 the selection is a compute plan -- a descriptor family

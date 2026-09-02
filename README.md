@@ -2,12 +2,9 @@
 
 Molecular descriptors computed in C++, verified column by column against RDKit and Mordred.
 
-`mol-hume` computes up to **1,269 descriptors** per molecule in about **285 microseconds**, from
-a single call, plus a 2,048-bit ECFP alongside them. Of the descriptors, 1,109 reproduce ones
-that RDKit or Mordred already define, and 160 are new. Nothing is computed in Python.
-
-The default is the reduced **622-column `minimal` set**, which is also 17% faster to compute
-because the columns it drops are no longer calculated. Pass `columns="full"` for all 1,269.
+`mol-hume` emits up to 1,269 descriptors per molecule in about 285 microseconds, plus a
+2,048-bit ECFP alongside them. 1,109 of the descriptors reproduce definitions RDKit or Mordred
+already provide; 160 are new. Nothing is computed in Python.
 
 ```bash
 pip install mol-hume
@@ -17,252 +14,233 @@ pip install mol-hume
 import molhume
 
 X = molhume.featurize(["CCO", "CC(=O)Oc1ccccc1C(=O)O"], standardize="none")
-# X -> (2, 2670) float64: the 622 `minimal` descriptors then 2,048 ECFP bits, ready for a model
+# (2, 2670) float64: 622 minimal descriptors, then 2,048 ECFP bits
 
 xgboost.XGBRegressor().fit(X, y)
 ```
 
-One array, not a tuple. The column names do not change from call to call, so returning them
-every time is something you would unpack and discard; ask for them when you need them, and they
-come back in the same order for the same flags:
+`featurize` returns one array. Column names are identical for identical arguments, so they are
+available on request rather than returned every call:
 
 ```python
 df = pandas.DataFrame(X, columns=molhume.feature_names())
 ```
 
-Pass the same flags to both and the names line up: `feature_names(fingerprint=False)` for the
-descriptors alone, `feature_names(columns="full")` for all 1,269.
+Pass both functions the same arguments and the names line up with the columns.
 
-## Which columns
+## Selecting columns
 
 One parameter, four ways to answer it:
 
 ```python
-molhume.featurize(smiles, columns="minimal")      # 622 -- the default
-molhume.featurize(smiles, columns="full_no_new")  # 1,109 -- what RDKit or Mordred already define
+molhume.featurize(smiles, columns="minimal")      # 622, the default
+molhume.featurize(smiles, columns="full_no_new")  # 1,109 -- RDKit and Mordred definitions only
 molhume.featurize(smiles, columns="full")         # all 1,269
-molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # exactly these, in this order
+molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # these, in this order
 ```
 
-`molhume.column_set(name)` returns the names in any of the three sets, and `molhume.ALL_COLUMNS`
-lists every name a manual selection can use.
+`column_set(name)` returns the names in any of the three sets. `ALL_COLUMNS` lists every name a
+manual selection can use.
 
-### Two words that are not the same thing
-
-**Column sets** are the three things you choose between — `minimal`, `full_no_new`, `full`. In
-the paper's figures, where they sit alongside other methods, they are written **HUME_minimal**,
-**HUME_no_new** and **HUME_full**; inside this package the `HUME_` prefix is redundant, so
-`columns="full"` says the same thing.
-
-**Families** are something else entirely: the nineteen internal groupings the descriptors are
-computed in — `autocorr`, `spectral`, `chi`, `estate`, `constit` and so on. `FAMILY_OFFSETS`
-maps each to its span. They are the unit the compute plan skips in, which is why `minimal` is
-cheaper (it needs none of `autocorr`, `eta` or `pathcount`) and `full_no_new` is not (its 1,109
-columns touch all nineteen).
-
-So: three sets, nineteen families. A set is what you ask for; a family is what gets computed.
-
-**One column is in `ALL_COLUMNS` and in none of the three sets: `qed`.** It costs 69.3 us/mol on
-its own — the most expensive column here, 116 structural-alert subgraph searches — and it is a
-drug-likeness *score*, a weighted geometric mean of eight properties this matrix already carries
-as columns in their own right. `full` means every descriptor, not every possible expense, so you
-opt in:
-
-```python
-molhume.featurize(smiles, columns=molhume.column_set("full", extra=["qed"]))
-molhume.featurize(smiles, columns=["TPSA", "qed"])
-```
-
-`molhume.OPTIONAL_COLUMNS` names them. It is appended after every other column, so opting in
-moves nothing: `column_set("full")` is still `ALL_COLUMNS[:1269]`.
-
-**Since 0.7.0 this decides what is COMPUTED, not just what is returned.** A descriptor family
-none of whose columns you asked for is not calculated at all, and neither are the individual
-eigensolves of the `spectral` family, which is the most expensive of the nineteen. The output is
-identical either way -- `tests/test_families.py` checks every family and every set against an
-ungated run, cell for cell -- but a narrow selection is now cheaper as well as smaller. Measured
-on 1,200 molecules of `cpp/hard.smi` at one thread, against the ungated 918 us/mol:
+**The selection decides what is computed, not only what is returned.** A descriptor family none
+of whose columns are selected is not calculated, and neither are the individual eigensolves of
+the `spectral` family. Output is identical either way — `tests/test_families.py` compares every
+family and every set against an ungated run, cell for cell — but a narrow selection is cheaper
+as well as smaller. On 1,200 molecules of `cpp/hard.smi`, one thread, against 918 us/mol ungated:
 
 | selection | us/mol | |
-| --- | --- | --- |
-| `columns="minimal"` (622) | 762 | **17% faster** |
-| `columns="full_no_new"` (1,109) | 908 | 1% -- within noise |
-| `columns="full"` (1,269) | 900 | 2% -- within noise |
-| `columns=["TPSA", "ExactMolWt", "SLogP"]` | 288 | **69% faster** |
+| --- | ---: | --- |
+| `"minimal"` (622) | 762 | 17% faster |
+| `"full_no_new"` (1,109) | 908 | within noise |
+| `"full"` (1,269) | 900 | within noise |
+| `["TPSA", "ExactMolWt", "SLogP"]` | 288 | 69% faster |
 
-The two full sets gain nothing, which is the honest result: they ask for every family, so there
-is nothing to skip.
+The two full sets gain nothing: they request every family, so there is nothing to skip.
 
-## The one decision you have to make
+### Sets and families
 
-`standardize` has no safe default, so leaving it unset warns once and tells you the options.
-Descriptors are computed on the graph you hand them: a salt, a tautomer and a charge state are
-three different molecules, and no library can guess which one you meant.
+**Column sets** are the three choices above. In the paper's figures, where they appear beside
+other methods, they are written `HUME_minimal`, `HUME_no_new` and `HUME_full`; inside the package
+the prefix is redundant.
 
-| value | what it does |
-| --- | --- |
-| `"none"` | featurize exactly what you supplied |
-| `"canonical"` | SMILES round-trip, nothing else |
-| `"cleanup"` | RDKit `MolStandardize`: normalize, largest fragment, uncharge |
-| a callable | your own `Mol -> Mol` |
-
-Passing `"none"` explicitly is a decision and is silent; omitting it is not, and warns.
-
-## Flags
-
-| flag | default | what it controls |
-| --- | --- | --- |
-| `standardize` | `"none"` (warns if unset) | what molecule the numbers describe |
-| `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` if your own code is already parallel — but see the timing note below, because it costs about 3x |
-| `fingerprint` | `True` | append `fp_size` ECFP bit columns *after* the descriptors, so descriptor column indices never shift when the flag changes. Turning it off saves about 30 us/molecule that cannot be threaded |
-| `fp_radius` | `3` | ECFP radius |
-| `fp_size` | `2048` | ECFP bits |
-| `columns` | `"minimal"` | `"minimal"` (622), `"full_no_new"` (1,109), `"full"` (1,269), or a list of names in the order you want them. Decides what is computed as well as what is returned |
-| `on_error` | `"nan"` | unparseable SMILES: `"nan"` keeps the row and fills it, so the output stays aligned with the input; `"raise"`; `"skip"` drops the row, so it does not |
-| `dtype` | `float64` | `float32` halves the memory and is what the boosting libraries convert to internally anyway |
-| `batch_size` | `4096` | rows per batch. Affects memory, not values |
-
-`featurize` also takes RDKit `Mol` objects instead of SMILES, which skips a parse.
-
-`molhume.feature_names(**flags)` gives the names for any set of flags; `molhume.ALL_COLUMNS` is
-the full list, and `molhume._additional.ADDITIONAL_COLUMNS` the ones that are ours.
-
-To take one descriptor family, `molhume.FAMILY_OFFSETS` maps a family name to a half-open
-`(start, stop)` into `ALL_COLUMNS` and into the descriptor block of the output:
+**Families** are the nineteen internal groupings the descriptors are computed in — `autocorr`,
+`spectral`, `chi`, `estate`, `constit` and so on. `FAMILY_OFFSETS` maps each to a half-open
+`(start, stop)` span:
 
 ```python
 lo, hi = molhume.FAMILY_OFFSETS["ringcount"]
 ring_counts = X[:, lo:hi]                     # 47 columns, n5Ring .. nG12FAHRing
 ```
 
-`import mol_hume` works too, and is the same module object — the distribution is `mol-hume`, and
-`import mol-hume` is a Python syntax error, not something a package can fix.
+A set is what you request; a family is what gets computed. That is why `minimal` is cheaper —
+it needs none of `autocorr`, `eta` or `pathcount` — and `full_no_new` is not, since its 1,109
+columns touch all nineteen.
 
-## What "verified" means
+### qed
+
+One column is in `ALL_COLUMNS` and in none of the three sets. `qed` costs 69.3 us/mol on its own
+(116 structural-alert subgraph searches, the most expensive column here) and is a drug-likeness
+score: a weighted geometric mean of eight properties already emitted as columns in their own
+right. `full` means every descriptor, not every expense, so it is opt-in:
+
+```python
+molhume.featurize(smiles, columns=molhume.column_set("full", extra=["qed"]))
+molhume.featurize(smiles, columns=["TPSA", "qed"])
+```
+
+`OPTIONAL_COLUMNS` names them. `qed` is appended after every other column, so opting in shifts
+nothing: `column_set("full")` is `ALL_COLUMNS[:1269]`.
+
+## Standardization
+
+`standardize` has no safe default. Descriptors are computed on the graph they are given, so a
+salt, a tautomer and a charge state are three different molecules and no library can infer which
+was meant. Leaving it unset warns once and lists the options.
+
+| value | effect |
+| --- | --- |
+| `"none"` | featurize exactly what was supplied |
+| `"canonical"` | SMILES round-trip, nothing else |
+| `"cleanup"` | RDKit `MolStandardize`: normalize, largest fragment, uncharge |
+| a callable | your own `Mol -> Mol` |
+
+Passing `"none"` explicitly is silent; omitting it warns.
+
+## Arguments
+
+| argument | default | effect |
+| --- | --- | --- |
+| `columns` | `"minimal"` | `"minimal"` (622), `"full_no_new"` (1,109), `"full"` (1,269), or a list of names in the order wanted. Decides what is computed as well as what is returned |
+| `standardize` | `"none"`, warns if unset | what molecule the numbers describe |
+| `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` when the caller is already parallel; it costs about 3x |
+| `fingerprint` | `True` | append `fp_size` ECFP bit columns after the descriptors, so descriptor indices do not shift when the flag changes. Off saves about 30 us/molecule that cannot be threaded |
+| `fp_radius` | `3` | ECFP radius |
+| `fp_size` | `2048` | ECFP bits |
+| `on_error` | `"nan"` | unparseable SMILES: `"nan"` keeps the row and fills it, preserving alignment with the input; `"raise"`; `"skip"` drops the row |
+| `dtype` | `float64` | `float32` halves memory and is what the boosting libraries convert to internally |
+| `batch_size` | `4096` | rows per batch. Affects memory, not values |
+
+`featurize` also accepts RDKit `Mol` objects, which skips a parse.
+
+`import mol_hume` returns the same module object. The distribution is `mol-hume`; `import
+mol-hume` is a syntax error, which no package can fix.
+
+## Verification
 
 Every column was compared against its upstream definition over a 42,000-molecule corpus spanning
 1 to 64 heavy atoms:
 
-- **167 of 186** RDKit columns and **412 of 968** Mordred columns are **bit-identical**.
-- **99.99%** (RDKit) and **99.23%** (Mordred) of values agree to within 1e-9.
+- 167 of 186 RDKit columns and 412 of 968 Mordred columns are bit-identical.
+- 99.99% (RDKit) and 99.23% (Mordred) of values agree to within 1e-9.
 
-The remainder are deliberate, documented divergences, not unexplained differences: they are cases
-where the upstream definition depends on atom numbering or on a Kekule choice, and therefore has
-no single correct answer. Every one of them is listed with a measurement in `METHODS.md`.
+The remainder are documented divergences rather than unexplained differences: cases where the
+upstream definition depends on atom numbering or on a Kekule choice and therefore has no single
+correct answer. Each is listed with a measurement in `METHODS.md`.
 
-### About that 285 us
+### Timing
 
-**That is the threaded number**, with `threads=0` (one worker per hardware thread), which is the
-default. The descriptor block is the parallel part, so the single-threaded figure is very
-different. Measured on a 12-thread M-series laptop, 4,000 corpus molecules:
+The 285 us figure is threaded, with `threads=0` (one worker per hardware thread), the default.
+The descriptor block is the parallel part. Measured on a 12-thread M-series laptop over 4,000
+corpus molecules:
 
 | | us/molecule |
-| --- | --- |
+| --- | ---: |
 | `threads=0` (default, 12 threads) | 282 |
 | `threads=0`, `fingerprint=False` | 247 |
 | `threads=1` | 861 |
 | `threads=1`, `fingerprint=False` | 846 |
 
-So `threads=1` costs roughly 3x, not 12x — the per-molecule boundary work does not parallelize.
-Pass `threads=1` when your own code is already parallel across processes; leave it at `0`
-otherwise. Quoting a per-molecule cost without saying which of these it is makes the number
-meaningless, so always say.
+`threads=1` costs roughly 3x rather than 12x: the per-molecule boundary work does not
+parallelize. Use it when the caller is already parallel across processes.
 
-### The RDKit range
+### RDKit version range
 
-`mol-hume` requires **`rdkit>=2024.09.1,<2026.09`**, and this is a hard requirement rather than a
-preference. The library reads RDKit's `MolPickler` blob directly — a large part of where the
-speed comes from — and that format is explicitly not a stable API. Outside the range that has
-been measured, `mol-hume` refuses to import rather than misparse a molecule into wrong numbers
-with no symptom.
+`mol-hume` requires `rdkit>=2024.09.1,<2026.09`, and this is a hard requirement. The library
+reads RDKit's `MolPickler` blob directly — a large part of where the speed comes from — and that
+format is explicitly not a stable API. Outside the measured range `mol-hume` refuses to import
+rather than misparse a molecule into wrong numbers with no symptom.
 
-Within the range, the pickle format is checked rather than assumed: RDKit 2026.03 writes a
-different format version from 2025.09, and it is accepted because 4,000 corpus molecules pickle
-to bytes that differ only in the version triple, and all 1,269 columns over 8,000 molecules come
-out bit-identical. Widening it for a future release is one command —
-`tools/check_rdkit_release.py` — plus, if the blobs really changed, work on the reader. See
+Within the range the format is checked rather than assumed. RDKit 2026.03 writes a different
+format version from 2025.09 and is accepted because 4,000 corpus molecules pickle to bytes
+differing only in the version triple, and all 1,269 columns over 8,000 molecules come out
+bit-identical. Widening the range for a future release is one command,
+`tools/check_rdkit_release.py`, plus work on the reader if the blobs did change. See
 `MAINTENANCE.md`.
 
-The upper bound is loose on purpose. It is a courtesy to resolvers — it stops a fresh install
-picking an RDKit years newer than anything measured — not a claim that 2027 will work. If the
-pickle format does change, `featurize` raises an error naming your RDKit and what to do, the
-package still imports, and `featurize_blocks(reader="api")` still works on any RDKit at all,
-because it goes through RDKit's supported Python API.
+The upper bound is loose deliberately: it is a courtesy to resolvers, stopping a fresh install
+from picking an RDKit years newer than anything measured, not a claim about 2027. If the pickle
+format does change, `featurize` raises an error naming the installed RDKit and what to do, the
+package still imports, and `featurize_blocks(reader="api")` still works on any RDKit, since it
+goes through the supported Python API.
 
-Within that range, values are quoted against **RDKit 2025.9.2** specifically. RDKit's perceived
-atom and bond properties drift across releases, so a different RDKit inside the range can still
-move values in the last digits.
+Values are quoted against RDKit 2025.9.2 specifically. Perceived atom and bond properties drift
+across releases, so a different RDKit inside the range can still move the last digits.
 
 ## Why 1,269 and not 1,539
 
-The implemented set was 1,539 columns. Pairs that carry the same information were removed by a
-greedy cover in ascending compute cost: a column is dropped when some cheaper surviving column
-predicts it at |Spearman| >= 0.99 on ranks, and that has to hold in **every one of five
-heavy-atom strata**, not just on the pooled corpus, so a correlation that only exists because
-small and large molecules sit at opposite ends of both scales does not count. Columns that are
-NaN more than half the time, or that take one value for 99.9% of molecules, are dropped as
-unusable. What survives is 1,269.
+The implemented set was 1,539 columns. Pairs carrying the same information were removed by a
+greedy cover in ascending compute cost: a column is dropped when a cheaper surviving column
+predicts it at |Spearman| >= 0.99 on ranks, and that must hold in every one of five heavy-atom
+strata rather than only on the pooled corpus — so a correlation that exists only because small
+and large molecules sit at opposite ends of both scales does not count. Columns that are NaN
+more than half the time, or that take one value for 99.9% of molecules, are dropped as unusable.
+1,269 survive.
 
-## A reduced column set
+## The minimal set
 
-`minimal-v2` is a 622-column subset of the 1,269, and since 0.7.0 it is the default:
+`minimal-v2` is a 622-column subset, and the default since 0.7.0:
 
 ```python
-X = molhume.featurize(smiles)                     # these two are the same call
+X = molhume.featurize(smiles)                     # the same call
 X = molhume.featurize(smiles, columns="minimal")
 ```
 
-It is a **set, not a ranking**. Every column was removed for one of three reasons, and none of
-them is a variance threshold:
+It is a set, not a ranking. Every column was removed for one of three reasons, none of them a
+variance threshold:
 
 - **the same physical quantity in different units** — three electronegativity scales, atomic mass
-  against atomic number, polarizability against volume. Read from the definitions, because no
+  against atomic number, polarizability against volume. Read from the definitions, since no
   correlation cutoff separates "0.995, same construct" from "0.99, genuinely different";
-- **already carried by the ECFP** that ships alongside, *or* a duplicate of a count we already
-  emit — 13 `fr_*` flags go for the second reason (`fr_halogen` is `[F,Cl,Br,I]` against
-  `nF`/`nCl`/`nBr`/`nI`/`nX`; `fr_Ar_N` is the SMARTS `n`; `fr_bicyclic` is `[R2][R2]`);
+- **already carried by the ECFP** that ships alongside, or a duplicate of a count already
+  emitted. Three `fr_*` flags go for the second reason: `fr_halogen` is `[F,Cl,Br,I]` against
+  `nF`/`nCl`/`nBr`/`nI`/`nX`, `fr_Ar_N` is the SMARTS `n`, `fr_bicyclic` is `[R2][R2]`;
 - **an exact arithmetic identity** of columns that remain — ring and constitutional counts that
   are sums of others, verified on two chemical spaces.
 
-All the descriptors you would expect are in it: molecular weight, Crippen logP, TPSA, H-bond
-donors and acceptors, rotatable bonds, ring counts, Kappa shape, chi connectivity, Labute ASA,
-Balaban J, Lipinski, and 72 of the 75 `fr_*` substructure flags.
+The expected descriptors are all present: molecular weight, Crippen logP, TPSA, H-bond donors
+and acceptors, rotatable bonds, ring counts, Kappa shape, chi connectivity, Labute ASA, Balaban
+J, Lipinski, and 72 of the 75 `fr_*` substructure flags.
 
-⚠️ **The `fr_*` flags were dropped in 0.4.0 and restored in 0.5.0**, and the reason is worth
-knowing. They were dropped because they are detectable from the ECFP at AUROC 1.000 — but that
-figure is conditional on the **corpus**, not just the fingerprint. On a corpus with 5.4% salts
-the same measurement gives a median of 0.9929 and a floor of 0.786; `fr_quatN` reads 0.9995 on
-one corpus and 0.73 on the other. A 2×2 over radius (2 vs 3) and decoder (logistic vs XGBoost)
-moves our median by less than 0.001, so neither explains the gap. Detectability was never sound
-grounds for the drop. The 62 are kept on **mechanism**: they encode curated assertions no
-structural descriptor derives — that a CYP enzyme attacks here, that a nitrogen is permanently
-charged, that a fragment is a toxicophore, which heteroatom sits in a ring, whether a hydroxyl
-is aliphatic or aromatic.
+**The `fr_*` flags were dropped in 0.4.0 and restored in 0.5.0 and 0.6.0.** They were dropped
+because they are detectable from the ECFP at AUROC 1.000, but that figure is conditional on the
+corpus rather than on the fingerprint. On a corpus with 5.4% salts the same measurement gives a
+median of 0.9929 and a floor of 0.786; `fr_quatN` reads 0.9995 on one corpus and 0.73 on the
+other. A 2x2 over radius (2 vs 3) and decoder (logistic vs XGBoost) moves the median by less than
+0.001, so neither explains the gap. Detectability was never sound grounds for the drop. They are
+kept on mechanism: they encode curated assertions no structural descriptor derives — that a CYP
+enzyme attacks at a position, that a nitrogen is permanently charged, that a fragment is a
+toxicophore, which heteroatom sits in a ring, whether a hydroxyl is aliphatic or aromatic.
 
-### What it costs, measured
+### Measured cost
 
 Benchmarked against the full 1,269 with the same untuned XGBoost head and the same 5-fold
 scaffold splits, on 29 of the 33 grid datasets:
 
 | panel | datasets | mean cost | worst |
 | --- | ---: | ---: | ---: |
-| ADME & tox | 10 | −1.55% | +2.79% |
-| physicochemical | 6 | −0.94% | +1.49% |
-| classification | 13 | −0.17% | +1.99% |
-| **overall** | **29** | **−0.81%** | — |
+| ADME and tox | 10 | -1.55% | +2.79% |
+| physicochemical | 6 | -0.94% | +1.49% |
+| classification | 13 | -0.17% | +1.99% |
+| **overall** | **29** | **-0.81%** | |
 
-Negative means the reduced set scored *better*. **On none of the 29 datasets did the difference
-exceed that dataset's own fold-to-fold spread**, and a sign test puts the reduced set behind on
-11 of 29 (p = 0.27). So the claim is *no measurable difference at 43% of the columns* — not that
-fewer columns help.
+Negative means the reduced set scored better. On none of the 29 datasets did the difference
+exceed that dataset's own fold-to-fold spread, and a sign test puts the reduced set behind on 11
+of 29 (p = 0.27). The claim is no measurable difference at 49% of the columns, not that fewer
+columns help.
 
-For contrast, the retired `minimal-v1` cost **+3.83%** on the physicochemical panel with 800
-columns. v2 is smaller and that loss is gone; the difference is what the two cut on.
-
-⚠️ **The quantum panel (`qm8`, `qm9`, `qm9_gap`, `qmugs_gap`) is not yet included**, and it is
-the one to watch: the 227-column autocorrelation block was dropped on a physicochemical ablation,
-and autocorrelation is a distance-resolved property correlation, which is the kind of thing an
-electronic-structure endpoint might lean on. See `HUME_Minimal_definition.md`.
+For contrast, the retired `minimal-v1` cost +3.83% on the physicochemical panel at 800 columns.
+v2 is smaller and that loss is gone; the difference is what the two cut on. Full reasoning,
+decision by decision, is in `HUME_Minimal_definition.md`.
 
 ## Platforms
 
@@ -276,26 +254,25 @@ with no RDKit wheel could not be imported:
 | macOS x86_64 | 10.15+, needs `rdkit<=2025.9.2` (RDKit dropped Intel Mac after that) |
 | Windows x86_64 | MSVC |
 
-No musl, no 32-bit, no PyPy — RDKit publishes none of those. The extension links only the C++
-runtime: no BLAS, no RDKit library, and no NumPy ABI, so one wheel works across NumPy 1.x
-and 2.x.
+No musl, no 32-bit, no PyPy: RDKit publishes none of those. The extension links only the C++
+runtime — no BLAS, no RDKit library, no NumPy ABI — so one wheel works across NumPy 1.x and 2.x.
 
 ### Values are not bit-identical across architectures
 
-This matters if you are comparing outputs between machines, and not at all if you are fitting a
-model. The exactness numbers above were measured on **macOS arm64 with clang**. The same source
-on x86-64 moves the last bits: 594 of the 1,269 columns under gcc, 595 under MSVC, with a
-maximum disagreement of **1.1e-14 of each column's range**. Nothing structural changes — the
-NaN pattern is identical on all three.
+This matters when comparing outputs between machines, and not at all when fitting a model. The
+exactness numbers above were measured on macOS arm64 with clang. The same source on x86-64 moves
+the last bits: 594 of the 1,269 columns under gcc, 595 under MSVC, with a maximum disagreement of
+1.1e-14 of each column's range. Nothing structural changes; the NaN pattern is identical on all
+three.
 
-That is not a bug that a build flag removes. The library reproduces upstream floating-point
-*behavior*, so a different libm's `log` and a different FMA decision are part of the result. CI
-measures this on every platform (`tools/platform_drift.py`) and the test suite asserts a bound
-on it, exactly rather than approximately on the reference platform.
+No build flag removes this. The library reproduces upstream floating-point behavior, so a
+different libm's `log` and a different FMA decision are part of the result. CI measures it on
+every platform (`tools/platform_drift.py`) and the test suite asserts a bound, exactly rather
+than approximately on the reference platform.
 
-Beware per-value relative error when you compare: several columns are differences that cancel
-to near zero (the centered autocorrelations, `Cyclicity`, `DeltaMean`), where a last-bit wobble
-reads as a relative error of 27. Compare against each column's range.
+Compare against each column's range rather than per value: several columns are differences that
+cancel to near zero (the centered autocorrelations, `Cyclicity`, `DeltaMean`), where a last-bit
+wobble reads as a relative error of 27.
 
 ## Development
 
@@ -304,9 +281,9 @@ uv pip install -e . --python .venv/bin/python -c constraints.txt
 .venv/bin/python -m pytest tests/
 ```
 
-The pinned RDKit in `constraints.txt` is the oracle every exactness claim is measured against —
+The pinned RDKit in `constraints.txt` is the oracle every exactness claim is measured against;
 install with `-c constraints.txt` or a bare editable install will silently upgrade it. `tests/`
-runs in seconds against a committed fixture; the full exactness verifications against RDKit and
+runs in seconds against a committed fixture. The full exactness verifications against RDKit and
 Mordred are the root-level `verify_*.py`, which need the corpus and a second environment. See
 `tests/README.md`.
 
@@ -317,16 +294,16 @@ exist without either:
 
 - **[RDKit](https://www.rdkit.org/)** — Greg Landrum and contributors. RDKit parses the molecule
   and supplies every perceived atom and bond property this library computes from, and 186 of the
-  emitted columns reproduce RDKit descriptor definitions. Several parameter tables here are
-  derived from published RDKit values, including the Crippen logP/MR atom-type contributions and
-  the Hall-Kier alpha table. BSD 3-Clause.
+  emitted columns reproduce RDKit descriptor definitions. Several parameter tables here derive
+  from published RDKit values, including the Crippen logP/MR atom-type contributions and the
+  Hall-Kier alpha table. BSD 3-Clause.
 - **[Mordred](https://github.com/mordred-descriptor/mordred)** — Hirotomo Moriwaki et al.,
   *J. Cheminform.* **10**, 4 (2018). 968 of the emitted columns reproduce Mordred definitions.
   BSD 3-Clause.
 
 Where this library's values differ from either, the difference is deliberate and documented:
-those are cases where the upstream definition depends on atom numbering or on a Kekule choice
-and so has no single correct answer. Every one is listed with a measurement in `METHODS.md`.
+cases where the upstream definition depends on atom numbering or on a Kekule choice and so has no
+single correct answer. Each is listed with a measurement in `METHODS.md`.
 
 ## License
 

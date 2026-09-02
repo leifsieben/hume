@@ -21,7 +21,7 @@ copy that could silently disagree with numbers already in flight.
 The lake is treated as **read-only**: files are copied into ``data/tasks/raw/`` with their
 sha256 recorded, and everything downstream reads the local copy.
 
-⚠️ **DEV ONLY.** ChemPFN gates 16 LOCKED datasets behind a frozen-model hash and a one-shot
+ **DEV ONLY.** ChemPFN gates 16 LOCKED datasets behind a frozen-model hash and a one-shot
 evaluation ledger, and this repo's own ``TASKS.md`` says "LOCKED IS OFF LIMITS UNTIL HUME IS
 FROZEN". Nothing under ``eval/locked/`` is copied or scored. ``--audit-locked`` reads LOCKED
 *structures* for the two audits that need them (the MoleculeACE curation comparison and the

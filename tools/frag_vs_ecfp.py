@@ -16,7 +16,7 @@ bit essentially is that pattern. A pattern larger than that, or one defined by a
 rather than a local environment, has no single bit to live in and should be harder. If the
 result does not split roughly that way, the mental model of what ECFP encodes is wrong.
 
-⚠️ Recoverability is necessary but not sufficient grounds to drop a column. A column that is
+ Recoverability is necessary but not sufficient grounds to drop a column. A column that is
 recoverable is redundant; a column that is NOT recoverable still has to earn its place on
 mechanism, not merely on being different.
 """

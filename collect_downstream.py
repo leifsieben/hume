@@ -77,7 +77,7 @@ FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "h
 #:                                entirely, plus most of spectral's eigensolves
 #:     HUME_no_new   161.6        NOT cheaper, and not really dearer either -- see below
 #:
-#: ⚠️ HUME_no_new MEASURES 4% ABOVE HUME_full AND THAT IS NOISE, NOT A SLOWDOWN. It cannot be
+#:  HUME_no_new MEASURES 4% ABOVE HUME_full AND THAT IS NOISE, NOT A SLOWDOWN. It cannot be
 #: cheaper: its 1,109 columns span all nineteen families, so the compute plan has nothing to
 #: skip -- the 160 columns it drops are 142 in `blocks` (which is never optional, because the
 #: E-state columns weight by it) and 18 in `autocorr` (which stays for its other 501). The two

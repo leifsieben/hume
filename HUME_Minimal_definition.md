@@ -39,7 +39,7 @@ not of any model anyone runs.
    select on. The benchmark is a **test** of a spec, never an input to it.
 2. **Rare features must not be ranked by variance.** Pivoted QR ranks by residual orthogonality,
    and this protected rare columns for free: those firing on <=2% of molecules had median rank
-   **71** of 1,267 against **704** for those firing on >50%, and 64 of 70 were kept. Any
+ **71** of 1,267 against **704** for those firing on >50%, and 64 of 70 were kept. Any
    successor that picks family representatives by typicality or variance would delete exactly
    the long tail on which rare-substructure activity depends. **This is a hard constraint.**
 
@@ -111,7 +111,7 @@ Three represent the element axes:
   autocorrelation columns is 0.969–0.995.
 - **`i` ionization, `p` polarizability.** Also axis 1, loadings −0.394 and +0.367.
 
-⚠️ **Why the residual 1–6% is acceptable, and the condition attached.** These correlations are
+ **Why the residual 1–6% is acceptable, and the condition attached.** These correlations are
 not 0.999, and the reason is structural: the autocorrelation is a **sum over pairs**, and
 `sum(g(w)) != g(sum(w))`, so monotone-relatedness of two *tables* does not survive the
 aggregation. Concretely, if `w2 ~ a*w1 + b*1`, then
@@ -124,7 +124,7 @@ relative to the library, because pure-topology autocorrelations are already emit
 **Condition: this argument dies if a future cut also removes the topology columns.** They must
 be retained, or these five weights have to be reconsidered.
 
-⚠️ **The coverage argument is latent, not measured.** NaN rate for all eight weights is 0.000%
+ **The coverage argument is latent, not measured.** NaN rate for all eight weights is 0.000%
 on both the benchmark corpus and the salts/mixtures set, because neither contains a transition
 metal. The 94-vs-56 element difference between Pauling and Sanderson is read off the tables, not
 observed. It becomes decisive only on organometallics — and note that `minimal-v1` kept 33
@@ -173,7 +173,7 @@ The uncentered forms are nearly flat across lags, because `ATS_k` is approximate
 `(sum w)^2 * (fraction of pairs at distance k)` and is therefore dominated by molecular size.
 The centered forms are the opposite: every lag carries distinct information.
 
-**Decision: keep lags {0, 2, 4, 6, 8}.** ⚠️ **Applied to `ATS` and `AATS` only** -- see §5
+**Decision: keep lags {0, 2, 4, 6, 8}.** **Applied to `ATS` and `AATS` only** -- see §5
 question 5. Applying it to the centered forms as well would discard columns whose adjacent-lag
 correlation is 0.17-0.23, which is signal rather than redundancy.
 
@@ -195,7 +195,7 @@ columns, with all 9 lags versus with `ATS`/`AATS` cut to {0,2,4,6,8}?
 
 **Median change +0.0001, worst +0.0417. The two decisions are independent.**
 
-⚠️ **But note what this also shows about the weight cut on its own: 12 of 48 sampled
+ **But note what this also shows about the weight cut on its own: 12 of 48 sampled
 dropped-weight columns reconstruct below R^2 0.95, worst 0.86.** The dropped weights are not
 fully recoverable from the kept ones even with every lag present. That is a real cost of the
 weight decision, unchanged by the lag decision, and it is open.
@@ -208,7 +208,7 @@ same untuned XGBoost the benchmark grid uses, on 20,000 corpus molecules.
 **Detection AUROC: median 1.000. 67 of 72 scored columns at >= 0.99. None below 0.90.** The
 fingerprint carries the presence of essentially every fragment pattern.
 
-⚠️ **The first version of this test used R^2 and was wrong.** For a column that is zero on 99.95%
+ **The first version of this test used R^2 and was wrong.** For a column that is zero on 99.95%
 of molecules, R^2 is set by a handful of positives, so a model that predicts ~0 everywhere and is
 right 99.95% of the time scores near zero. That measured **rarity, not recoverability**, and it
 made rare patterns look uniquely irreplaceable. Detection AUROC is prevalence-free.
@@ -256,12 +256,12 @@ principled rather than a threshold artifact.
 elimination requiring a column to raise the rank on **both** corpora finds **25 ring + 6
 constitutional** columns determined by the rest.
 
-⚠️ Checked across chemical spaces, and it mattered: rank says 23 determined on the benchmark
+ Checked across chemical spaces, and it mattered: rank says 23 determined on the benchmark
 corpus alone, 22 on salts alone, but only **21 on the two stacked**. Dependencies that hold on
 one space and break on the other are corpus artifacts, and taking the minimum is what excludes
 them.
 
-⚠️ And checked with the consumer, because linear determination is not tree determination -- a
+ And checked with the consumer, because linear determination is not tree determination -- a
 tree cannot split on a sum of two features, which is the error that killed minimal-v1. Measured:
 
 | rebuilt by | median R^2 | below 0.99 | worst |
@@ -275,7 +275,7 @@ R^2 0.857, fires 0.200% -- kept.
 
 **Ring size binning.** Decision: collapse sizes to {3,4,5,6,7,8+} **for non-fused cells only**.
 
-⚠️ The reason for the exception is mechanical and nearly went unnoticed. For a FUSED cell,
+ The reason for the exception is mechanical and nearly went unnoticed. For a FUSED cell,
 mordred's "size" is the **atom count of the whole fused system**, not a ring size -- naphthalene's
 system is 10 atoms and counts as a 10. So the fused 8+ bins are not exotic macrocycles:
 
@@ -337,7 +337,7 @@ characteristic polynomial rather than an orbit entropy, a genuinely different op
 ### 3.7 BCUT weights, path/walk, matrix spectrum, AETA (decided)
 
 **BCUT (7 columns, ~59 us/mol).** The 20 mordred BCUTs are indexed by the same weight vocabulary
-cut from the autocorrelation block. ⚠️ **That argument does not transfer automatically and was
+cut from the autocorrelation block. **That argument does not transfer automatically and was
 measured rather than assumed**: BCUT is an extreme eigenvalue of a matrix carrying the weight on
 its diagonal, and two affinely related diagonals do not give affinely related eigenvalues because
 the off-diagonal part does not scale. Mostly it holds -- `BCUTpe-1l`~`BCUTare-1l` 0.981,
@@ -351,7 +351,7 @@ own eigensolve, so cost scales with WEIGHTS: 4 of 11 matrices removed is roughly
 163.3 us/mol**, about 10% of total featurization, for 7 columns. Column count and compute are not
 proportional, and this is the clearest case.
 
-**path/walk counts (30) + matrix spectrum (16), tested JOINTLY.** ⚠️ The family screen removes one
+**path/walk counts (30) + matrix spectrum (16), tested JOINTLY.**  The family screen removes one
 family at a time, which cannot license dropping two: if each is reproducible from a library still
 containing the other, mutual redundancy makes both look free while the pair is not. Measured with
 both removed together:
@@ -365,7 +365,7 @@ both removed together:
 
 Unchanged to four decimals -- they are not propping each other up.
 
-**AETA (14 columns).** ⚠️ Found by auditing the residue, not by the screen: the ETA drop matched
+**AETA (14 columns).**  Found by auditing the residue, not by the screen: the ETA drop matched
 `startswith("ETA_")`, which does not match `AETA_`. AETA is the same family normalised per atom.
 Dropped on the same reasoning, with the inversion test run to confirm rather than assume.
 
@@ -422,7 +422,7 @@ physicochemical datasets, same folds and head as the grid:
 
 Negative is better. Not one dataset moved by more than its own fold-to-fold spread.
 
-⚠️ **This is the only cut in the spec that rests on "we could not measure it helping" rather than
+ **This is the only cut in the spec that rests on "we could not measure it helping" rather than
 on redundancy, and it is PROVISIONAL.** Five physicochemical datasets is not the grid;
 classification, ADME and quantum are untested. It is much stronger evidence than the ETA
 ablation -- a 227-column removal producing no signal is a result, where a 29-column one drowning
@@ -453,7 +453,7 @@ Every cut so far is **constructual or exact** — the same quantity in different
 already carried elsewhere in the output, or an arithmetic identity. **Nothing has been removed on
 a variance ranking**, which is the property that made `minimal-v1` delete the rare tail.
 
-⚠️ The ring 8+ re-binning turned out to cost 5 columns and add 3, a net of 2, because most
+ The ring 8+ re-binning turned out to cost 5 columns and add 3, a net of 2, because most
 non-fused 8+ cells had already gone as exactly determined. It needs new C++ columns in
 `ringcount.h` for that, which is a poor trade and should probably be dropped from the plan.
 
@@ -480,7 +480,7 @@ needed, v2 cut only on same-quantity-different-units, already-in-the-output, and
 
 This also largely settles §3.9. The autocorrelation drop was decided on five physicochemical
 datasets and is now supported by 13 classification and 10 ADME sets that had no part in the
-decision. ⚠️ **Quantum (4 datasets) is still outstanding** and is the panel where the cut is most
+decision. **Quantum (4 datasets) is still outstanding** and is the panel where the cut is most
 at risk, since autocorrelation is a distance-resolved property correlation and electronic
 structure is the plausible consumer of one.
 
@@ -509,7 +509,7 @@ So detectability was never sound grounds for dropping the family, and the 62 res
 on mechanism — curated assertions no structural descriptor derives. 13 stay out because they
 duplicate counts already emitted, which is a mechanistic argument in the other direction.
 
-⚠️ **The general lesson is the one that retired v1.** Both times a criterion was adopted that
+ **The general lesson is the one that retired v1.** Both times a criterion was adopted that
 described a decoding rather than a property: v1 assumed a consumer that inverts linear
 combinations, and 0.4.0 assumed a consumer that decodes hashed fingerprint bits. Neither
 consumer exists. A curated, named, cheap feature carries identity, count and provenance; a
@@ -538,7 +538,7 @@ dropping 657 columns measurably hurts.
 datasets; quantum was the panel where it was most at risk, since a distance-resolved property
 correlation is the plausible input to an electronic-structure endpoint. It lands at −0.11%.
 
-⚠️ Two numbers not to over-read. `vdss_lombardo` shows +10.88% against a fold SD of **101.86%**
+ Two numbers not to over-read. `vdss_lombardo` shows +10.88% against a fold SD of **101.86%**
 of its own RMSE -- that dataset cannot resolve a 10% effect. And physicochemical is the only
 panel with a positive mean (+0.75%, `esol` at +3.50% inside its 6.6% fold noise); it is the panel
 `minimal-v1` broke, so it is the one to watch rather than dismiss.

@@ -50,7 +50,7 @@ Grouped by what they physically measure:
 **146 columns for three physical quantities.** Three electronegativity scales are one
 measurement in three units; polarizability is proportional to volume; mass is proportional to Z.
 
-⚠️ **This is why a statistical criterion cannot fix it.** `ATS3v` and `ATS3p` correlate at 0.995,
+ **This is why a statistical criterion cannot fix it.** `ATS3v` and `ATS3p` correlate at 0.995,
 so 0.5% of their variance is independent — and a criterion optimizing *orthogonality*, as
 pivoted QR does, will happily spend a column on that 0.5% when it has 800 slots to fill. QR
 collapsed Pauling (42 -> 1) but kept 33 Sanderson **and** 12 Allred-Rochow. There is no
@@ -122,7 +122,7 @@ and defensible in a methods section, instead of a 1,269-way ranking that no read
 And it separates the question a statistical criterion is good at — *how many lags?* — from the
 one it is structurally blind to — *is this the same quantity in different units?*
 
-⚠️ **One property of the current criterion must survive any successor.** Pivoted QR ranks by
+ **One property of the current criterion must survive any successor.** Pivoted QR ranks by
 residual orthogonality, not by variance, and this protects rare features for free: columns
 firing on <=2% of molecules have median rank **71** of 1,267, against **704** for columns firing
 on >50%, and 64 of 70 are kept. A family-representative scheme that picks each family's

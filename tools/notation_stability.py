@@ -16,7 +16,7 @@ column must return the same value. Report, per column, the largest deviation see
 variants, scaled by that column's spread over the corpus so the number is comparable between a
 count and a surface area.
 
-⚠️ SOME INSTABILITY IS EXPECTED AND ALREADY DOCUMENTED. METHODS.md records descriptors whose
+ SOME INSTABILITY IS EXPECTED AND ALREADY DOCUMENTED. METHODS.md records descriptors whose
 upstream definition depends on atom numbering or on a Kekule choice; those are reproduced
 deliberately, quirk and all. This does not re-litigate that -- it MEASURES it, per column, so
 the size of the problem is known rather than assumed.

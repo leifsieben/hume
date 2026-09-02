@@ -297,7 +297,7 @@ boundary** and w=100 *beats* pure fingerprints, so the answer is not "drop descr
 them and starve them". **MoleculeNet has an interior optimum** at w≈10 and degrades by w=100, with
 `fp_only` clearly worst. Descriptors genuinely help there and genuinely do not on ACE.
 
-⚠️ **Provisional.** These numbers are `n_repeats: 1`, `fold_seeds: [0]`, `xgb_seeds: [0]` — a
+ **Provisional.** These numbers are `n_repeats: 1`, `fold_seeds: [0]`, `xgb_seeds: [0]` — a
 single seed with no error bars, and several gaps are 0.01–0.04. The cliff-versus-non-cliff
 comparison in particular (3.3% against 5.4%) is exactly the size that needs replicates before it
 is quoted. A multi-seed re-run is in progress.

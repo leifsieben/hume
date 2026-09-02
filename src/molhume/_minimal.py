@@ -7,14 +7,14 @@ spec "minimal-v2"
   built from   mol-hume 0.5.0, rdkit 2025.9.2, standardize="none"
   size         622 of the 1,269 emitted columns
 
-⚠️ THE CONTENTS OF minimal-v2 HAVE CHANGED TWICE. 550 columns in 0.4.0, 612 in 0.5.0, 622 in
+ THE CONTENTS OF minimal-v2 HAVE CHANGED TWICE. 550 columns in 0.4.0, 612 in 0.5.0, 622 in
 0.6.0. The spec NAME did not change, so THE PACKAGE VERSION IS THE ONLY THING DISTINGUISHING
 THEM -- if you cached features, check the installed version. Editing a published spec in place
 is not the normal practice here (specs are added, not edited); it was done deliberately while
 the releases were hours old with no pinned consumers, and it should stop now that there are.
 
 WHY THE fr_* FLAGS CAME BACK. They were dropped in 0.4.0 because they are detectable from the
-ECFP shipped alongside at AUROC 1.000. ⚠️ That figure turned out to be conditional on the
+ECFP shipped alongside at AUROC 1.000.  That figure turned out to be conditional on the
 CORPUS, not just on the fingerprint. ChemPFN measured the same flags on a corpus with 5.4%
 salts and got median 0.9929 with a floor of 0.786; `fr_quatN` reads 0.9995 here and 0.73 there
 -- same flag, same fingerprint class, different chemistry. A 2x2 over radius (2 vs 3) and
@@ -41,7 +41,7 @@ direction -- they duplicate counts the library already emits:
     fr_Ar_N      the SMARTS n  against the aromatic-nitrogen count
     fr_bicyclic  [R2][R2]      against ring perception
 
-⚠️ 0.5.0 HELD OUT THIRTEEN, AND TEN OF THOSE WERE MIS-GROUPED. fr_sulfone, fr_sulfide, fr_SH,
+ 0.5.0 HELD OUT THIRTEEN, AND TEN OF THOSE WERE MIS-GROUPED. fr_sulfone, fr_sulfide, fr_SH,
 fr_nitrile, fr_C_S, fr_alkyl_halide, fr_ArN, fr_phos_ester, fr_term_acetylene and
 fr_unbrch_alkane were filed as "composition", but they are functional groups -- the same
 category as everything restored above. `nS` counts sulfur atoms and says nothing about oxidation
@@ -58,7 +58,7 @@ Nothing here was removed on a variance ranking. That is the property that made v
 rare tail: pivoted QR ranks by residual orthogonality, so columns firing on <=2% of molecules
 had median rank 71 of 1,267 against 704 for common ones.
 
-⚠️ ONE DECISION REMAINS PROVISIONAL. The 227-column autocorrelation block was dropped on an
+ ONE DECISION REMAINS PROVISIONAL. The 227-column autocorrelation block was dropped on an
 ablation over five PHYSICOCHEMICAL datasets. It is now also supported by 13 classification and
 10 ADME sets that had no part in the decision, but the quantum panel is still outstanding.
 """

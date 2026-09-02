@@ -82,7 +82,7 @@ and `Log2Ipc` are in the same position and get the same message.
 Making `qed` emittable is a schema change -- it shifts every column index above it -- so it is a
 decision for a later spec, not a bug fix.
 
-### ⚠️ A silent wrong value found on the way in, in code the gate now depends on
+###  A silent wrong value found on the way in, in code the gate now depends on
 
 `family_mask()` in bindings.cpp listed the families needing the hydrogen-added Gasteiger charges
 as `F_AC | F_CONSTIT`. `F_SPECTRAL` was missing, so a gated run computed `BCUTc-1h` and
@@ -125,7 +125,7 @@ all 22 of its emitted columns, so there is nothing there to win.
 
 ## 0.6.0 — 2026-09-02
 
-**`minimal-v2` now has 622 columns, up from 612 in 0.5.0.** ⚠️ That is the **third** change to the
+**`minimal-v2` now has 622 columns, up from 612 in 0.5.0.**  That is the **third** change to the
 contents of a spec whose name never changed — 550 in 0.4.0, 612 in 0.5.0, 622 here. **The package
 version is the only thing distinguishing them.** Editing a published spec in place stops now:
 future changes get a new spec name.
@@ -145,7 +145,7 @@ present — `fr_sulfone` was the one missing in 0.5.0.
 
 ## 0.5.0 — 2026-09-02
 
-**`minimal-v2` now has 612 columns, up from 550 in 0.4.0.** ⚠️ The spec *name* did not change,
+**`minimal-v2` now has 612 columns, up from 550 in 0.4.0.**  The spec *name* did not change,
 so **the package version is the only thing distinguishing the two sets** — if you cached
 features under 0.4.0, check the installed version. Editing a published spec in place is not the
 normal practice here (specs are added, not edited); it was a deliberate call taken while 0.4.0
@@ -209,7 +209,7 @@ fold-to-fold spread**, and a sign test puts the reduced set behind on 11 of 29 (
 this is *no measurable difference at 43% of the columns*, not evidence that fewer columns help.
 For contrast, v1 cost +3.83% on the physicochemical panel with 800 columns.
 
-⚠️ **The quantum panel is not yet included.** `qm8`, `qm9`, `qm9_gap` and `qmugs_gap` are still
+ **The quantum panel is not yet included.** `qm8`, `qm9`, `qm9_gap` and `qmugs_gap` are still
 running. It is the panel to watch: the 227-column autocorrelation block was dropped on a
 physicochemical ablation, and autocorrelation is a distance-resolved property correlation, which
 is the kind of signal an electronic-structure endpoint might depend on. If it turns out to matter

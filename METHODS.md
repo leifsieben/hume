@@ -183,7 +183,7 @@ Four are carried rather than re-derived, each for a measured reason:
   `[R]` is membership, `[R1]`/`[R2]` are counts, and the count cannot be recovered from the
   boolean.
 * **Total valence**, because recomputing it as `round(Σ bond orders) + nH` disagrees with RDKit on
-  **11,238 of 575,571** corpus atoms — aromatic bonds and hydrogens pass through RDKit's own
+**11,238 of 575,571** corpus atoms — aromatic bonds and hydrogens pass through RDKit's own
   rounding rule.
 * **The ring flags**, from RDKit's single ring perception rather than a second perception C++-side.
   Perception is numbering-dependent (§4.2), so a second one is a second chance to disagree.
@@ -260,7 +260,7 @@ structural alerts.
 Measured on `c7i.4xlarge` (16 vCPU) at N=10⁶, one run, all three HUME arms together --
 `results/scale/`, and the same numbers Figure D draws.
 
-⚠️ **This table used to read "HUME (1,266 descriptors) 124 µs".** That measurement was of a
+ **This table used to read "HUME (1,266 descriptors) 124 µs".** That measurement was of a
 build with a different column set, on a different box, and it is superseded rather than
 corrected: the emitted set has since gone 1,266 -> 1,536 -> 1,269, and the run-to-run spread on
 this instance type is 2-3% on top of that.
