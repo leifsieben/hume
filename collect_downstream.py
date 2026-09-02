@@ -60,7 +60,7 @@ TASKS = {
 FIGB_BASES = ["ecfp", "desc", "ecfp_all_desc"]
 FIGB_ANCHOR = "ecfp_all_desc"
 FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
-FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc",
+FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "hume_minimal",
              "hume", "hume_no_new",
              "minimol", "chemeleon", "chemberta_mtr"]
 #: `hume_no_new` COSTS EXACTLY WHAT `hume` COSTS, and that is the point of drawing it. The
@@ -75,7 +75,10 @@ FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc",
 # they are the concatenated arm, not the descriptor block alone -- so adding `ecfp` on top
 # double-counted the fingerprint. Small (~4% on ecfp_rdkit_desc, under 1% on the others) but
 # wrong, and the kind of wrong that survives review because the number still looks plausible.
-COST_ALIAS = {"hume_no_new": "hume"}
+#: `hume_minimal` costs the same to FEATURISE as `hume` -- the reduced spec selects what is
+#: returned, not what is computed, since the block is monolithic. So it takes hume's cost
+#: point on the x axis, exactly as the no-new ablation does.
+COST_ALIAS = {"hume_no_new": "hume", "hume_minimal": "hume"}
 COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
             "ecfp_mordred_desc": ["mordred_desc"],
             "ecfp_all_desc": ["mordred"]}

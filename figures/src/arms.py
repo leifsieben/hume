@@ -187,6 +187,10 @@ ARMS = {
     # those columns, so the gap between the two IS what they are worth. Lighter shade of the
     # same family, because it is the same method and not a competitor.
     "hume_no_new": dict(label="HUME no-new", family="hume", color=SHADES["hume"][1]),
+    # The 800-column label-free reduced spec. Same featurisation cost as HUME by construction --
+    # it selects what is returned, not what is computed -- so it sits on HUME's x position and
+    # the panel reads as "what does dropping 37% of the columns cost".
+    "hume_minimal": dict(label="HUME minimal", family="hume", color=SHADES["hume"][2]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Gray, like every other control in the set.
@@ -307,7 +311,7 @@ ARMS = {
 # the axis the whole paper is about.
 ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
-             "hume", "hume_no_new",
+             "hume", "hume_no_new", "hume_minimal",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
              # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all
@@ -334,7 +338,8 @@ SHORT_LABEL = {
     "ecfp": "ECFP", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
     "desc": "descriptors", "ecfp_rdkit_desc": "ECFP + RDKit",
     "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
-    "hume": "HUME", "hume_no_new": "HUME no-new", "minimol": "MiniMol",
+    "hume": "HUME", "hume_no_new": "HUME no-new", "hume_minimal": "HUME minimal",
+    "minimol": "MiniMol",
     "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",
     "selfies_ted": "SELFIES-TED", "classical_base": "classical block alone",

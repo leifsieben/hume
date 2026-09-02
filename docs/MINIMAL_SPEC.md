@@ -183,16 +183,24 @@ Figure C, using the benchmark as a **test** of the spec and never as an input to
 untuned XGBoost head and the same 5-fold scaffold splits, cost expressed as relative degradation
 against `hume` on the same dataset:
 
-| panel | datasets | mean cost | worst |
-| --- | --- | --- | --- |
-| Physicochemical | 6 / 6 | **+3.83%** | **+7.33%** (`esol`) |
-| ADME & tox | 10 / 10 | +0.29% | +2.73% (`vdss_lombardo`) |
-| Classification | 3 / 13 | −0.12% | +0.50% |
+| panel | datasets | mean cost | median | worst | direction |
+| --- | --- | --- | --- | --- | --- |
+| Classification | 13 / 13 | **−0.11%** | −0.09% | +0.70% | 4/13 worse (p=0.27) |
+| ADME & tox | 10 / 10 | **+0.29%** | +0.07% | +2.73% | 5/10 worse (p=1.00) |
+| Quantum energy | 4 / 4 | **+0.90%** | +0.76% | +1.83% | 4/4 worse (p=0.13) |
+| **Physicochemical** | 6 / 6 | **+3.83%** | +4.10% | **+7.33%** | **6/6 worse (p=0.031)** |
+| **All** | **35** | **+0.80%** | **+0.26%** | | |
 
-On ADME and classification the reduced set is free — differences are inside fold noise and the
-sign is as often negative as positive. **On physicochemical endpoints it is not.** `esol` loses
-7.3%, `lipophilicity` 5.5% against a fold SD of 2.4%, `pb_water_sol` 4.9% against 2.5%. Those
-are several times the fold-to-fold spread, so they are effects rather than noise.
+**Across all 35 datasets the median cost is 0.26% and the mean 0.80%**, so for most work the
+800-column set is a 37% reduction for nothing. On classification it is very slightly *better*
+than the full set, and on ADME the sign is as often negative as positive — in both, 5/10 and
+4/13 worse is exactly what chance produces.
+
+**Physicochemistry is the exception and it is a real one.** All six datasets move the same way
+(sign test p = 0.031, Wilcoxon p = 0.031), and the two with the tightest folds carry the two
+largest well-measured costs: `lipophilicity` +5.5% against a fold SD of 2.4%, `pb_water_sol`
++4.9% against 2.5%. `esol` is worst at +7.3%. The quantum panel is 4/4 in the same direction but
+at +0.90% mean, small enough to matter only if you are chasing the last percent.
 
 This is coherent rather than mysterious. Linear recoverability says a dropped column can be
 *reconstructed*; it does not say the reconstruction is as useful to a depth-6 tree ensemble as

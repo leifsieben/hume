@@ -165,17 +165,23 @@ molhume.minimal_columns(400)      # smaller, and minimal_curve() says exactly wh
 Benchmarked as an independent test — the datasets played no part in choosing the columns — with
 an untuned XGBoost head on 5-fold scaffold splits, against the full 1,269:
 
-| endpoint family | mean cost | worst |
-| --- | --- | --- |
-| ADME & tox (10 datasets) | +0.29% | +2.73% |
-| Classification (3 so far) | −0.12% | +0.50% |
-| **Physicochemical (6)** | **+3.83%** | **+7.33%** |
+| endpoint family | datasets | mean cost | worst |
+| --- | --- | --- | --- |
+| Classification | 13 | −0.11% | +0.70% |
+| ADME & tox | 10 | +0.29% | +2.73% |
+| Quantum energy | 4 | +0.90% | +1.83% |
+| **Physicochemical** | 6 | **+3.83%** | **+7.33%** |
+| **All** | **35** | **+0.80%** (median +0.26%) | |
 
-So a 37% column reduction is **free on ADME and classification**, and costs about **4% on
-physicochemical endpoints** — `esol` 7.3%, `lipophilicity` 5.5% against a fold SD of 2.4%. If
-you work on solubility or logP, take more than 800 columns. Linear recoverability says a dropped
-column can be *rebuilt*; it does not say a depth-6 tree can split on it. See
-`docs/MINIMAL_SPEC.md` for the derivation and the full coverage curve.
+So a 37% column reduction costs a **median of 0.26%** across 35 datasets — free on
+classification (where it is marginally *better*), ADME and quantum energy.
+
+**The exception is physicochemical endpoints**, at +3.83% mean and +7.33% worst, with all six
+datasets moving the same way (sign test p = 0.031). If you work on solubility or logP, take more
+than 800 columns — `minimal_curve()` tells you what each `n` buys. Linear recoverability says a
+dropped column can be *rebuilt*; it does not say a depth-6 tree can split on it, and solubility
+leans hardest on the additive atom-contribution descriptors that makes expensive to rebuild.
+See `docs/MINIMAL_SPEC.md`.
 
 ## Platforms
 

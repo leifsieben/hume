@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py + results/scale",
-  "n_records": 4145,
+  "n_records": 4500,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -48,6 +48,7 @@
   "ecfp_rdkit_desc",
   "ecfp_mordred_desc",
   "ecfp_all_desc",
+  "hume_minimal",
   "hume",
   "hume_no_new",
   "minimol",
@@ -82,6 +83,12 @@
    "breakdown": {
     "mordred": 6200.209362878
    }
+  },
+  "hume_minimal": {
+   "us_per_mol": 158.99057642,
+   "measured_on": "c7i.4xlarge, 16 vCPU",
+   "alias_of": "hume",
+   "note": "the ablation masks columns after the block is computed, so its featurisation cost is identical to the arm it is an ablation of"
   },
   "hume": {
    "us_per_mol": 158.99057642,
@@ -149,6 +156,14 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
+   "n_folds": 30
+  },
+  {
+   "task": "physchem",
+   "arm": "hume_minimal",
+   "head": "xgboost",
+   "mean": 0.0339149219503506,
+   "sem": 0.007261989339441658,
    "n_folds": 30
   },
   {
@@ -225,6 +240,14 @@
   },
   {
    "task": "adme",
+   "arm": "hume_minimal",
+   "head": "xgboost",
+   "mean": -0.00291740278696081,
+   "sem": 0.011777162591224423,
+   "n_folds": 50
+  },
+  {
+   "task": "adme",
    "arm": "hume",
    "head": "xgboost",
    "mean": -0.005547497078492392,
@@ -267,25 +290,25 @@
    "task": "classif",
    "arm": "ecfp",
    "head": "xgboost",
-   "mean": 0.011314234321424472,
-   "sem": 0.003408390611163054,
-   "n_folds": 55
+   "mean": 0.011167826758983704,
+   "sem": 0.0028979100122201295,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "ecfp_rdkit_desc",
    "head": "xgboost",
-   "mean": -0.000816207642924762,
-   "sem": 0.0018763855682557436,
-   "n_folds": 55
+   "mean": -0.0007703185534547314,
+   "sem": 0.0016095344262288761,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "ecfp_mordred_desc",
    "head": "xgboost",
-   "mean": 0.0022894736995395693,
-   "sem": 0.002097020834501539,
-   "n_folds": 55
+   "mean": 0.0019513214045700712,
+   "sem": 0.0017814857140063124,
+   "n_folds": 65
   },
   {
    "task": "classif",
@@ -293,47 +316,55 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 55
+   "n_folds": 65
+  },
+  {
+   "task": "classif",
+   "arm": "hume_minimal",
+   "head": "xgboost",
+   "mean": 0.00014236018778578642,
+   "sem": 0.0022274105040913294,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "hume",
    "head": "xgboost",
-   "mean": 0.00125429273638188,
-   "sem": 0.001970845377455378,
-   "n_folds": 55
+   "mean": 0.0010080961827595436,
+   "sem": 0.00166479851607169,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "hume_no_new",
    "head": "xgboost",
-   "mean": 0.0038777499599726376,
-   "sem": 0.001369116982440159,
-   "n_folds": 55
+   "mean": 0.003197046725289805,
+   "sem": 0.001239255722478895,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "minimol",
    "head": "xgboost",
-   "mean": 0.003949539188846329,
-   "sem": 0.0048987342518258675,
-   "n_folds": 50
+   "mean": -0.0001508019450639369,
+   "sem": 0.00445782035744203,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "chemeleon",
    "head": "xgboost",
-   "mean": -0.0012934332472525512,
-   "sem": 0.0026140056752501197,
-   "n_folds": 50
+   "mean": -0.00026169202937618665,
+   "sem": 0.0024043701867746264,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "arm": "chemberta_mtr",
    "head": "xgboost",
-   "mean": 0.02706369710283818,
-   "sem": 0.0049470203065300235,
-   "n_folds": 55
+   "mean": 0.02569798774618173,
+   "sem": 0.004261590106268325,
+   "n_folds": 65
   },
   {
    "task": "quantum",
@@ -365,6 +396,14 @@
    "head": "xgboost",
    "mean": 0.0,
    "sem": 0.0,
+   "n_folds": 20
+  },
+  {
+   "task": "quantum",
+   "arm": "hume_minimal",
+   "head": "xgboost",
+   "mean": -0.0030075831219130086,
+   "sem": 0.00310714336780694,
    "n_folds": 20
   },
   {

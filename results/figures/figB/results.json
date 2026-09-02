@@ -1,7 +1,7 @@
 {
  "meta": {
   "source": "bench_downstream.py on c7i.4xlarge",
-  "n_records": 4145,
+  "n_records": 4500,
   "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same dataset; regression error = rmse / sd(y), classification = 1 - auroc. Anchor is 0 by construction; lower is better."
  },
  "tasks": [
@@ -300,81 +300,81 @@
    "task": "classif",
    "base": "ecfp",
    "add": null,
-   "mean": 0.011314234321424472,
-   "sem": 0.003408390611163054,
-   "n_folds": 55
+   "mean": 0.011167826758983704,
+   "sem": 0.0028979100122201295,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "base": "ecfp",
    "add": "chemeleon",
-   "mean": -0.0009154730926286047,
-   "sem": 0.0017677506792494737,
-   "n_folds": 50
+   "mean": -0.0014655909567929115,
+   "sem": 0.001530683286173352,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "ecfp",
    "add": "chemberta_mtr",
-   "mean": 0.007028957102725242,
-   "sem": 0.00483467075065585,
-   "n_folds": 50
+   "mean": 0.007410385159135895,
+   "sem": 0.0037795276686588817,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "base": "ecfp",
    "add": "minimol",
-   "mean": -0.004838601911557316,
-   "sem": 0.005590728864082532,
-   "n_folds": 50
+   "mean": -0.006892871013261063,
+   "sem": 0.004849519848452417,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "ecfp",
    "add": "molformer",
-   "mean": 0.008697260846329347,
-   "sem": 0.0048047879685625084,
-   "n_folds": 50
+   "mean": 0.008668544593296515,
+   "sem": 0.003997104529538597,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "desc",
    "add": null,
-   "mean": 0.005308523030342249,
-   "sem": 0.0021322746462462895,
-   "n_folds": 55
+   "mean": 0.0048402399219423025,
+   "sem": 0.0018710036409891105,
+   "n_folds": 65
   },
   {
    "task": "classif",
    "base": "desc",
    "add": "chemeleon",
-   "mean": -0.0023289007917507098,
-   "sem": 0.002533224010280893,
-   "n_folds": 50
+   "mean": -0.0012297714699117575,
+   "sem": 0.0023365177074549793,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "desc",
    "add": "chemberta_mtr",
-   "mean": 0.0031709898163443384,
-   "sem": 0.0035063003536695138,
-   "n_folds": 50
+   "mean": 0.0037111571209204144,
+   "sem": 0.00302579223752189,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "desc",
    "add": "minimol",
-   "mean": -0.004150758813846056,
-   "sem": 0.0027589309435074,
-   "n_folds": 50
+   "mean": -0.005445760430250468,
+   "sem": 0.0024609321802031045,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "desc",
    "add": "molformer",
-   "mean": 0.0019160140779345357,
-   "sem": 0.002607122006882795,
-   "n_folds": 50
+   "mean": 0.0027789187374433013,
+   "sem": 0.0023142405920157354,
+   "n_folds": 60
   },
   {
    "task": "classif",
@@ -382,39 +382,39 @@
    "add": null,
    "mean": 0.0,
    "sem": 0.0,
-   "n_folds": 55
+   "n_folds": 65
   },
   {
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "chemeleon",
-   "mean": -0.0062361015927053344,
-   "sem": 0.0017206042687149506,
-   "n_folds": 50
+   "mean": -0.005969819836365946,
+   "sem": 0.0014598088849547487,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "chemberta_mtr",
-   "mean": 0.0008611284907292683,
-   "sem": 0.0018517920623841114,
-   "n_folds": 50
+   "mean": 0.0009783001218626834,
+   "sem": 0.0015902968019852464,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "minimol",
-   "mean": -0.007348262972420305,
-   "sem": 0.0028014381334008197,
-   "n_folds": 50
+   "mean": -0.009119281224505968,
+   "sem": 0.0027473435244242447,
+   "n_folds": 60
   },
   {
    "task": "classif",
    "base": "ecfp_all_desc",
    "add": "molformer",
-   "mean": 0.00046658266588949225,
-   "sem": 0.0015884456150943719,
-   "n_folds": 50
+   "mean": 0.00011058738191307056,
+   "sem": 0.001366401018585703,
+   "n_folds": 60
   },
   {
    "task": "quantum",
