@@ -127,7 +127,7 @@ and 160 ours. 366 columns were absorbed. Exactly one member of each redundant gr
 ## 2. Implementation status
 
 **1,035 of the 1,327 are implemented in C++; 292 are not.** This is a real gap and is stated here
-rather than in a footnote: HUME's current 1,266 columns were built against an earlier and stricter
+rather than in a footnote: HUME's current 1,269 columns were built against an earlier and stricter
 selection that kept 864, and the corrected pipeline (§1.4, no imputation) keeps materially more.
 
 Outstanding, by family:
@@ -247,17 +247,32 @@ structural alerts.
 
 ### 3.4 Cost
 
-Measured end-to-end on `c7i.4xlarge` (16 vCPU), flat across 10⁴–10⁶ molecules:
+| arm | µs/molecule | hours per 10⁹ | USD per 10⁹ |
+|---|---:|---:|---:|
+| ECFP4 alone | 17 | 5 | $3 |
+| **HUME_minimal** (622 descriptors + ECFP6) | **138** | **38** | $27 |
+| **HUME_full** (1,269 descriptors + ECFP6) | **155** | **43** | $31 |
+| **HUME_no_new** (1,109 descriptors + ECFP6) | **162** | **45** | $32 |
+| ECFP4 + RDKit-180 | 444 | 123 | $88 |
+| ECFP4 + Mordred-685 | 4,683 | 1,301 | $929 |
+| ECFP4 + all descriptors (Python) | 6,200 | 1,722 | $1,230 |
 
-| arm | µs/molecule | hours per 10⁹ |
-|---|---:|---:|
-| ECFP4 alone | 16.6 | 4.6 |
-| **HUME** (1,266 descriptors + ECFP6) | **124** | **34** |
-| ECFP4 + RDKit-180 | 444 | 123 |
-| ECFP4 + Mordred-685 | 4,683 | 1,301 |
-| ECFP4 + all descriptors (Python) | 6,190 | 1,722 |
+Measured on `c7i.4xlarge` (16 vCPU) at N=10⁶, one run, all three HUME arms together --
+`results/scale/`, and the same numbers Figure D draws.
 
-Roughly **50× faster than the equivalent Python descriptor block**, for the same information.
+⚠️ **This table used to read "HUME (1,266 descriptors) 124 µs".** That measurement was of a
+build with a different column set, on a different box, and it is superseded rather than
+corrected: the emitted set has since gone 1,266 -> 1,536 -> 1,269, and the run-to-run spread on
+this instance type is 2-3% on top of that.
+
+**HUME_no_new is not really dearer than HUME_full.** It cannot be cheaper -- its 1,109 columns
+span all nineteen descriptor families, so there is nothing for the compute plan to skip -- and
+the 4% is inside the noise floor, which is measured: `hume` itself read 159.0 µs on an earlier
+run of the same instance type and 155.4 here. The three arms agree to within 1% at N=10⁴ and are
+identical at N=10⁵.
+
+Roughly **40× faster than the equivalent Python descriptor block** at HUME_full, and **45×** at
+the HUME_minimal default, for the same information.
 
 ---
 

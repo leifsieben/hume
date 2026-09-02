@@ -47,6 +47,21 @@ molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # exactly th
 `molhume.column_set(name)` returns the names in any of the three sets, and `molhume.ALL_COLUMNS`
 lists every name a manual selection can use.
 
+### Two words that are not the same thing
+
+**Column sets** are the three things you choose between — `minimal`, `full_no_new`, `full`. In
+the paper's figures, where they sit alongside other methods, they are written **HUME_minimal**,
+**HUME_no_new** and **HUME_full**; inside this package the `HUME_` prefix is redundant, so
+`columns="full"` says the same thing.
+
+**Families** are something else entirely: the nineteen internal groupings the descriptors are
+computed in — `autocorr`, `spectral`, `chi`, `estate`, `constit` and so on. `FAMILY_OFFSETS`
+maps each to its span. They are the unit the compute plan skips in, which is why `minimal` is
+cheaper (it needs none of `autocorr`, `eta` or `pathcount`) and `full_no_new` is not (its 1,109
+columns touch all nineteen).
+
+So: three sets, nineteen families. A set is what you ask for; a family is what gets computed.
+
 **One column is in `ALL_COLUMNS` and in none of the three sets: `qed`.** It costs 69.3 us/mol on
 its own — the most expensive column here, 116 structural-alert subgraph searches — and it is a
 drug-likeness *score*, a weighted geometric mean of eight properties this matrix already carries

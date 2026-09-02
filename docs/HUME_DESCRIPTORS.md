@@ -107,7 +107,7 @@ RDKit Mol  ──►  15 per-atom values + 8 per-bond values + the bond list + t
                           ├─►  derived primitives  (distance matrix, Crippen and E-state
                           │     per-atom vectors, subgraph enumeration, …)
                           │
-                          └─►  1,266 descriptor columns, 14 families
+                          └─►  1,269 descriptor columns, 19 families
 ```
 
 Everything after the boundary is C++. No Python runs in the compute path.
@@ -115,7 +115,7 @@ Everything after the boundary is C++. No Python runs in the compute path.
 Roughly 900 descriptors are too many to describe individually and there is no need to: the
 implementation is organised by *shared input*, not by descriptor, and §4 is that organisation.
 
-### What the 1,266 emitted columns are
+### What the 1,269 emitted columns are
 
 The emitted set is not the same object as the kept set, and the difference is worth stating
 once:
@@ -125,7 +125,14 @@ once:
 | the deduplicated selection | **865** | every one is emitted; 0 missing, verified case-insensitively |
 | free riders | **206** | ported columns the filter dropped, which a family produces anyway |
 | HUME-original | **193** | no RDKit or Mordred counterpart at all (§6) |
-| **total emitted** | **1,266** | `hume.ALL_COLUMNS` |
+| **total emitted** | **1,269** | `molhume.column_set("full")` |
+| opt-in, in no set | **1** | `qed` -- `molhume.OPTIONAL_COLUMNS`; `molhume.ALL_COLUMNS` is 1,270 |
+
+⚠️ **THE THREE COUNTS ABOVE ARE PRE-1,269 AND DO NOT ADD UP -- 865 + 206 + 193 is 1,264.** They
+were written against an earlier emitted set and have not been re-derived; the total is correct
+and the split is not. What IS current, and is read straight off the package: 1,269 emitted, of
+which **160** have no RDKit or Mordred counterpart (`molhume.column_set("full_no_new")` is the
+other 1,109).
 
 A **free rider** costs a memory write and nothing else. E-state is the clearest case: typing
 every atom yields all 79 types, so emitting the full 158-column count-and-sum grid is free
@@ -135,15 +142,29 @@ by whoever wants it.
 
 ### What co-generation buys
 
-Measured end-to-end on `c7i.4xlarge` (16 vCPU), 1M molecules, `results/scale/`:
+| arm | µs/molecule | hours per 10⁹ | USD per 10⁹ |
+|---|---:|---:|---:|
+| ECFP4 alone | 17 | 5 | $3 |
+| **HUME_minimal** (622 descriptors + ECFP6) | **138** | **38** | $27 |
+| **HUME_full** (1,269 descriptors + ECFP6) | **155** | **43** | $31 |
+| **HUME_no_new** (1,109 descriptors + ECFP6) | **162** | **45** | $32 |
+| ECFP4 + RDKit-180 | 444 | 123 | $88 |
+| ECFP4 + Mordred-685 | 4,683 | 1,301 | $929 |
+| ECFP4 + all descriptors (Python) | 6,200 | 1,722 | $1,230 |
 
-| | µs/molecule | hours per 1e9 |
-|---|---:|---:|
-| ECFP4 alone | 16.6 | 4.6 |
-| **HUME** (1,266 descriptors + ECFP6) | **124** | **34** |
-| ECFP4 + RDKit-180 | 444 | 123 |
-| ECFP4 + Mordred-685 | 4,683 | 1,301 |
-| ECFP4 + all descriptors (Python) | 6,200 | 1,722 |
+Measured on `c7i.4xlarge` (16 vCPU) at N=10⁶, one run, all three HUME arms together --
+`results/scale/`, and the same numbers Figure D draws.
+
+⚠️ **This table used to read "HUME (1,266 descriptors) 124 µs".** That measurement was of a
+build with a different column set, on a different box, and it is superseded rather than
+corrected: the emitted set has since gone 1,266 -> 1,536 -> 1,269, and the run-to-run spread on
+this instance type is 2-3% on top of that.
+
+**HUME_no_new is not really dearer than HUME_full.** It cannot be cheaper -- its 1,109 columns
+span all nineteen descriptor families, so there is nothing for the compute plan to skip -- and
+the 4% is inside the noise floor, which is measured: `hume` itself read 159.0 µs on an earlier
+run of the same instance type and 155.4 here. The three arms agree to within 1% at N=10⁴ and are
+identical at N=10⁵.
 
 **50× faster than the equivalent Python descriptor block**, for the same information.
 
@@ -204,7 +225,7 @@ integers already in hand for 1.5 µs/mol, bit-identically to RDKit on 2,869,048 
 
 ## 4. The families
 
-Fourteen families, 1,266 columns. Grouped first by what they *mean*, then — which is the axis
+Nineteen families, 1,269 columns. Grouped first by what they *mean*, then — which is the axis
 the implementation is actually built on — by what they *need*.
 
 ### By meaning

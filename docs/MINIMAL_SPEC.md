@@ -1,6 +1,28 @@
-# HUME_minimal: deriving a reduced column spec
+# HUME_minimal v1: deriving a reduced column spec — **SUPERSEDED**
 
-*How `molhume.minimal_columns()` was chosen, what it costs, and what would falsify it.*
+> ⚠️ **THIS DOCUMENT DESCRIBES `minimal-v1`, WHICH WAS WITHDRAWN. It is not how the shipped set
+> was chosen.** `molhume.minimal_columns(spec="minimal-v1")` raises, and `minimal_curve()`,
+> `minimal_recovery()` and `minimal_gated()` no longer exist.
+>
+> **The live document is [`HUME_Minimal_definition.md`](../HUME_Minimal_definition.md).** The
+> shipped set is `minimal-v2`: **622 columns**, and since 0.7.0 the default.
+>
+> **Why v1 went.** It was an *ordering*, derived by rank-revealing QR on a linear-recoverability
+> criterion — a column could go if the kept ones could rebuild it linearly. No consumer works
+> that way. A depth-6 tree cannot split on a linear combination, and when it was tested neither a
+> deeper tree nor an MLP recovered the loss: tree median R² 1.0000 against linear 0.9971 on the
+> same held-out columns. v2 is a **set**, not a ranking, and drops a column only for being the
+> same physical quantity in different units, already carried by the ECFP that ships alongside, or
+> an exact arithmetic identity of columns that remain.
+>
+> **It is kept, not deleted, for its negative results** — the sampling and rank analysis below
+> are still the reason several later decisions went the way they did, and several files cite
+> sections of it. Read it as a record of an approach that did not work. Every operating point it
+> names (800, 640) and every API it mentions is dead.
+
+*Original front matter follows.*
+
+*How the v1 ordering was chosen, what it costs, and what would falsify it.*
 
 The method follows ChemPFN's `DESCRIPTOR_SELECTION_METHOD.md`, whose framing — coverage rather
 than compression, label-free, pivoted QR rather than correlation clustering — is right and is
