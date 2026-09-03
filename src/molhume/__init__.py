@@ -801,6 +801,20 @@ def featurize(smiles: Iterable, *, columns="minimal", standardize=_UNSET, thread
             raise TypeError(
                 f"item {i} is a {type(s).__name__}; featurize takes SMILES strings or rdkit "
                 "Mol objects.")
+        # A ZERO-ATOM MOL IS BAD INPUT, NOT A MOLECULE. Chem.MolFromSmiles("") returns a valid
+        # empty Mol rather than None, so an empty or whitespace-only SMILES is not caught by the
+        # None check above -- it used to reach the descriptor code and SIGSEGV the process.
+        # bindings.cpp guards that now, but it is caught HERE as well so that empty input is the
+        # same KIND of failure as unparseable input: reported at parse time, ValueError under
+        # on_error="raise". Otherwise a caller catching ValueError for bad SMILES would get an
+        # uncaught RuntimeError from the compute stage for this one case.
+        if m is not None and m.GetNumAtoms() == 0:
+            m = None
+            if on_error == "raise":
+                raise ValueError(
+                    f"molecule at index {i} has no atoms: {s!r}. Chem.MolFromSmiles returns an "
+                    "empty Mol rather than None for an empty or whitespace-only SMILES, so this "
+                    "is not a parse failure RDKit reports -- but there is nothing to describe.")
         if m is None:
             bad.append(i)
             if on_error == "raise":

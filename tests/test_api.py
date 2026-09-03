@@ -540,3 +540,61 @@ def test_on_error_branches_on_a_row_failure(monkeypatch):
     assert X.shape == (2, 622)
     with pytest.raises(RuntimeError, match="index 1"):
         molhume.featurize(smis, standardize="none", fingerprint=False, on_error="raise")
+
+
+# ------------------------------------------------- the empty molecule
+
+def test_empty_smiles_does_not_segfault():
+    """`Chem.MolFromSmiles("")` returns an empty Mol, NOT None, so it passed every parse check.
+
+    It then reached code that indexes atom 0 unconditionally and took the process down with a
+    SIGSEGV -- not an exception, not a NaN row. If this regresses the test process dies, so a
+    failure here will not look like a normal assertion.
+    """
+    with pytest.warns(UserWarning, match="did not parse"):
+        X = molhume.featurize([""], standardize="none", fingerprint=False)
+    assert X.shape == (1, 622) and np.all(np.isnan(X))
+
+
+def test_an_empty_smiles_costs_only_its_own_row():
+    with pytest.warns(UserWarning, match="did not parse"):
+        X = molhume.featurize(["", "CCO", ""], standardize="none", fingerprint=False)
+    assert X.shape == (3, 622)
+    assert np.all(np.isnan(X[0])) and np.all(np.isnan(X[2]))
+    assert np.array_equal(X[[1]], _quiet(["CCO"], standardize="none", fingerprint=False),
+                          equal_nan=True)
+
+
+def test_empty_is_the_same_kind_of_failure_as_unparseable():
+    """Both are bad input, so both raise ValueError -- not one ValueError and one RuntimeError."""
+    with pytest.raises(ValueError, match="no atoms"):
+        molhume.featurize(["", "CCO"], standardize="none", on_error="raise")
+    with pytest.raises(ValueError, match="could not parse"):
+        molhume.featurize(["@@@", "CCO"], standardize="none", on_error="raise")
+    with pytest.warns(UserWarning):
+        assert molhume.featurize(["", "CCO"], standardize="none", fingerprint=False,
+                                 on_error="skip").shape == (1, 622)
+
+
+def test_a_zero_atom_mol_object_is_caught_too():
+    """`featurize` takes Mol objects directly, so the SMILES check alone would not cover it."""
+    from rdkit import Chem
+    with pytest.warns(UserWarning, match="did not parse"):
+        X = molhume.featurize([Chem.Mol(), Chem.MolFromSmiles("CCO")], standardize="none",
+                              fingerprint=False)
+    assert np.all(np.isnan(X[0])) and not np.all(np.isnan(X[1]))
+
+
+@pytest.mark.parametrize("entry", ["blocks_from_pickles", "all_from_pickles"])
+def test_the_extension_raises_rather_than_crashing_on_zero_atoms(entry):
+    """The guard is in the C++ too: a direct caller must get an exception, not a signal."""
+    from rdkit import Chem
+    from molhume import _core
+    from molhume._extract import extract_pickles
+    p = extract_pickles([Chem.Mol()], stereo=False)
+    with pytest.raises(RuntimeError, match="no atoms"):
+        if entry == "blocks_from_pickles":
+            _core.blocks_from_pickles(p.blobs)
+        else:
+            _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at,
+                                   p.h_blobs, p.stereo_a, p.stereo_b, threads=1)

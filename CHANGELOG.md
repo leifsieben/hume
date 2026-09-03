@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.9.1 — 2026-09-03
+
+**An empty SMILES segfaulted the process. Fixed.** This is a different bug from the one 0.9.0
+fixed, and 0.9.0 did not touch it — reported against 0.8.0 and still reproducible on 0.9.0.
+
+`Chem.MolFromSmiles("")` **does not return None.** It returns a valid `Mol` with zero atoms, so
+an empty or whitespace-only string in a SMILES column passed every parse check and reached code
+that indexes atom 0 unconditionally. The result was a SIGSEGV: not an exception, not a NaN row,
+the whole process gone, and no `on_error` setting could help. Only `n == 0` is affected; every
+one-atom molecule was always fine.
+
+Guarded in two places, deliberately:
+
+- **`bindings.cpp`** rejects a zero-atom molecule at both entry points into the descriptor code,
+  so a direct caller gets an exception rather than a signal.
+- **`featurize`** catches it at parse time, so an empty SMILES is the same *kind* of failure as
+  an unparseable one: a NaN row under `on_error="nan"`, dropped under `"skip"`, and a
+  **`ValueError`** under `"raise"`. Without this it would have raised `RuntimeError` from the
+  compute stage, and a caller catching `ValueError` for bad SMILES would have missed exactly
+  this case.
+
+Throwing rather than emitting zeros is deliberate: an empty SMILES in a dataset is a defect the
+caller wants told about, and a row of plausible zeros is one a model would train on.
+
 ## 0.9.0 — 2026-09-02
 
 **One molecule could kill the process. `on_error="nan"` could not save you, and at three sites

@@ -217,6 +217,26 @@ static void fill_hume_mol(Mol &m, criptyper::Mol &c, std::vector<int32_t> &cur, 
     }
 }
 
+//! A molecule with no atoms is not a molecule this library can describe, and every path into
+//! the descriptor code assumed at least one atom.
+//!
+//! `Chem.MolFromSmiles("")` DOES NOT RETURN None -- it returns a valid Mol with zero atoms -- so
+//! an empty string in a SMILES column sailed past every parse check and reached code that
+//! indexes atom 0 unconditionally. The result was a SIGSEGV: not an exception, not a NaN row,
+//! the whole process gone. Reported against 0.8.0 and still present in 0.9.0, because the
+//! fragment-matcher fix it shipped with was a different bug entirely.
+//!
+//! Throwing rather than returning zeros is deliberate. An empty SMILES in a dataset is a data
+//! defect the caller wants told about; a row of plausible zeros is one a model would train on.
+//! The row isolation turns this into a NaN row and a named index under on_error="nan".
+static inline void need_atoms(int n) {
+  if (n <= 0)
+    throw std::runtime_error(
+        "molecule has no atoms. Chem.MolFromSmiles(\"\") returns an empty Mol rather than None, "
+        "so an empty or whitespace-only SMILES reaches the descriptor code as a zero-atom "
+        "molecule; there is nothing to describe and every topological descriptor is undefined.");
+}
+
 static void run_blocks(std::ptrdiff_t nm, const int *AO, const int *BO, const int *OKf, const int *AI,
                        const double *AD, const int *BI, const int *BS, const double *BD,
                        double *O) {
@@ -225,6 +245,7 @@ static void run_blocks(std::ptrdiff_t nm, const int *AO, const int *BO, const in
   criptyper::Mol c;
   std::vector<int32_t> cur;
   for (std::ptrdiff_t k = 0; k < nm; k++) {
+    need_atoms(AO[k + 1] - AO[k]);
     fill_hume_mol(m, c, cur, AI, AD, BI, BS, BD, AO[k], BO[k], AO[k + 1] - AO[k],
                   BO[k + 1] - BO[k], OKf[k]);
     blocks_row(m, W, O + (std::ptrdiff_t)k * HUME_NBLOCK_COLS);
@@ -829,6 +850,7 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
                     const int *SA, const int *SB, unsigned fams,
                     unsigned opts, const bool *spec_want, bool tolerate_frag,
                     std::string *degraded, double *out) {
+  need_atoms(n);
   const int *ai = AI + (std::ptrdiff_t)a0 * N_ATOM_INT;
   const int *bi = BI + (std::ptrdiff_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
