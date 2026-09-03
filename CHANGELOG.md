@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.9.2 — 2026-09-03
+
+**`BalabanJ` returned `+inf` on any disconnected, acyclic molecule.** Salts, solvates and
+counterions with an acyclic parent — `CN.Cl`, `CCO.[Na+]`, `CC(=O)[O-].[Na+]` — all of them.
+
+RDKit's `GraphDescriptors.py` ends:
+
+```python
+if mu + 1 != 0:  J = float(q) / float(mu + 1) * sum_
+else:            J = 0
+```
+
+`mu = bonds - atoms + 1`, so `mu + 1 == 0` means `bonds == atoms - 2`: two fragments with no ring
+between them. HUME had the formula and not the guard, so it divided by zero. Both Balaban
+variants (RDKit-weighted and the Mordred unweighted one) now match RDKit exactly, including the
+disconnected-with-rings cases that were already correct.
+
+An `inf` in a feature matrix is not a bad number, it is a number that breaks whatever consumes
+it, so this was worth a release on its own.
+
+**Why verification missed it.** The exactness corpus is standardised and desalted: **0 of 300,000
+curated molecules reach the guard**. It fires constantly on real dirty input. Found by fuzzing
+1.22M adversarial SMILES — mutated real molecules and constructed shapes — not by the corpus.
+
+### The fuzz run
+
+1,220,734 SMILES through `featurize`, in 49 isolated subprocesses so that a crash names the
+molecule instead of losing the run. **No crashes and no hangs.** Statistics over the 1,121,659
+rows that produced values:
+
+| finding | detail |
+| --- | --- |
+| `inf` values | `BalabanJ` (fixed here); `SpAbs_DzZ` / `SM1_DzZ` on a lone `*`, which **matches Mordred**, checked against it directly |
+| constant columns | none |
+| all-NaN columns | none |
+| NaN in over half the rows | `MDEC-11` (59.0%), `MDEN-22` (51.3%) |
+| zero in over 99.9% | `n5FHRing`, `n5FRing`, `fr_benzodiazepine`, `TATS4` |
+| largest magnitude | `WPath`, 2.3e12 |
+
+Per-molecule failures, all correctly isolated to a NaN row rather than killing a batch: constit's
+Kekule reconstruction (two distinct messages), the fragment-matcher truncation bound, and an
+E-state guard on a bare hydrogen atom.
+
+The harness is in `tools/fuzz/`.
+
 ## 0.9.1 — 2026-09-03
 
 **An empty SMILES segfaulted the process. Fixed.** This is a different bug from the one 0.9.0

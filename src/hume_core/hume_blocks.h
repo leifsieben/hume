@@ -420,6 +420,21 @@ static double balaban(const Mol &m, const std::vector<double> &W) {
   for (int i = 0; i < m.n; i++)
     for (int j = 0; j < m.n; j++) s[i] += W[(size_t)i * m.n + j];
   double mu = m.nb - m.n + 1.0, acc = 0.0;
+  // mu + 1 == 0 IS RDKit's OWN GUARD AND IT WAS MISSING HERE. GraphDescriptors.py ends:
+  //
+  //     if mu + 1 != 0:  J = float(q) / float(mu + 1) * sum_
+  //     else:            J = 0
+  //
+  // mu = bonds - atoms + 1, so mu + 1 == 0 means bonds == atoms - 2: a DISCONNECTED, ACYCLIC
+  // molecule -- two fragments with no ring between them. Without the guard this divides by zero
+  // and emits +inf, and an inf in a feature matrix is not a bad number, it is a number that
+  // breaks whatever consumes it.
+  //
+  // It never fired in verification because the exactness corpus is standardised and desalted:
+  // 0 of 300,000 curated molecules reach it. It fires constantly on real dirty input -- any
+  // salt, solvate or counterion whose parent is acyclic -- "CN.Cl", "CCO.[Na+]",
+  // "CC(=O)[O-].[Na+]". Found by fuzzing 1.22M adversarial SMILES, not by the corpus.
+  if (mu + 1.0 == 0.0) return 0.0;
   for (int b = 0; b < m.nb; b++) {
     double p = s[m.bu[b]] * s[m.bv[b]];
     if (p > 0) acc += 1.0 / std::sqrt(p);
@@ -461,6 +476,21 @@ static double balaban_unweighted(const Mol &m, const std::vector<int> &D) {
     s[i] = acc;
   }
   double mu = m.nb - m.n + 1.0, acc = 0.0;
+  // mu + 1 == 0 IS RDKit's OWN GUARD AND IT WAS MISSING HERE. GraphDescriptors.py ends:
+  //
+  //     if mu + 1 != 0:  J = float(q) / float(mu + 1) * sum_
+  //     else:            J = 0
+  //
+  // mu = bonds - atoms + 1, so mu + 1 == 0 means bonds == atoms - 2: a DISCONNECTED, ACYCLIC
+  // molecule -- two fragments with no ring between them. Without the guard this divides by zero
+  // and emits +inf, and an inf in a feature matrix is not a bad number, it is a number that
+  // breaks whatever consumes it.
+  //
+  // It never fired in verification because the exactness corpus is standardised and desalted:
+  // 0 of 300,000 curated molecules reach it. It fires constantly on real dirty input -- any
+  // salt, solvate or counterion whose parent is acyclic -- "CN.Cl", "CCO.[Na+]",
+  // "CC(=O)[O-].[Na+]". Found by fuzzing 1.22M adversarial SMILES, not by the corpus.
+  if (mu + 1.0 == 0.0) return 0.0;
   for (int b = 0; b < m.nb; b++) {
     double p = s[m.bu[b]] * s[m.bv[b]];
     if (p > 0) acc += 1.0 / std::sqrt(p);

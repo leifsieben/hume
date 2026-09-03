@@ -598,3 +598,35 @@ def test_the_extension_raises_rather_than_crashing_on_zero_atoms(entry):
         else:
             _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at,
                                    p.h_blobs, p.stereo_a, p.stereo_b, threads=1)
+
+
+# ------------------------------------------------- BalabanJ on disconnected molecules
+
+#: mu + 1 == 0 means bonds == atoms - 2: a disconnected, acyclic molecule. RDKit guards that case
+#: and returns 0; HUME divided by zero and emitted +inf until 0.9.2. It never fired in
+#: verification because the exactness corpus is standardised and desalted -- 0 of 300,000 curated
+#: molecules reach it -- and it fires on any salt or solvate with an acyclic parent, which is
+#: most of them. Found by fuzzing 1.22M adversarial SMILES.
+DISCONNECTED = ["CC.CI", "CC.C", "CCO.[Na+]", "CC(=O)[O-].[Na+]", "CN.Cl", "CCO.O",
+                "CC(=O)O.CC(=O)O", "C.C", "c1ccccc1.CC", "c1ccccc1.c1ccccc1"]
+
+
+@pytest.mark.parametrize("smi", DISCONNECTED)
+def test_balaban_j_matches_rdkit_on_disconnected_molecules(smi):
+    from rdkit import Chem
+    from rdkit.Chem import GraphDescriptors
+    m = Chem.MolFromSmiles(smi)
+    got = _quiet([m], columns=["BalabanJ"], standardize="none", fingerprint=False)[0, 0]
+    want = GraphDescriptors.BalabanJ(m)
+    assert np.isfinite(got), f"BalabanJ is {got} on {smi!r}; an inf breaks whatever consumes it"
+    assert got == pytest.approx(want, rel=1e-12, abs=0), f"{got} != rdkit's {want}"
+
+
+def test_no_column_is_infinite_on_a_salt():
+    """A whole-row check, because the fuzz run found this by scanning columns rather than one."""
+    cols = list(molhume.column_set("full", extra=["qed"]))
+    names = molhume.feature_names(columns=cols, fingerprint=False)
+    X = _quiet(["CC(=O)[O-].[Na+]", "CN.Cl", "CCO.O"], columns=cols, standardize="none",
+               fingerprint=False)
+    bad = sorted({names[j] for j in np.where(np.isinf(X))[1]})
+    assert not bad, f"infinite values on an ordinary salt: {bad}"
