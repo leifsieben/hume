@@ -620,6 +620,15 @@ static inline int frag_border(int bcode) {
 //
 // vsa_bins.h's three are compile-time enumerators (`vsabin::C_MOLLOGP` and friends) and need no
 // lookup; the module-load check below asserts their NAMES too, for the same reason.
+//! A row cell as an int, with NaN mapped to -1 rather than left to the architecture.
+//!
+//! `(int)` of a NaN double is undefined behaviour and the two architectures disagree: arm64
+//! clamps to 0, x86-64 gives INT_MIN. Since the output row can legitimately hold NaN, a bare
+//! cast is a value that reads as 0 on a developer's laptop and INT_MIN in CI -- which is exactly
+//! how the counts_ext read shipped green from macOS and failed on gcc, MSVC and the sdist build.
+//! -1 is the sentinel every consumer here already rejects by name.
+static inline int row_int(double v) { return std::isnan(v) ? -1 : (int)v; }
+
 struct InputCols {
   int naRing = -1, nARing = -1, hbd = -1, hba = -1, nrot = -1;
   InputCols() {
@@ -1346,8 +1355,13 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     // to clang on this machine.
     const int cn_rot = W.fcount[ICc.nrot];
     cin.nRot = cn_rot < 0 ? 0 : cn_rot;
-    cin.nBondsD = (int)out[OFF_CONSTIT + 18];
-    cin.nBondsKD = (int)out[OFF_CONSTIT + 22];
+    // NEVER (int) A ROW VALUE DIRECTLY. These two are constit's own counts and are finite
+    // today, but the row can hold NaN and (int)NaN is undefined -- 0 on arm64, INT_MIN on
+    // x86-64. row_int() makes the answer the SAME on both: -1, which counts_ext's guard rejects
+    // by name, so a molecule that ever reaches this loses its row deterministically and with a
+    // message, rather than on one architecture and silently on the other.
+    cin.nBondsD = row_int(out[OFF_CONSTIT + 18]);
+    cin.nBondsKD = row_int(out[OFF_CONSTIT + 22]);
     counts_ext::compute(W.km, W.rm, cin, out + OFF_COUNTS, W.rs);
   }
 
