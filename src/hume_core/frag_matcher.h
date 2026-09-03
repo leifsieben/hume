@@ -110,6 +110,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <stdexcept>
 #include <cstdio>
 #include <cstdlib>
 #include <memory>

@@ -209,3 +209,28 @@ def test_qed_is_nan_rather_than_zero_when_not_asked_for(gated):
     run, full, n = gated
     assert np.all(np.isnan(full[:, molhume.ALL_COLUMNS.index("qed")])), (
         "the ungated fixture asks for AvgIpc only, so qed must come back NaN")
+
+
+def test_no_int_cast_reads_a_row_value_that_can_be_nan():
+    """`(int)` of a NaN double is UNDEFINED BEHAVIOUR AND THE ARCHITECTURES DISAGREE.
+
+    On arm64 it clamps to 0; on x86-64 it is INT_MIN. Since 0.9.0 the output row can legitimately
+    hold NaN in a fragment column -- a pattern past RDKit's truncation bound has no well-defined
+    count -- so a cast like `(int)out[OFF_FRAG + ...]` is a value that reads as 0 on the
+    developer's laptop and INT_MIN in CI. That is exactly what happened: every test passed on
+    macOS and gcc, MSVC and the sdist build all failed, because counts_ext's guard saw INT_MIN
+    and threw away the whole row.
+
+    The fix is to read those counts from the typed `fcount` array, which carries -1 as an
+    explicit sentinel. This asserts the pattern does not come back, on every platform including
+    the one that cannot observe the consequence.
+    """
+    import pathlib
+    import re
+    src = (pathlib.Path(__file__).resolve().parents[1] / "src" / "hume_core" / "bindings.cpp")
+    bad = [f"{i}: {ln.strip()}" for i, ln in enumerate(src.read_text().splitlines(), 1)
+           if re.search(r"\(int\)\s*out\[", ln)]
+    assert not bad, (
+        "a row value is cast to int, and the row can hold NaN:\n    " + "\n    ".join(bad)
+        + "\n  Read the value from the typed source (W.fcount, which uses -1 for "
+          "'no well-defined count') rather than from the double row.")

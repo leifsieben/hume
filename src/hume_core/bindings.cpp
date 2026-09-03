@@ -20,11 +20,14 @@
 #include <pybind11/numpy.h>
 #include <pybind11/pybind11.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cmath>
 #include <cstring>
 #include <stdexcept>
 #include <string>
+#include <tuple>
+#include <vector>
 
 #include "autocorr.h"
 // chi.h's namespace is `chisub`, NOT `chi`: hume_blocks.h below defines a file-scope
@@ -1333,7 +1336,16 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
   if (fams & F_COUNTS) {
     const InputCols &ICc = input_cols();
     counts_ext::Inputs cin;
-    cin.nRot = (int)out[OFF_FRAG + ICc.nrot];
+    // FROM fcount, NOT FROM `out`, FOR THE SAME REASON AS constit's THREE READS ABOVE -- and
+    // this one was missed on the first pass, which cost a CI matrix to find.
+    //
+    // (int)NaN IS UNDEFINED BEHAVIOUR AND THE TWO ARCHITECTURES DISAGREE ABOUT IT. On arm64 it
+    // clamps to 0, which is >= 0, so counts_ext's guard stayed quiet and the macOS build passed
+    // every test. On x86-64 it is INT_MIN, the guard fired, and the molecule lost its whole row
+    // to the exact failure this change exists to prevent -- reported by gcc and MSVC, invisible
+    // to clang on this machine.
+    const int cn_rot = W.fcount[ICc.nrot];
+    cin.nRot = cn_rot < 0 ? 0 : cn_rot;
     cin.nBondsD = (int)out[OFF_CONSTIT + 18];
     cin.nBondsKD = (int)out[OFF_CONSTIT + 22];
     counts_ext::compute(W.km, W.rm, cin, out + OFF_COUNTS, W.rs);
