@@ -815,7 +815,8 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
                     const int *ring_ptr, const int *ring_at, int n_rings,
                     const double *ACO, const double *ACH, int h_chg_ok,
                     const int *SA, const int *SB, unsigned fams,
-                    unsigned opts, const bool *spec_want, double *out) {
+                    unsigned opts, const bool *spec_want, bool tolerate_frag,
+                    std::string *degraded, double *out) {
   const int *ai = AI + (std::ptrdiff_t)a0 * N_ATOM_INT;
   const int *bi = BI + (std::ptrdiff_t)b0 * N_BOND_INT;
   const double *bd = BD + b0;
@@ -1042,8 +1043,22 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
       W.fm.bring[b] = r[B_RING];
     }
     W.fm.finish();
-    fragmatch::countAll(W.fm, W.fmt, W.fcount.data());
-    for (int i = 0; i < frag_prog::N_NAMED; i++) out[OFF_FRAG + i] = (double)W.fcount[i];
+    // ONE UNCOUNTABLE PATTERN COSTS ONE COLUMN, NOT THE MOLECULE. `countAll(tolerate)` reports a
+    // pattern past the 1000-embedding bound as -1 rather than throwing; -1 is impossible for a
+    // real count, so it turns into NaN here and nothing else in the row moves. Without tolerate
+    // the exception propagates, which is what the verification scripts want.
+    fragmatch::countAll(W.fm, W.fmt, W.fcount.data(), tolerate_frag);
+    for (int i = 0; i < frag_prog::N_NAMED; i++) {
+      if (W.fcount[i] >= 0) { out[OFF_FRAG + i] = (double)W.fcount[i]; continue; }
+      out[OFF_FRAG + i] = std::nan("");
+      // A NaN NOBODY IS TOLD ABOUT IS THE FAILURE MODE THIS FILE IS WRITTEN AGAINST. The column
+      // is degraded, not the row, so it is reported separately from a row failure -- but it IS
+      // reported, by name, and molhume.featurize turns it into a warning naming the molecule.
+      if (degraded) {
+        if (!degraded->empty()) *degraded += ", ";
+        *degraded += frag_prog::NAMED[i].name;
+      }
+    }
     out[OFF_FRAG + frag_prog::N_NAMED] = (double)fragmatch::nhohCount(W.fm);
     out[OFF_FRAG + frag_prog::N_NAMED + 1] = (double)fragmatch::heavyAtomCount(W.fm);
   }
@@ -1089,9 +1104,16 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     constit::Inputs in;
     in.molLogP = out[OFF_VSA + vsabin::C_MOLLOGP];
     in.molMR = out[OFF_VSA + vsabin::C_MOLMR];
-    in.nHBDon = (int)out[OFF_FRAG + IC.hbd];
-    in.nHBAcc = (int)out[OFF_FRAG + IC.hba];
-    in.nRot = (int)out[OFF_FRAG + IC.nrot];
+    // READ FROM fcount, NOT FROM `out`. `out` may now hold NaN for an uncountable pattern, and
+    // (int)NaN is undefined behaviour. fcount carries -1 for exactly those, so the three
+    // dependent inputs are substituted with 0 to keep constit and counts_ext well defined, and
+    // the columns that actually depend on them are NaN'd after the fact -- see `frag_dep_nan`
+    // below. Substituting rather than propagating is deliberate: constit's guards reject
+    // negatives outright and would cost the whole row.
+    const int hbd_raw = W.fcount[IC.hbd], hba_raw = W.fcount[IC.hba], nrot_raw = W.fcount[IC.nrot];
+    in.nHBDon = hbd_raw < 0 ? 0 : hbd_raw;
+    in.nHBAcc = hba_raw < 0 ? 0 : hba_raw;
+    in.nRot = nrot_raw < 0 ? 0 : nrot_raw;
     in.naRing = out[OFF_RING + IC.naRing];
     in.nARing = out[OFF_RING + IC.nARing];
 
@@ -1316,6 +1338,34 @@ static void all_row(AllWork &W, const int *AI, const double *AD, const int *BI, 
     cin.nBondsKD = (int)out[OFF_CONSTIT + 22];
     counts_ext::compute(W.km, W.rm, cin, out + OFF_COUNTS, W.rs);
   }
+
+  // ---- the columns that depend on an uncountable fragment pattern ------------------------
+  //
+  // EXHAUSTIVE, AND SHORT. Only three of the fragment counts are read back by another family,
+  // and between them they reach four columns:
+  //
+  //     NumHDonors        -> qed, Lipinski
+  //     NumHAcceptors     -> Lipinski
+  //     NumRotatableBonds -> qed, RotRatio, counts_ext's RotatableBond
+  //
+  // So a molecule whose `fr_unbrch_alkane` cannot be counted loses ONE column, and the worst
+  // case anywhere is five. constit.h and counts_ext.h are untouched: they were handed 0 above
+  // and their outputs are overwritten here, which keeps the substitution from leaking into a
+  // column that does not depend on it.
+  if (tolerate_frag && (fams & F_FRAG)) {
+    const double NaN = std::nan("");
+    // raw constit index -> compacted, the inverse of keep_constit()
+    auto cc = [](int raw) { return raw < constit::C_QED ? raw : raw - 1; };
+    const InputCols &C = input_cols();   // `IC` above is scoped to the constit block
+    const bool bad_hbd = W.fcount[C.hbd] < 0, bad_hba = W.fcount[C.hba] < 0,
+               bad_rot = W.fcount[C.nrot] < 0;
+    if (fams & F_CONSTIT) {
+      if (bad_hbd || bad_hba) out[OFF_CONSTIT + cc(constit::C_LIPINSKI)] = NaN;
+      if (bad_rot) out[OFF_CONSTIT + cc(constit::C_ROTRATIO)] = NaN;
+    }
+    if (bad_hbd || bad_rot) out[OFF_QED] = NaN;
+    if (bad_rot && (fams & F_COUNTS)) out[OFF_COUNTS + counts_ext::C_NROT] = NaN;
+  }
 }
 
 static unsigned family_mask(const py::object &families) {
@@ -1458,7 +1508,11 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
 
   //! Declared OUTSIDE the GIL-released block below, because that is where `f` and the row-error
   //! vector live and die -- appending to a Python list needs the GIL back.
-  std::vector<std::pair<std::ptrdiff_t, std::string>> reported;
+  //! (index, kind, message). `kind` is "row" -- the molecule has no values at all -- or
+  //! "columns", where the row is exact apart from a few named columns. Reporting them in one
+  //! list keeps the caller from having to ask twice; distinguishing them keeps a degraded row
+  //! from being described as a lost one.
+  std::vector<std::tuple<std::ptrdiff_t, std::string, std::string>> reported;
   auto out = py::array_t<double>({(std::ptrdiff_t)nm, (std::ptrdiff_t)N_ALL_COLS});
   double *O = out.mutable_data();
   {
@@ -1499,13 +1553,14 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // aborts with the message lost. all_row() throws std::runtime_error on several contract
     // violations, so every worker catches, stores, and the first one is rethrown after join.
     std::vector<std::exception_ptr> errs;
-    std::vector<std::pair<std::ptrdiff_t, std::string>> row_errs;
+    std::vector<std::pair<std::ptrdiff_t, std::string>> row_errs, row_degraded;
     std::mutex errmu;
     auto worker = [&](std::ptrdiff_t lo, std::ptrdiff_t hi) {
       try {
       AllWork W;
       // one full-width scratch row per thread; the output slice holds only the emitted columns
       std::vector<double> row((std::size_t)N_ROW_COLS_ALL);
+      std::string degraded;   // patterns this molecule has no well-defined count for
       for (std::ptrdiff_t k = lo; k < hi; k++) {
         double *dst = O + (std::ptrdiff_t)k * N_ALL_COLS;
         auto nan_row = [&] { for (int c = 0; c < N_ALL_COLS; c++) dst[c] = std::nan(""); };
@@ -1514,6 +1569,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
           continue;
         }
         const int r0 = RM[k], nr = RM[k + 1] - r0;
+        degraded.clear();
         auto one = [&] {
           all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
                   f.bond_d.data(), f.atom_off[k], f.bond_off[k],
@@ -1521,8 +1577,8 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                   f.chg_ok[k], RP + r0, RA, nr,
                   need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
                   need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
-                  f.chg_ok[k], SA, SB, fams, opts, spec_want,
-                  row.data());
+                  f.chg_ok[k], SA, SB, fams, opts, spec_want, isolate,
+                  isolate ? &degraded : nullptr, row.data());
           for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
           dst[N_EMIT_COLS] = row[OFF_QED];   // appended last; see the note on OFF_QED
         };
@@ -1530,12 +1586,22 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
           one();
           continue;
         }
+        auto note_degraded = [&] {
+          if (degraded.empty()) return;
+          std::lock_guard<std::mutex> g(errmu);
+          row_degraded.emplace_back(
+              (std::ptrdiff_t)k,
+              "no well-defined count for " + degraded + " (over RDKit's 1000-embedding "
+              "truncation bound); that column and the few that read it are NaN, the rest of "
+              "the row is exact");
+        };
         // PER ROW, NOT PER SHARD. Catching around the loop discarded every remaining molecule
         // this thread owned, so the blast radius of one bad molecule was batch_size/threads
         // rows, not one. AllWork is reused after a throw: every family writes its own slots from
         // scratch each row, and `row` is re-initialised at the top of all_row().
         try {
           one();
+          note_degraded();
         } catch (const std::exception &e) {
           nan_row();
           std::lock_guard<std::mutex> g(errmu);
@@ -1575,10 +1641,12 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // in input order regardless of which thread found what.
     if (isolate) {
       for (std::ptrdiff_t k = 0; k < (std::ptrdiff_t)f.bad.size(); k++)
-        if (!f.bad[k].empty()) reported.emplace_back(k, f.bad[k]);
-      reported.insert(reported.end(), row_errs.begin(), row_errs.end());
-      std::sort(reported.begin(), reported.end(),
-                [](const auto &a, const auto &c) { return a.first < c.first; });
+        if (!f.bad[k].empty()) reported.emplace_back(k, "row", f.bad[k]);
+      for (const auto &e : row_errs) reported.emplace_back(e.first, "row", e.second);
+      for (const auto &e : row_degraded) reported.emplace_back(e.first, "columns", e.second);
+      std::sort(reported.begin(), reported.end(), [](const auto &a, const auto &c) {
+        return std::get<0>(a) < std::get<0>(c);
+      });
     }
   }
   // Reported to Python OUTSIDE the GIL release above. Parse failures and row failures go into
@@ -1587,7 +1655,8 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   if (isolate && !reported.empty()) {
     py::list lst = py::cast<py::list>(errors_out);
     for (const auto &e : reported)
-      lst.append(py::make_tuple((py::ssize_t)e.first, py::str(e.second)));
+      lst.append(py::make_tuple((py::ssize_t)std::get<0>(e), py::str(std::get<1>(e)),
+                                py::str(std::get<2>(e))));
   }
   return out;
 }

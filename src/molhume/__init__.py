@@ -352,7 +352,7 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
             errors_out=(None if errors_out is None else _chunk_errors),
             threads=threads)
         if errors_out is not None:
-            errors_out.extend((lo + i, msg) for i, msg in _chunk_errors)
+            errors_out.extend((lo + i, kind, msg) for i, kind, msg in _chunk_errors)
         if fingerprint:
             for i, m in enumerate(chunk):
                 fp[lo + i] = gen.GetFingerprintAsNumPy(m)
@@ -834,6 +834,21 @@ def featurize(smiles: Iterable, *, columns="minimal", standardize=_UNSET, thread
         good, batch_size=batch_size, fp_radius=fp_radius, fp_size=fp_size,
         families=families, optional=optional, select=select, threads=threads,
         fingerprint=fingerprint, errors_out=compute_errors)
+
+    # TWO KINDS, AND THEY MUST NOT BE DESCRIBED THE SAME WAY. "row" means the molecule has no
+    # values at all; "columns" means the row is exact apart from a few named columns that have no
+    # well-defined answer -- a single fragment pattern past RDKit's 1000-embedding truncation
+    # bound costs its own column and, at worst, the four that read it. Reporting a degraded row
+    # as a lost one would send a caller looking for a failure that did not happen; reporting it
+    # as nothing at all would leave NaNs nobody was told about, which is worse.
+    degraded = [(keep_rows[i], msg) for i, kind, msg in compute_errors if kind == "columns"]
+    compute_errors = [(i, msg) for i, kind, msg in compute_errors if kind == "row"]
+    if degraded:
+        warnings.warn(
+            f"{len(degraded)} of {len(items)} molecules have some columns that could not be "
+            f"computed; every other column of those rows is exact. First at index "
+            f"{degraded[0][0]}: {degraded[0][1]}",
+            UserWarning, stacklevel=2)
 
     if compute_errors:
         # Back into the caller's coordinates: `good` is the parsed subset, `keep_rows` maps it

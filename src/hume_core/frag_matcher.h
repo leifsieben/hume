@@ -121,6 +121,23 @@
 
 namespace fragmatch {
 
+//! Raised when one pattern exceeds the 1000-embedding bound. It carries the pattern name so the
+//! caller can say WHICH column is untrustworthy rather than discarding the molecule.
+//!
+//! It is a distinct type on purpose: `countAll(tolerate=true)` catches exactly this and nothing
+//! else, so a genuine bug inside the matcher still propagates instead of being quietly turned
+//! into a NaN column.
+struct Truncated : std::runtime_error {
+  const char *pattern;
+  explicit Truncated(const char *p)
+      : std::runtime_error(
+            std::string("fragmatch: pattern ") + p + " hit 1000 raw embeddings on this molecule. "
+            "RDKit's maxMatches default truncates before uniquifying, so its own count would be "
+            "order-dependent here, and this library will not agree quietly with a number that is "
+            "not well defined."),
+        pattern(p) {}
+};
+
 using frag_prog_types::Node;
 using frag_prog_types::QBond;
 using frag_prog_types::Pattern;
@@ -436,11 +453,7 @@ class Matcher {
         //
         // The measured max on cpp/hard.smi was 180, a 5.5x margin, and a large enough corpus
         // went straight through it: an unbranched chain of about 600 carbons is enough.
-        throw std::runtime_error(
-            std::string("fragmatch: pattern ") + P.label + " hit 1000 raw embeddings on this "
-            "molecule. RDKit's maxMatches default truncates before uniquifying, so its own count "
-            "would be order-dependent here, and this library will not agree quietly with a "
-            "number that is not well defined.");
+        throw Truncated(P.label);
       }
       return true;
     }
@@ -499,10 +512,27 @@ class Matcher {
 // The Matcher& is what a batch loop should hold: it reuses the recursive-query cache allocation
 // across molecules instead of mallocing one per molecule, and it resolves the program's plan set
 // once. `bind()` clears the cache, so the second molecule cannot see the first one's answers.
-inline void countAll(const Mol& m, Matcher& mt, int* out) {
+//! All named pattern counts for one molecule.
+//!
+//! `tolerate` DECIDES HOW MUCH ONE UNCOUNTABLE PATTERN COSTS. A pattern past the 1000-embedding
+//! bound has no well-defined RDKit answer to agree with (see `Truncated`), but that is a
+//! statement about ONE column, not about the molecule: with `tolerate` it is reported as `-1`
+//! and every other pattern is still counted, so the caller can NaN one column instead of
+//! discarding 1,269. Without it the exception propagates, which is what the verification scripts
+//! want -- there an uncountable pattern is the finding and should stop the run.
+//!
+//! Only `Truncated` is caught. A real bug inside the matcher still propagates.
+inline void countAll(const Mol& m, Matcher& mt, int* out, bool tolerate = false) {
   mt.bind(m);
   const Program& p = mt.program();
-  for (int i = 0; i < p.n_named; ++i) out[i] = mt.matchCount(p.named[i].pattern);
+  for (int i = 0; i < p.n_named; ++i) {
+    if (!tolerate) { out[i] = mt.matchCount(p.named[i].pattern); continue; }
+    try {
+      out[i] = mt.matchCount(p.named[i].pattern);
+    } catch (const Truncated &) {
+      out[i] = -1;                       // "no well-defined count", turned into NaN by the caller
+    }
+  }
 }
 
 // The QED ALERTS term: how many of the bound program's named patterns match AT ALL.  rdkit's

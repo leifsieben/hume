@@ -415,70 +415,89 @@ def test_appending_qed_moved_no_other_column():
 
 # ------------------------------------------------- one molecule must not kill a batch
 
-#: An unbranched chain long enough that `fr_unbrch_alkane` exceeds 1000 raw embeddings. Until
-#: 0.9.0 this called std::abort() inside the fragment matcher -- a hard process kill, uncatchable
-#: from Python, which made on_error="nan" a promise the library could not keep. Reported from a
-#: 35M-molecule run where a single molecule ended the job.
+#: An unbranched chain long enough that two fragment patterns exceed 1000 raw embeddings.
+#: Until 0.9.0 this called std::abort() inside the fragment matcher -- a hard process kill,
+#: uncatchable from Python, which made on_error="nan" a promise the library could not keep.
+#: Reported from a 35M-molecule run where a single molecule ended the job.
 POISON = "C" * 600
+
+#: What it costs now. `fr_unbrch_alkane` and `NumRotatableBonds` have no well-defined count past
+#: RDKit's truncation bound; `RotRatio`, `nRot` and `qed` are the columns that read one of them.
+POISON_LOST = {"fr_unbrch_alkane", "RotRatio", "nRot", "qed"}
+
+
+def _cols_lost(X_row, reference_row, names):
+    """Columns NaN in `X_row` that are NOT NaN in a clean molecule of similar size.
+
+    Comparing against a reference matters: plenty of descriptors are legitimately NaN on a long
+    chain, and asserting "no NaN" would pass or fail for the wrong reason.
+    """
+    return {names[i] for i in np.where(np.isnan(X_row) & ~np.isnan(reference_row))[0]}
 
 
 def test_the_poison_molecule_does_not_kill_the_process():
     """If this regresses the test process dies, so a failure here is not a normal assertion."""
-    with pytest.warns(UserWarning, match="could not be featurized"):
+    with pytest.warns(UserWarning, match="could not be computed"):
         X = molhume.featurize([POISON], standardize="none", fingerprint=False, on_error="nan")
-    assert X.shape == (1, 622) and np.all(np.isnan(X))
+    assert X.shape == (1, 622)
 
 
-def test_a_bad_molecule_nans_only_its_own_row():
+def test_it_costs_four_columns_and_not_the_row():
+    cols = list(molhume.column_set("full", extra=["qed"]))
+    names = molhume.feature_names(columns=cols, fingerprint=False)
+    with pytest.warns(UserWarning, match="could not be computed"):
+        X = molhume.featurize([POISON], columns=cols, standardize="none", fingerprint=False)
+    ref = _quiet(["C" * 300], columns=cols, standardize="none", fingerprint=False)[0]
+    assert _cols_lost(X[0], ref, names) == POISON_LOST
+    assert np.isfinite(X[0]).sum() > 1200, "the rest of the row must survive"
+
+
+def test_the_warning_names_the_patterns_and_the_molecule():
+    with pytest.warns(UserWarning) as rec:
+        molhume.featurize(["CCO", POISON], standardize="none", fingerprint=False)
+    msg = "\n".join(str(w.message) for w in rec)
+    assert "fr_unbrch_alkane" in msg and "index 1" in msg, msg
+    assert "1000-embedding" in msg, "the message must say why the count is not well defined"
+
+
+def test_a_degraded_molecule_does_not_touch_its_neighbours():
     smis = ["CCO", POISON, "c1ccccc1O", "CC(=O)Oc1ccccc1C(=O)O"]
-    with pytest.warns(UserWarning, match="could not be featurized"):
-        X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="nan")
-    assert X.shape == (4, 622)
-    assert np.all(np.isnan(X[1])), "the failing molecule must be a NaN row"
-    # NOT "no NaN in the other rows": plenty of descriptors are legitimately NaN on a small
-    # molecule. The property that matters is that the survivors are UNCHANGED, so compare them
-    # against the same molecules featurized without the poison present.
+    with pytest.warns(UserWarning):
+        X = molhume.featurize(smis, standardize="none", fingerprint=False)
     clean = _quiet([s for i, s in enumerate(smis) if i != 1], standardize="none",
                    fingerprint=False)
     assert np.array_equal(X[[0, 2, 3]], clean, equal_nan=True), (
-        "the surviving rows must be bit-identical to the same molecules featurized alone")
+        "the other rows must be bit-identical to the same molecules featurized without it")
 
 
 @pytest.mark.parametrize("threads", [1, 0])
 def test_the_blast_radius_is_one_row_not_one_shard(threads):
     """The catch used to be per WORKER, so one molecule discarded that thread's whole chunk."""
     smis = ["CCO"] * 40 + [POISON] + ["c1ccccc1O"] * 40
-    with pytest.warns(UserWarning, match="could not be featurized"):
-        X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="nan",
-                              threads=threads, batch_size=16)
-    nan_rows = sorted(int(i) for i in np.where(np.all(np.isnan(X), axis=1))[0])
-    assert nan_rows == [40], f"expected exactly row 40 to be NaN, got {nan_rows}"
+    with pytest.warns(UserWarning):
+        X = molhume.featurize(smis, standardize="none", fingerprint=False, threads=threads,
+                              batch_size=16)
+    clean_lo = _quiet(["CCO"], standardize="none", fingerprint=False)[0]
+    clean_hi = _quiet(["c1ccccc1O"], standardize="none", fingerprint=False)[0]
+    for i in range(40):
+        assert np.array_equal(X[i], clean_lo, equal_nan=True), f"row {i} was collateral damage"
+    for i in range(41, 81):
+        assert np.array_equal(X[i], clean_hi, equal_nan=True), f"row {i} was collateral damage"
 
 
-def test_on_error_raise_names_the_molecule_and_truncates_it():
-    with pytest.raises(RuntimeError, match="index 1"):
-        molhume.featurize(["CCO", POISON], standardize="none", on_error="raise")
-    try:
-        molhume.featurize(["CCO", POISON], standardize="none", on_error="raise")
-    except RuntimeError as e:
-        assert "600 chars" in str(e) and "..." in str(e), (
-            "the message must name the molecule's length and elide its body")
-        assert len(str(e)) < 700, (
-            f"the message is {len(str(e))} chars; it quotes the molecule in full and buries its "
-            "own explanation")
+def test_verification_callers_still_get_the_exception():
+    """`errors_out=None` must keep raising: there an uncountable pattern IS the finding."""
+    from molhume import _core
+    from molhume._extract import extract_pickles
+    from rdkit import Chem
+    p = extract_pickles([Chem.MolFromSmiles(POISON)], stereo=False)
+    with pytest.raises(RuntimeError, match="1000 raw embeddings"):
+        _core.all_from_pickles(p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at,
+                               p.h_blobs, p.stereo_a, p.stereo_b, errors_out=None, threads=1)
 
 
-def test_on_error_skip_drops_the_row():
-    with pytest.warns(UserWarning, match="no longer aligns"):
-        X = molhume.featurize(["CCO", POISON, "c1ccccc1"], standardize="none",
-                              fingerprint=False, on_error="skip")
-    assert X.shape == (2, 622)
-    clean = _quiet(["CCO", "c1ccccc1"], standardize="none", fingerprint=False)
-    assert np.array_equal(X, clean, equal_nan=True), "skip must not disturb the rows it keeps"
-
-
-def test_a_corrupt_pickle_is_isolated_too():
-    """The parse stage had the same shape of bug: one bad blob aborted the whole batch."""
+def test_a_corrupt_pickle_loses_its_row_and_only_its_row():
+    """A row failure, as opposed to a column one: there is nothing to salvage from this molecule."""
     from molhume import _core
     from molhume._extract import extract_pickles
     from rdkit import Chem
@@ -489,5 +508,35 @@ def test_a_corrupt_pickle_is_isolated_too():
     errs = []
     X = _core.all_from_pickles(blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at,
                                p.h_blobs, p.stereo_a, p.stereo_b, errors_out=errs, threads=1)
-    assert len(errs) >= 1 and errs[0][0] == 1, errs
-    assert np.all(np.isnan(X[1])) and not np.all(np.isnan(X[0])) and not np.all(np.isnan(X[2]))
+    assert errs and errs[0][0] == 1 and errs[0][1] == "row", errs
+    assert np.all(np.isnan(X[1]))
+    assert not np.all(np.isnan(X[0])) and not np.all(np.isnan(X[2]))
+
+
+def test_on_error_branches_on_a_row_failure(monkeypatch):
+    """The three on_error paths, driven by an injected row failure.
+
+    Injected rather than found: the reproducible molecule costs COLUMNS, not its row, and the
+    row-failure path is exercised for real by the corrupt-pickle test above. This checks the
+    Python branching, which is the part that decides what the caller sees.
+    """
+    real = molhume.featurize_all_from_mols
+
+    def fake(mols, **kw):
+        errs = kw.get("errors_out")
+        fp, X, names = real(mols, **{k: v for k, v in kw.items() if k != "errors_out"})
+        if errs is not None and len(mols) > 1:
+            X = X.copy(); X[1] = np.nan
+            errs.append((1, "row", "injected failure"))
+        return fp, X, names
+
+    monkeypatch.setattr(molhume, "featurize_all_from_mols", fake)
+    smis = ["CCO", "c1ccccc1", "CCN"]
+    with pytest.warns(UserWarning, match="still aligns"):
+        X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="nan")
+    assert X.shape == (3, 622) and np.all(np.isnan(X[1]))
+    with pytest.warns(UserWarning, match="no longer aligns"):
+        X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="skip")
+    assert X.shape == (2, 622)
+    with pytest.raises(RuntimeError, match="index 1"):
+        molhume.featurize(smis, standardize="none", fingerprint=False, on_error="raise")

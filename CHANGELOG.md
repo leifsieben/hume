@@ -29,8 +29,8 @@ than a hundred contract violations, several per-molecule and reachable from real
 constit's Kekule reconstruction, infocontent's path explosion, sps, misc_ext.
 
 Both the parse stage and the row loop now isolate per molecule. A molecule that fails gets a row
-of NaN — never a zero — and `(index, message)` is reported. `featurize` isolates unconditionally
-and then applies `on_error`:
+of NaN — never a zero — and `(index, kind, message)` is reported. `featurize` isolates
+unconditionally and then applies `on_error`:
 
 | `on_error` | behavior |
 | --- | --- |
@@ -44,6 +44,35 @@ the finding and should stop the run.
 
 **Surviving rows are bit-identical** to the same molecules featurized without the failing one
 present, which the test suite asserts rather than assumes.
+
+### One uncountable pattern costs one column, not the molecule
+
+Losing 1,269 columns because one of them is ill-defined is a heavy price, so the fragment matcher
+now reports a pattern past the bound as "no count" instead of failing the molecule. That column
+is NaN and everything else in the row is exact.
+
+The dependency set is small and enumerable — only three fragment counts are read back by another
+family:
+
+| uncountable pattern | columns lost |
+| --- | --- |
+| `NumHDonors` | `qed`, `Lipinski` |
+| `NumHAcceptors` | `Lipinski` |
+| `NumRotatableBonds` | `qed`, `RotRatio`, `RotatableBond` |
+
+On the 600-carbon reproducer, two patterns are uncountable and **four columns** are lost —
+`fr_unbrch_alkane`, `RotRatio`, `nRot`, `qed` — with 1,249 of 1,270 cells still finite.
+`constit.h` and `counts_ext.h` are untouched: they are handed a substituted 0 and the four
+affected outputs are overwritten afterwards, so the substitution cannot leak into a column that
+does not depend on it.
+
+**A degraded row is reported as degraded, not as lost.** `featurize` warns naming the molecule,
+the patterns and the reason. A NaN nobody is told about is the failure mode this codebase is
+written against, and the first version of this change produced exactly that — silent NaN columns,
+no warning — which is why the report is a separate `kind` rather than an afterthought.
+
+`errors_out=None` still raises, so the verification scripts are unaffected: there an uncountable
+pattern is the finding and should stop the run.
 
 ## 0.8.0 — 2026-09-02
 
