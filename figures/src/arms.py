@@ -346,7 +346,13 @@ def label(key: str) -> str:
 #: ChemBERTa-2 checkpoints and must not call them the same thing.
 SHORT_LABEL = {
     "ecfp": "ECFP", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
-    "desc": "descriptors", "ecfp_rdkit_desc": "ECFP + RDKit",
+    # "descriptors" WAS AMBIGUOUS AND THE AMBIGUITY MATTERED (Leif 2026-09-02, asking whether it
+    # meant the union). This arm is RDKit's full `Descriptors._descList` (217) concatenated with
+    # Mordred's full 2D `Calculator` (1,613) -- 1,830 columns, overlap between the two libraries
+    # retained, no fingerprint. It is the same descriptor block as `ecfp_all_desc` minus the
+    # ECFP, so the two are named consistently rather than one saying "descriptors" and the other
+    # "all desc" for the identical set.
+    "desc": "RDKit + Mordred", "ecfp_rdkit_desc": "ECFP + RDKit",
     "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
     "hume": "HUME_full", "hume_no_new": "HUME_no_new", "hume_minimal": "HUME_minimal",
     "minimol": "MiniMol",
