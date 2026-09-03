@@ -285,6 +285,9 @@ struct Flat {
   std::vector<double> ac_charge;
   // the two halves of ac_charge, for synthesising the H-added graph. See molpickle::Sink.
   std::vector<double> ac_own, ac_h;
+  //! Per-molecule parse failure, empty when the molecule parsed. Only filled when the caller
+  //! passes an `isolate` sink to fill_from_pickles; otherwise a parse failure still throws.
+  std::vector<std::string> bad;
 };
 
 //! Borrowed views of the caller's bytes objects. Gathered under the GIL, used without it; the
@@ -314,16 +317,32 @@ static Blobs borrow(const py::sequence &pickles) {
 
 //! Two passes: peek every header for its atom/bond counts to build the offsets, then parse.
 //! The peek is 28 bytes per molecule and is what lets the flat arrays be allocated exactly once.
+//! ONE MOLECULE MUST NOT BE ABLE TO KILL A BATCH. With `isolate`, a molecule whose header or
+//! body will not parse is recorded in `f.bad[k]` and every other molecule still gets its row;
+//! without it, the first failure throws, which is the behaviour every verification script wants.
 static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = false,
-                              bool want_ac_split = false) {
+                              bool want_ac_split = false, bool isolate = false) {
   const std::ptrdiff_t nm = (std::ptrdiff_t)b.ptr.size();
   f.atom_off.resize(nm + 1);
   f.bond_off.resize(nm + 1);
   f.chg_ok.resize(nm);
   f.atom_off[0] = f.bond_off[0] = 0;
+  if (isolate) f.bad.assign(nm, std::string());
   for (std::ptrdiff_t k = 0; k < nm; k++) {
     int na = 0, nb = 0;
-    molpickle::peek_sizes(b.ptr[k], b.len[k], na, nb);
+    if (isolate) {
+      // A HEADER THAT WILL NOT PEEK GETS ZERO ATOMS, NOT A DEAD BATCH. The offsets still have to
+      // come out monotone or every molecule after this one reads the wrong slice, so the failure
+      // is recorded and the molecule occupies an empty span.
+      try {
+        molpickle::peek_sizes(b.ptr[k], b.len[k], na, nb);
+      } catch (const std::exception &e) {
+        f.bad[k] = std::string("pickle header: ") + e.what();
+        na = nb = 0;
+      }
+    } else {
+      molpickle::peek_sizes(b.ptr[k], b.len[k], na, nb);
+    }
     f.atom_off[k + 1] = f.atom_off[k] + na;
     f.bond_off[k + 1] = f.bond_off[k] + nb;
   }
@@ -346,8 +365,19 @@ static void fill_from_pickles(const Blobs &b, Flat &f, bool want_ac_charge = fal
                       want_ac_charge ? f.ac_charge.data() + a0 : nullptr,
                       want_ac_split ? f.ac_own.data() + a0 : nullptr,
                       want_ac_split ? f.ac_h.data() + a0 : nullptr};
-    f.chg_ok[k] = molpickle::parse(b.ptr[k], b.len[k], f.atom_off[k + 1] - a0,
-                                   f.bond_off[k + 1] - b0, s, w);
+    if (isolate) {
+      if (!f.bad[k].empty()) { f.chg_ok[k] = 0; continue; }
+      try {
+        f.chg_ok[k] = molpickle::parse(b.ptr[k], b.len[k], f.atom_off[k + 1] - a0,
+                                       f.bond_off[k + 1] - b0, s, w);
+      } catch (const std::exception &e) {
+        f.bad[k] = std::string("pickle body: ") + e.what();
+        f.chg_ok[k] = 0;
+      }
+    } else {
+      f.chg_ok[k] = molpickle::parse(b.ptr[k], b.len[k], f.atom_off[k + 1] - a0,
+                                     f.bond_off[k + 1] - b0, s, w);
+    }
   }
 }
 
@@ -1350,7 +1380,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
                                             ArrI ring_at, py::sequence h_pickles, ArrI stereo_a,
                                             ArrI stereo_b, py::object families,
                                             py::object optional, py::object select,
-                                            int n_threads) {
+                                            py::object errors_out, int n_threads) {
   Blobs b = borrow(pickles);
   // `h_pickles` IS ACCEPTED AND IGNORED. It used to carry Chem.AddHs + a second
   // ComputeGasteigerCharges + a second ToBinary, 53.8 us/mol for one family; all_row() now
@@ -1358,6 +1388,24 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   // old signature keep working, and an EMPTY sequence is the expected value.
   (void)h_pickles;
   const unsigned fams = family_mask(families);
+  // ONE MOLECULE MUST NOT BE ABLE TO KILL A BATCH, AND UNTIL 0.9.0 IT COULD.
+  //
+  // all_row() throws on more than a hundred contract violations, several of them per-molecule
+  // and reachable from real input -- constit's Kekule reconstruction, infocontent's path
+  // explosion, sps, misc_ext. The row loop caught per WORKER, so one bad molecule discarded
+  // every molecule in that thread's shard and then rethrew, taking the whole call with it. A
+  // caller who asked for on_error="nan" was promised a NaN row and got a dead batch instead;
+  // reported from a 35M-molecule run where a single molecule killed the job.
+  //
+  // With `errors_out` a list, every row is isolated: a molecule that throws gets a NaN row, the
+  // index and the message are appended, and every other molecule in the batch is unaffected.
+  // With None the old behaviour stands, which is what the verification scripts want -- there, a
+  // contract violation is the finding and it should stop the run.
+  const bool isolate = !errors_out.is_none();
+  if (isolate && !py::isinstance<py::list>(errors_out))
+    throw std::invalid_argument(
+        "hume._core.all_from_pickles: `errors_out` must be a list (it is appended to as "
+        "(index, message) tuples) or None to let the first failure raise.");
   // WITHIN-FAMILY GATING, FOR THE ONE FAMILY WHERE IT PAYS. `select` is a length-N_EMIT_COLS
   // boolean over the EMITTED columns, or None for all of them. Only spectral reads it: it is the
   // most expensive of the nineteen families (201 us/mol of 929) and it is almost entirely
@@ -1408,6 +1456,9 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
   need(stereo_a.ndim() == 1 && stereo_b.ndim() == 1, "stereo_a / stereo_b must be 1-D");
   const bool have_stereo = stereo_a.shape(0) != 0 || stereo_b.shape(0) != 0;
 
+  //! Declared OUTSIDE the GIL-released block below, because that is where `f` and the row-error
+  //! vector live and die -- appending to a Python list needs the GIL back.
+  std::vector<std::pair<std::ptrdiff_t, std::string>> reported;
   auto out = py::array_t<double>({(std::ptrdiff_t)nm, (std::ptrdiff_t)N_ALL_COLS});
   double *O = out.mutable_data();
   {
@@ -1418,7 +1469,8 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // a boundary array instead.
     // want_ac_split: the H-added graph is synthesised from this parse, so the heavy pickle
     // must yield ac_own / ac_h as well.
-    fill_from_pickles(b, f, /*want_ac_charge=*/false, /*want_ac_split=*/(fams & F_NEEDS_H) != 0);
+    fill_from_pickles(b, f, /*want_ac_charge=*/false, /*want_ac_split=*/(fams & F_NEEDS_H) != 0,
+                      /*isolate=*/isolate);
     // THE SECOND PICKLE IS GONE. `h_pickles` is still accepted so the signature does not break,
     // and is now ignored: the H-added graph and its Gasteiger charges are synthesised from the
     // heavy molecule inside all_row(). What the heavy parse has to produce instead is the two
@@ -1447,6 +1499,7 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
     // aborts with the message lost. all_row() throws std::runtime_error on several contract
     // violations, so every worker catches, stores, and the first one is rethrown after join.
     std::vector<std::exception_ptr> errs;
+    std::vector<std::pair<std::ptrdiff_t, std::string>> row_errs;
     std::mutex errmu;
     auto worker = [&](std::ptrdiff_t lo, std::ptrdiff_t hi) {
       try {
@@ -1454,17 +1507,44 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
       // one full-width scratch row per thread; the output slice holds only the emitted columns
       std::vector<double> row((std::size_t)N_ROW_COLS_ALL);
       for (std::ptrdiff_t k = lo; k < hi; k++) {
-        const int r0 = RM[k], nr = RM[k + 1] - r0;
-        all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
-                f.bond_d.data(), f.atom_off[k], f.bond_off[k], f.atom_off[k + 1] - f.atom_off[k],
-                f.bond_off[k + 1] - f.bond_off[k], f.chg_ok[k], RP + r0, RA, nr,
-                need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
-                need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
-                f.chg_ok[k], SA, SB, fams, opts, spec_want,
-                row.data());
         double *dst = O + (std::ptrdiff_t)k * N_ALL_COLS;
-        for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
-        dst[N_EMIT_COLS] = row[OFF_QED];   // appended last; see the note on OFF_QED
+        auto nan_row = [&] { for (int c = 0; c < N_ALL_COLS; c++) dst[c] = std::nan(""); };
+        if (isolate && !f.bad[k].empty()) {           // failed to parse; already recorded
+          nan_row();
+          continue;
+        }
+        const int r0 = RM[k], nr = RM[k + 1] - r0;
+        auto one = [&] {
+          all_row(W, f.atom_i.data(), f.atom_d.data(), f.bond_i.data(), f.bond_s.data(),
+                  f.bond_d.data(), f.atom_off[k], f.bond_off[k],
+                  f.atom_off[k + 1] - f.atom_off[k], f.bond_off[k + 1] - f.bond_off[k],
+                  f.chg_ok[k], RP + r0, RA, nr,
+                  need_h ? f.ac_own.data() + f.atom_off[k] : nullptr,
+                  need_h ? f.ac_h.data() + f.atom_off[k] : nullptr,
+                  f.chg_ok[k], SA, SB, fams, opts, spec_want,
+                  row.data());
+          for (int c = 0; c < N_EMIT_COLS; c++) dst[c] = row[EMIT_KEEP[c]];
+          dst[N_EMIT_COLS] = row[OFF_QED];   // appended last; see the note on OFF_QED
+        };
+        if (!isolate) {
+          one();
+          continue;
+        }
+        // PER ROW, NOT PER SHARD. Catching around the loop discarded every remaining molecule
+        // this thread owned, so the blast radius of one bad molecule was batch_size/threads
+        // rows, not one. AllWork is reused after a throw: every family writes its own slots from
+        // scratch each row, and `row` is re-initialised at the top of all_row().
+        try {
+          one();
+        } catch (const std::exception &e) {
+          nan_row();
+          std::lock_guard<std::mutex> g(errmu);
+          row_errs.emplace_back((std::ptrdiff_t)k, e.what());
+        } catch (...) {
+          nan_row();
+          std::lock_guard<std::mutex> g(errmu);
+          row_errs.emplace_back((std::ptrdiff_t)k, "unknown C++ exception");
+        }
       }
       } catch (...) {
         std::lock_guard<std::mutex> g(errmu);
@@ -1491,6 +1571,23 @@ static py::array_t<double> all_from_pickles(py::sequence pickles, ArrI ring_moff
       for (auto &th : ts) th.join();
     }
     if (!errs.empty()) std::rethrow_exception(errs.front());
+    // Parse failures and row failures merged and sorted by index, so the caller sees the batch
+    // in input order regardless of which thread found what.
+    if (isolate) {
+      for (std::ptrdiff_t k = 0; k < (std::ptrdiff_t)f.bad.size(); k++)
+        if (!f.bad[k].empty()) reported.emplace_back(k, f.bad[k]);
+      reported.insert(reported.end(), row_errs.begin(), row_errs.end());
+      std::sort(reported.begin(), reported.end(),
+                [](const auto &a, const auto &c) { return a.first < c.first; });
+    }
+  }
+  // Reported to Python OUTSIDE the GIL release above. Parse failures and row failures go into
+  // one list, sorted by index, so the caller sees the batch in input order regardless of which
+  // thread found what.
+  if (isolate && !reported.empty()) {
+    py::list lst = py::cast<py::list>(errors_out);
+    for (const auto &e : reported)
+      lst.append(py::make_tuple((py::ssize_t)e.first, py::str(e.second)));
   }
   return out;
 }
@@ -1686,7 +1783,7 @@ PYBIND11_MODULE(_core, mod) {
           py::arg("ring_ptr"), py::arg("ring_at"), py::arg("h_pickles"), py::arg("stereo_a"),
           py::arg("stereo_b"), py::arg("families") = py::none(),
           py::arg("optional") = py::none(), py::arg("select") = py::none(),
-          py::arg("threads") = 0,
+          py::arg("errors_out") = py::none(), py::arg("threads") = 0,
           "Every natively computed column for a batch of ToBinary() blobs, as "
           "(n_mol, N_ALL_COLS). Pickle-only: RingCount needs the SSSR ring lists, which are in "
           "the pickle and not in the extract() boundary arrays. `stereo_a` / `stereo_b` are "
@@ -1701,7 +1798,12 @@ PYBIND11_MODULE(_core, mod) {
           "means the full suite. A declined column is NaN in its usual position and no offset, "
           "name or column count changes. `select` is a length-N_ALL_COLS boolean over the "
           "EMITTED columns; only the spectral family reads it, and only to skip whole "
-          "eigensolves nobody asked for. Uncomputed spectral slots are NaN, not zero.");
+          "eigensolves nobody asked for. Uncomputed spectral slots are NaN, not zero. "
+          "`errors_out`, when a list, ISOLATES EVERY MOLECULE: one that fails to parse or throws "
+          "out of the descriptor code gets a row of NaN, (index, message) is appended to the "
+          "list, and the rest of the batch is unaffected. None keeps the old behaviour, where "
+          "the first failure raises and the batch is lost -- which is what the verification "
+          "scripts want and what molhume.featurize(on_error='nan') must never do.");
   mod.def("all_column_names_tail", &all_column_names_tail,
           "Column names for everything after the first 182; src/hume/_columns.py names those.");
 }

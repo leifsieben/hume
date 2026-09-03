@@ -116,7 +116,7 @@ Passing `"none"` explicitly is silent; omitting it warns.
 | `fingerprint` | `True` | append `fp_size` ECFP bit columns after the descriptors, so descriptor indices do not shift when the flag changes. Off saves about 30 us/molecule that cannot be threaded |
 | `fp_radius` | `3` | ECFP radius |
 | `fp_size` | `2048` | ECFP bits |
-| `on_error` | `"nan"` | unparseable SMILES: `"nan"` keeps the row and fills it, preserving alignment with the input; `"raise"`; `"skip"` drops the row |
+| `on_error` | `"nan"` | a molecule that cannot be parsed **or cannot be featurized**: `"nan"` keeps the row and fills it, preserving alignment with the input; `"raise"` names the molecule and the reason; `"skip"` drops the row. Every molecule is isolated, so one failure never costs another its row |
 | `dtype` | `float64` | `float32` halves memory and is what the boosting libraries convert to internally |
 | `batch_size` | `4096` | rows per batch. Affects memory, not values |
 

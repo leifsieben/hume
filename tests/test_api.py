@@ -411,3 +411,83 @@ def test_appending_qed_moved_no_other_column():
     assert full == molhume.ALL_COLUMNS[:len(full)], (
         "appending qed was supposed to leave the 1,269 in place and it did not")
     assert len(full) == 1269
+
+
+# ------------------------------------------------- one molecule must not kill a batch
+
+#: An unbranched chain long enough that `fr_unbrch_alkane` exceeds 1000 raw embeddings. Until
+#: 0.9.0 this called std::abort() inside the fragment matcher -- a hard process kill, uncatchable
+#: from Python, which made on_error="nan" a promise the library could not keep. Reported from a
+#: 35M-molecule run where a single molecule ended the job.
+POISON = "C" * 600
+
+
+def test_the_poison_molecule_does_not_kill_the_process():
+    """If this regresses the test process dies, so a failure here is not a normal assertion."""
+    with pytest.warns(UserWarning, match="could not be featurized"):
+        X = molhume.featurize([POISON], standardize="none", fingerprint=False, on_error="nan")
+    assert X.shape == (1, 622) and np.all(np.isnan(X))
+
+
+def test_a_bad_molecule_nans_only_its_own_row():
+    smis = ["CCO", POISON, "c1ccccc1O", "CC(=O)Oc1ccccc1C(=O)O"]
+    with pytest.warns(UserWarning, match="could not be featurized"):
+        X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="nan")
+    assert X.shape == (4, 622)
+    assert np.all(np.isnan(X[1])), "the failing molecule must be a NaN row"
+    # NOT "no NaN in the other rows": plenty of descriptors are legitimately NaN on a small
+    # molecule. The property that matters is that the survivors are UNCHANGED, so compare them
+    # against the same molecules featurized without the poison present.
+    clean = _quiet([s for i, s in enumerate(smis) if i != 1], standardize="none",
+                   fingerprint=False)
+    assert np.array_equal(X[[0, 2, 3]], clean, equal_nan=True), (
+        "the surviving rows must be bit-identical to the same molecules featurized alone")
+
+
+@pytest.mark.parametrize("threads", [1, 0])
+def test_the_blast_radius_is_one_row_not_one_shard(threads):
+    """The catch used to be per WORKER, so one molecule discarded that thread's whole chunk."""
+    smis = ["CCO"] * 40 + [POISON] + ["c1ccccc1O"] * 40
+    with pytest.warns(UserWarning, match="could not be featurized"):
+        X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="nan",
+                              threads=threads, batch_size=16)
+    nan_rows = sorted(int(i) for i in np.where(np.all(np.isnan(X), axis=1))[0])
+    assert nan_rows == [40], f"expected exactly row 40 to be NaN, got {nan_rows}"
+
+
+def test_on_error_raise_names_the_molecule_and_truncates_it():
+    with pytest.raises(RuntimeError, match="index 1"):
+        molhume.featurize(["CCO", POISON], standardize="none", on_error="raise")
+    try:
+        molhume.featurize(["CCO", POISON], standardize="none", on_error="raise")
+    except RuntimeError as e:
+        assert "600 chars" in str(e) and "..." in str(e), (
+            "the message must name the molecule's length and elide its body")
+        assert len(str(e)) < 700, (
+            f"the message is {len(str(e))} chars; it quotes the molecule in full and buries its "
+            "own explanation")
+
+
+def test_on_error_skip_drops_the_row():
+    with pytest.warns(UserWarning, match="no longer aligns"):
+        X = molhume.featurize(["CCO", POISON, "c1ccccc1"], standardize="none",
+                              fingerprint=False, on_error="skip")
+    assert X.shape == (2, 622)
+    clean = _quiet(["CCO", "c1ccccc1"], standardize="none", fingerprint=False)
+    assert np.array_equal(X, clean, equal_nan=True), "skip must not disturb the rows it keeps"
+
+
+def test_a_corrupt_pickle_is_isolated_too():
+    """The parse stage had the same shape of bug: one bad blob aborted the whole batch."""
+    from molhume import _core
+    from molhume._extract import extract_pickles
+    from rdkit import Chem
+    mols = [Chem.MolFromSmiles(s) for s in ("CCO", "c1ccccc1", "CCN")]
+    p = extract_pickles(mols, stereo=False)
+    blobs = list(p.blobs)
+    blobs[1] = blobs[1][:12] + b"\xff" * 8 + blobs[1][20:]      # corrupt the middle molecule
+    errs = []
+    X = _core.all_from_pickles(blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at,
+                               p.h_blobs, p.stereo_a, p.stereo_b, errors_out=errs, threads=1)
+    assert len(errs) >= 1 and errs[0][0] == 1, errs
+    assert np.all(np.isnan(X[1])) and not np.all(np.isnan(X[0])) and not np.all(np.isnan(X[2]))

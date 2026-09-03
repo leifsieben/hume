@@ -231,6 +231,9 @@ def featurize_blocks_from_mols(mols: Sequence, batch_size: int = 4096, reader: s
     out = np.empty((len(mols), N_COLS), dtype=np.float64)
     for lo in range(0, len(mols), batch_size):
         chunk = mols[lo:lo + batch_size]
+        # Per CHUNK, then shifted into batch coordinates: the extension indexes the chunk it was
+        # handed and the caller counts from the start of the batch.
+        _chunk_errors = [] if errors_out is not None else None
         if reader == "pickle":
             # `stereo=False`: the 182 blocks read neither potential-stereo array, and running the
             # perception for them would add 52 us/mol -- a third of this path's whole boundary --
@@ -266,7 +269,8 @@ def featurize_blocks(smiles: Iterable[str], batch_size: int = 4096, reader: str 
 
 def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: int = 3,
                             threads: int = 0, fingerprint: bool = True,
-                            fp_size: int = 2048, optional=None, families=None, select=None):
+                            fp_size: int = 2048, optional=None, families=None, select=None,
+                            errors_out=None):
     """-> ``(fp, X, ALL_COLUMNS)``: the ECFP and every natively computed descriptor column.
 
     ``fp`` is ``(len(mols), fp_size)`` uint8 Morgan/ECFP with chirality; ``X`` is
@@ -280,6 +284,11 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         optional=None                default: `AvgIpc` on, `qed` off
         optional=()                  neither
         optional=("qed", "AvgIpc")   the full suite, and what the exactness claims are measured on
+
+    ``errors_out``, when a list, ISOLATES EVERY MOLECULE. One that fails to parse or throws out
+    of the descriptor code gets a row of NaN, ``(index, message)`` is appended, and the rest of
+    the batch is unaffected. ``None`` keeps the raising behaviour, which is what the verification
+    scripts want. `featurize` always passes a list -- see the note on `on_error` there.
 
     ``families`` NAMES THE FAMILIES TO COMPUTE, `None` meaning all of them. Unlike `optional`,
     the columns of a family left out are ZERO, not NaN -- so this is only safe when the caller
@@ -322,6 +331,9 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     X = np.empty((len(mols), N_ALL_COLS), dtype=np.float64)
     for lo in range(0, len(mols), batch_size):
         chunk = mols[lo:lo + batch_size]
+        # Per CHUNK, then shifted into batch coordinates: the extension indexes the chunk it was
+        # handed and the caller counts from the start of the batch.
+        _chunk_errors = [] if errors_out is not None else None
         # `stereo=False` SINCE SPS MOVED TO C++. `_potential_stereo` existed for exactly one
         # column, and src/hume_core/sps.h now perceives potential stereo itself from boundary
         # fields the blobs already carry -- bit-identical to Chem.SpacialScore.SPS on 6,600
@@ -337,7 +349,10 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
         X[lo:lo + len(chunk)] = _core.all_from_pickles(
             p.blobs, p.rings.ring_moff, p.rings.ring_ptr, p.rings.ring_at, p.h_blobs,
             p.stereo_a, p.stereo_b, families=families, optional=optional, select=select,
+            errors_out=(None if errors_out is None else _chunk_errors),
             threads=threads)
+        if errors_out is not None:
+            errors_out.extend((lo + i, msg) for i, msg in _chunk_errors)
         if fingerprint:
             for i, m in enumerate(chunk):
                 fp[lo + i] = gen.GetFingerprintAsNumPy(m)
@@ -809,10 +824,47 @@ def featurize(smiles: Iterable, *, columns="minimal", standardize=_UNSET, thread
     idx, names = _resolve_columns(columns)
     families, optional, select = _compute_plan(idx)
 
+    # EVERY MOLECULE IS ISOLATED, WHATEVER on_error SAYS, and `on_error` then decides what to do
+    # with the ones that failed. Before 0.9.0 the descriptor code could throw straight out of the
+    # batch -- or, at three sites in the fragment matcher, kill the process outright -- so
+    # on_error="nan" was a promise the library could not keep: one molecule in ~35M took the
+    # whole job with it. Isolating first and deciding second is what makes the contract real.
+    compute_errors: list = []
     fp_g, X_g, _ = featurize_all_from_mols(
         good, batch_size=batch_size, fp_radius=fp_radius, fp_size=fp_size,
         families=families, optional=optional, select=select, threads=threads,
-        fingerprint=fingerprint)
+        fingerprint=fingerprint, errors_out=compute_errors)
+
+    if compute_errors:
+        # Back into the caller's coordinates: `good` is the parsed subset, `keep_rows` maps it
+        # to the input. An index the caller cannot look up is not a useful error message.
+        failed = [(keep_rows[i], msg) for i, msg in compute_errors]
+        first_i, first_msg = failed[0]
+        # TRUNCATED. The molecule that triggered this in practice was a 600-character chain,
+        # and an error message that quotes it in full buries its own explanation.
+        src = items[first_i]
+        if isinstance(src, str):
+            shown = src if len(src) <= 60 else src[:57] + "..."
+            where = f"index {first_i} ({shown!r}, {len(src)} chars)"
+        else:
+            where = f"index {first_i}"
+        if on_error == "raise":
+            raise RuntimeError(
+                f"{len(failed)} of {len(items)} molecules could not be featurized. First at "
+                f"{where}: {first_msg} -- pass on_error='nan' to get a NaN row for these and "
+                "keep the rest of the batch, or on_error='skip' to drop them.")
+        warnings.warn(
+            f"{len(failed)} of {len(items)} molecules could not be featurized and are "
+            + ("NaN rows; the output still aligns with the input. "
+               if on_error == "nan" else
+               "dropped, so the output no longer aligns with the input. ")
+            + f"First at {where}: {first_msg}",
+            UserWarning, stacklevel=2)
+        if on_error == "skip":
+            drop = {i for i, _ in compute_errors}
+            sel = [i for i in range(len(good)) if i not in drop]
+            X_g, fp_g = X_g[sel], fp_g[sel]
+            keep_rows = [keep_rows[i] for i in sel]
 
     if idx is not None:
         X_g = X_g[:, idx]

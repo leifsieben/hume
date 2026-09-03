@@ -1,5 +1,50 @@
 # Changelog
 
+## 0.9.0 — 2026-09-02
+
+**One molecule could kill the process. `on_error="nan"` could not save you, and at three sites
+nothing could.**
+
+Reported from a 35M-molecule run: roughly one molecule in 35M ended the job, and any batch
+containing it died. Two independent defects, both fixed.
+
+### `std::abort()` in a library
+
+`frag_matcher.h` called `std::abort()` at three sites — a hard process kill. It cannot be caught
+from Python, so `on_error="nan"` was a promise the library had no way to keep; there was no
+exception, no molecule index, and every other molecule in the process died with it.
+
+The load-bearing site is the 1000-embedding bound. RDKit's `GetSubstructMatches` defaults to
+`maxMatches=1000` and truncates **before** uniquifying, so past that bound RDKit's own count is
+order-dependent and agreeing with it is not possible. That reasoning is right and is kept — the
+mechanism was wrong. All three now throw. The measured maximum on `cpp/hard.smi` was 180, a 5.5x
+margin; an unbranched chain of about 600 carbons goes straight through it, which is the
+reproducer now in the test suite.
+
+### The blast radius was a shard, not a row
+
+The row loop caught exceptions per **worker**, so one bad molecule discarded every molecule in
+that thread's chunk and then rethrew, taking the whole call with it. `all_row` throws on more
+than a hundred contract violations, several per-molecule and reachable from real input —
+constit's Kekule reconstruction, infocontent's path explosion, sps, misc_ext.
+
+Both the parse stage and the row loop now isolate per molecule. A molecule that fails gets a row
+of NaN — never a zero — and `(index, message)` is reported. `featurize` isolates unconditionally
+and then applies `on_error`:
+
+| `on_error` | behavior |
+| --- | --- |
+| `"nan"` (default) | NaN row, warning naming the index and the molecule, output still aligned |
+| `"skip"` | row dropped, warning saying alignment is lost |
+| `"raise"` | `RuntimeError` naming the index, the molecule (elided if long) and the reason |
+
+`featurize_all_from_mols(..., errors_out=[])` exposes the same isolation. Passing `None` keeps
+the raising behavior, which is what the verification scripts want: there a contract violation is
+the finding and should stop the run.
+
+**Surviving rows are bit-identical** to the same molecules featurized without the failing one
+present, which the test suite asserts rather than assumes.
+
 ## 0.8.0 — 2026-09-02
 
 **`qed` is emittable, appended last, and in none of the three sets.**

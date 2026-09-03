@@ -282,8 +282,10 @@ class Matcher {
       case ops::OP_ATOMINRING: r = ((mol_->nring[a] != 0) ? 1 : 0) == q.val; break;
       case ops::OP_RECURSIVESTRUCTURE: r = recursive(q.val, a); break;
       default:
-        std::fprintf(stderr, "fragmatch: atom opcode %d unimplemented\n", (int)q.op);
-        std::abort();
+        // Thrown, not aborted, for the reason at the 1000-embedding site: a library must not
+        // kill the host process, and the caller can be told which molecule by index.
+        throw std::runtime_error("fragmatch: atom opcode " + std::to_string((int)q.op) +
+                                 " unimplemented");
     }
     return q.neg ? !r : r;
   }
@@ -305,8 +307,10 @@ class Matcher {
       case ops::OP_SINGLEORAROMATICBOND:
         r = (mol_->border[e] == BO_SINGLE || mol_->border[e] == BO_AROMATIC); break;
       default:
-        std::fprintf(stderr, "fragmatch: bond opcode %d unimplemented\n", (int)q.op);
-        std::abort();
+        // Thrown, not aborted, for the reason at the 1000-embedding site: a library must not
+        // kill the host process, and the caller can be told which molecule by index.
+        throw std::runtime_error("fragmatch: bond opcode " + std::to_string((int)q.op) +
+                                 " unimplemented");
     }
     return q.neg ? !r : r;
   }
@@ -423,10 +427,20 @@ class Matcher {
         // See the header: RDKit truncates at 1000 BEFORE uniquifying, so a corpus that reaches
         // this bound makes RDKit's own answer order-dependent.  Measured max on cpp/hard.smi is
         // 180.  Fail loudly rather than disagree quietly.
-        std::fprintf(stderr, "fragmatch: pattern %s hit 1000 raw embeddings -- RDKit's "
-                             "maxMatches default would truncate here and its count would become "
-                             "order-dependent\n", P.label);
-        std::abort();
+        // THROW, DO NOT KILL THE PROCESS. The bound itself is right -- RDKit truncates at
+        // maxMatches=1000 BEFORE uniquifying, so past it RDKit's own count is order-dependent
+        // and agreeing with it is not possible. What was wrong was the mechanism: a hard process
+        // kill cannot be caught, so molhume.featurize(on_error="nan") could not honour its
+        // contract, no index identified the molecule, and every other molecule in the process
+        // died with it. Reported from a 35M-molecule run where one molecule ended the job.
+        //
+        // The measured max on cpp/hard.smi was 180, a 5.5x margin, and a large enough corpus
+        // went straight through it: an unbranched chain of about 600 carbons is enough.
+        throw std::runtime_error(
+            std::string("fragmatch: pattern ") + P.label + " hit 1000 raw embeddings on this "
+            "molecule. RDKit's maxMatches default truncates before uniquifying, so its own count "
+            "would be order-dependent here, and this library will not agree quietly with a "
+            "number that is not well defined.");
       }
       return true;
     }
