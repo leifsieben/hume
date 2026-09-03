@@ -14,7 +14,7 @@ DATA = Path(__file__).parent / "data"
 
 @pytest.fixture(scope="session")
 def smiles():
-    return DATA.joinpath("fixture_smiles.txt").read_text().split()
+    return DATA.joinpath("fixture_smiles.txt").read_text(encoding="utf-8").split()
 
 
 @pytest.fixture(scope="session")

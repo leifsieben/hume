@@ -30,10 +30,10 @@ def _mols(n=250):
     import pathlib
     src = pathlib.Path(__file__).resolve().parents[1] / "cpp" / "hard.smi"
     if src.exists():
-        smis = [l.split()[0] for l in src.read_text().splitlines() if l.strip()][:n]
+        smis = [l.split()[0] for l in src.read_text(encoding="utf-8").splitlines() if l.strip()][:n]
     else:
         smis = [l.strip() for l in
-                (pathlib.Path(__file__).parent / "data" / "fixture_smiles.txt").read_text().split()]
+                (pathlib.Path(__file__).parent / "data" / "fixture_smiles.txt").read_text(encoding="utf-8").split()]
     out = [m for m in (Chem.MolFromSmiles(s) for s in smis) if m is not None]
     assert out, "no molecules parsed for the gating test"
     return out
@@ -228,7 +228,7 @@ def test_no_int_cast_reads_a_row_value_that_can_be_nan():
     import pathlib
     import re
     src = (pathlib.Path(__file__).resolve().parents[1] / "src" / "hume_core" / "bindings.cpp")
-    bad = [f"{i}: {ln.strip()}" for i, ln in enumerate(src.read_text().splitlines(), 1)
+    bad = [f"{i}: {ln.strip()}" for i, ln in enumerate(src.read_text(encoding="utf-8").splitlines(), 1)
            if re.search(r"\(int\)\s*out\[", ln)]
     assert not bad, (
         "a row value is cast to int, and the row can hold NaN:\n    " + "\n    ".join(bad)

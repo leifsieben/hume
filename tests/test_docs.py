@@ -19,6 +19,11 @@ import molhume
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 
+#: ALWAYS encoding="utf-8" WHEN READING THE DOCS. Path.read_text() with no encoding uses the
+#: LOCALE default, which is cp1252 on the Windows runner -- so every file here with an em-dash in
+#: it raised UnicodeDecodeError and this whole module failed on one platform only. The repository
+#: is UTF-8; say so rather than inheriting whatever the host thinks.
+
 #: Docs that describe the package AS IT IS. A stale number in one of these is a bug.
 CURRENT = ["README.md", "MAINTENANCE.md", "METHODS.md", "docs/HUME_DESCRIPTORS.md",
            "docs/DESCRIPTOR_MAP.md", "HANDOVER_minimal_v2.md"]
@@ -39,7 +44,7 @@ def test_no_superseded_column_counts(doc):
     # PARAGRAPH-SCOPED, NOT LINE-SCOPED. A note that says "this used to read 1,266" is the fix
     # and not the bug, and the disclaimer is rarely on the same line as the number -- the first
     # version of this test flagged its own correction notice for exactly that reason.
-    lines = p.read_text().splitlines()
+    lines = p.read_text(encoding="utf-8").splitlines()
     paras, start = [], 0
     for i, ln in enumerate(lines):
         if not ln.strip():
@@ -81,7 +86,7 @@ def test_no_pre_rename_package_name(doc):
     if not p.exists():
         pytest.skip(f"{doc} is gone")
     bad = [f"{doc}:{i}: {ln.strip()[:110]}"
-           for i, ln in enumerate(p.read_text().splitlines(), 1)
+           for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
            if re.search(r"(?<![-\w.])hume\.(featurize|ALL_COLUMNS|feature_names|column_set)", ln)
            or re.search(r"^\s*import hume\s*$", ln)]
     assert not bad, ("the pre-rename package name is used as if it still worked:\n    "
@@ -90,7 +95,7 @@ def test_no_pre_rename_package_name(doc):
 
 def test_minimal_spec_v1_is_marked_superseded():
     """It documents a withdrawn spec and several files still cite its sections."""
-    head = (ROOT / "docs" / "MINIMAL_SPEC.md").read_text()[:1500]
+    head = (ROOT / "docs" / "MINIMAL_SPEC.md").read_text(encoding="utf-8")[:1500]
     assert "SUPERSEDED" in head and "minimal-v1" in head, (
         "docs/MINIMAL_SPEC.md describes the withdrawn v1 ordering. Without a banner it reads as "
         "the method behind the shipped set, which is what it says in its own first line.")
