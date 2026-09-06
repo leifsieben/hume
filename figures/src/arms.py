@@ -96,14 +96,22 @@ SHADES = {
                "#A87A22",   # [3] ECFP + RDKit only
                "#E0BC80",   # [4] ECFP + Mordred only
                "#C8912F"],  # [5] descriptors alone (mid, saturated -- CLIMB's ECFP4+desc hex)
-    # A RAMP, DARK TO LIGHT BY COLUMN COUNT, so the eye reads width off the shade without the
-    # legend: HUME_full 1,269 is darkest, HUME_default 408 lightest. Same hue throughout --
-    # these are one method at three widths, not three competitors, and a hue change would say
-    # otherwise. The four lightness steps stay far enough apart to survive grayscale printing.
-    "hume":   ["#0F3527",   # [0] HUME_full      1,269 -- darkest
-               "#2A7F62",   # [1] HUME_no_new    1,109
-               "#63B097",   # [2] HUME_default     408 -- lightest of the drawn three
-               "#9ED3C0"],  # [3] the undrawn minimal specs (622, 256)
+    # THREE DISTINCT GREEN HUES, not three shades of one (Leif 2026-09-06). A shade ramp alone
+    # put the three arms within a few pixels of each other on Figure C's cost axis and they were
+    # not separable at print size. The hue sweeps blue-green -> green -> yellow-green AND the
+    # lightness rises with it, so the arms are distinguishable twice over: by hue in colour, and
+    # by lightness in greyscale, which is what the rest of this palette relies on.
+    #
+    # Still one FAMILY -- every arm is a green -- because these are one method at three widths
+    # rather than three competitors. Green is free here: the other families are amber (anchor),
+    # blue (desc), red (clm), purple (graph), slate (proxy) and grey (control), so nothing in
+    # this space is contested.
+    #
+    # Ordered by column count, so darkness still tracks width without reading the legend.
+    "hume":   ["#0B5C4A",   # [0] HUME_full      1,269 -- deep blue-green, darkest
+               "#3E9B4F",   # [1] HUME_no_new    1,109 -- true green
+               "#8FC33F",   # [2] HUME_default     408 -- yellow-green, lightest of the drawn
+               "#C9E3A0"],  # [3] the undrawn minimal specs (622, 256) -- pale
     "desc":   ["#2E6FAF", "#6396CA", "#A3C3E2"],
     # FIVE clm shades, not three: Figures B and C draw ChemBERTa-2 TWICE (the MLM and MTR
     # pretraining variants, see the ARMS entries) and add CDDD, whose input is also a string.
