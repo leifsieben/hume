@@ -294,3 +294,55 @@ effect has to be measured; it cannot be summed.
   combination is no better than a random subset of the same size, then nothing about *which*
   columns were chosen matters and the result is purely about column count. That would be worth
   knowing and would change what HUME_300 can claim.
+
+
+---
+
+## 8. The combination composes, and WHICH columns go matters decisively
+
+33 datasets, against the 590 baseline. Positive = worse.
+
+| arm | cols | median | worse on | p |
+| --- | ---: | ---: | ---: | ---: |
+| **`combo418`** | 418 | **+0.17%** | 19/33 | **0.846** |
+| `random418` (3 seeds pooled) | 418 | +1.44% | 28/33 | **0.000** |
+| `random300` (3 seeds pooled) | 300 | +2.54% | 31/33 | **0.000** |
+
+| comparison | median | first worse on | p |
+| --- | ---: | ---: | ---: |
+| `combo418` vs `random418` | −1.17pp | 5/33 | **0.000** |
+
+**Three findings, and the middle one is the important one.**
+
+1. **The reductions compose. 590 → 418 is free.** p = 0.846 against the baseline, worse on 19 of
+   33 — a coin flip. The non-composition risk was real and did not materialise.
+
+2. **⚠️ WHICH COLUMNS ARE DROPPED MATTERS, DECISIVELY.** A *random* 418 costs a median 1.44% and
+   is worse on 28 of 33 (p = 0.000); the principled 418 costs nothing. Head to head, the
+   principled set wins on 28 of 33 at p = 0.000. **This is what justifies the whole selection
+   exercise** — without it, HUME_300 would be a statement about column count and nothing else.
+
+3. **300 is not free by accident.** A random 300 costs a median 2.54% and is worse on 31 of 33.
+   It has to be earned.
+
+### What the principle actually is — and it is not what §7 was testing
+
+§7 found that within a sweep, either half suffices: low orders are not better than high orders.
+§8 finds that the principled combination beats a random subset of the same size. Those are not in
+tension, and together they identify the mechanism:
+
+> **What matters is COVERAGE ACROSS FAMILIES, not which end of a sweep is kept.**
+
+The principled 418 keeps some of every sweep and every family. A random 418 can, by chance,
+strip a small family bare — and the small families are where the non-redundant information is.
+That is why stratification wins while ordering does not.
+
+⚠️ This was not the hypothesis. §7 was written expecting low orders and short lags to carry the
+signal; that failed at p = 0.060 at best. The principle that survived is the one the control
+found, not the one the design proposed, and it is recorded that way round on purpose.
+
+### Next: 418 → 300, stratified
+
+Applying the same rule again — proportional reduction within every family, so coverage is
+preserved — against the `random300` control that is already measured at +2.54%. Arms at 250, 300
+and 350 to find where it breaks rather than assuming 300 is the right stopping point.
