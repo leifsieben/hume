@@ -141,3 +141,33 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+def job_seeded(payload):
+    """Like job(), but any arm whose name starts with "null" is fit with a different seed.
+
+    That arm changes NOTHING about the columns -- it is the full set scored twice -- so its
+    spread across panels is the noise floor of the panel itself, which is what the decision
+    thresholds are calibrated against.
+    """
+    import xgboost as xgb
+    f, arms = payload
+    names, task, X, y, folds = load(f)
+    pos = {c: i for i, c in enumerate(names)}
+    out = {}
+    for arm, cols in arms.items():
+        idx = [pos[c] for c in cols if c in pos]
+        seed = 12345 if arm.startswith("null") else 0
+        per = []
+        for k in sorted(set(folds.tolist())):
+            tr, te = folds != k, folds == k
+            M = (xgb.XGBClassifier if task == "classif" else xgb.XGBRegressor)(
+                n_estimators=300, max_depth=6, random_state=seed, n_jobs=2, verbosity=0,
+                colsample_bynode=0.3, tree_method="hist",
+                **({"eval_metric": "logloss"} if task == "classif" else {}))
+            M.fit(X[np.ix_(tr, idx)], y[tr])
+            p = (M.predict_proba(X[np.ix_(te, idx)])[:, 1] if task == "classif"
+                 else M.predict(X[np.ix_(te, idx)]))
+            per.append(metric(task, y[te], p))
+        out[arm] = per
+    return f.split("/")[-1][:-4], task, out

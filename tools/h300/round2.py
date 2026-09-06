@@ -114,12 +114,14 @@ def build_pool_and_eff(util):
 
 def stage_ladder(out_path):
     from rankalloc import alloc
-    from strat import job
+    from strat import job_seeded as job
     util = json.load(open("/tmp/r2_utility.json"))
     mn, pool, fam_of, eff, mr = build_pool_and_eff(util)
     print(f"  622 -> pool {len(pool)}   sum of per-family effective ranks = {sum(eff.values())}")
     print(f"  (the pre-registered label-free cross-check on N)")
-    arms = {"full622": mn, f"pool{len(pool)}": pool}
+    # THE NULL ARM: the same columns, a different seed. Its spread across the panels IS the
+    # noise floor, and every threshold in the decision rule is read off it rather than chosen.
+    arms = {"full622": mn, "null622": mn, f"pool{len(pool)}": pool}
     for n in LADDER:
         if n >= len(pool):
             continue
