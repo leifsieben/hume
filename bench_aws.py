@@ -126,6 +126,18 @@ def _run_hume_no_new(job):
     return _run_hume(job, columns="full_no_new")
 
 
+def _run_hume_default(job):
+    """default-v1, 408 columns -- the 0.10.0 default and what `columns="default"` selects."""
+    return _run_hume(job, columns="default")
+
+
+def _run_hume_minimal256(job):
+    """minimal-v3, 256 columns. Named by VERSION, not by the short name: `minimal` meant 622
+    before 0.10.0, and a benchmark that says "minimal" without saying which is unreadable a
+    release later."""
+    return _run_hume(job, columns="minimal-v3")
+
+
 def _init_ecfp_r2():
     _quiet()
     global _GEN
@@ -404,6 +416,8 @@ ARMS = {
     "hume":         (_init_hume, _run_hume,         [1024, 4096, 16384]),
     "hume_minimal": (_init_hume, _run_hume_minimal, [1024, 4096, 16384]),
     "hume_no_new":  (_init_hume, _run_hume_no_new,  [1024, 4096, 16384]),
+    "hume_default":     (_init_hume, _run_hume_default,     [1024, 4096, 16384]),
+    "hume_minimal256":  (_init_hume, _run_hume_minimal256,  [1024, 4096, 16384]),
     "mordred":   (_init_mordred,   _run_mordred,   [4096]),
     "chemberta": (_init_chemberta, _run_chemberta, [1, 32, 128, 512]),
     "chemeleon": (_init_chemeleon, _run_chemeleon, [64, 256, 1024]),

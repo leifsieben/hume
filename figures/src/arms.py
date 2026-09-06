@@ -201,6 +201,12 @@ ARMS = {
     # of the nineteen families, so there is nothing for the plan to skip. Any figure that still
     # draws the three at one x is reading a pre-0.7.0 cost file.
     "hume_minimal": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][2]),
+    # THE 0.10.0 SPECS. HUME_default is 408 columns and is free against HUME_full on 33 held-out
+    # panels (+0.30%, p=0.711); HUME_minimal256 is 256 and is not (+2.49% on classification).
+    # ⚠️ `hume_minimal` above is the OLD 622-column minimal-v2 and is kept under that key so
+    # existing result files still resolve; the plates draw the two new ones.
+    "hume_default": dict(label="HUME_default", family="hume", color=SHADES["hume"][1]),
+    "hume_minimal256": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][2]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Gray, like every other control in the set.
@@ -321,7 +327,7 @@ ARMS = {
 # the axis the whole paper is about.
 ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
-             "hume", "hume_no_new", "hume_minimal",
+             "hume", "hume_no_new", "hume_minimal", "hume_default", "hume_minimal256",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
              # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all
@@ -354,7 +360,8 @@ SHORT_LABEL = {
     # "all desc" for the identical set.
     "desc": "RDKit + Mordred", "ecfp_rdkit_desc": "ECFP + RDKit",
     "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
-    "hume": "HUME_full", "hume_no_new": "HUME_no_new", "hume_minimal": "HUME_minimal",
+    "hume": "HUME_full", "hume_no_new": "HUME_no_new", "hume_minimal": "HUME_minimal622",
+    "hume_default": "HUME_default", "hume_minimal256": "HUME_minimal",
     "minimol": "MiniMol",
     "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",

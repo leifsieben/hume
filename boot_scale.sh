@@ -134,7 +134,8 @@ import numpy as np
 # NOTE FOR ANYONE EDITING THIS BLOCK: it is inside a DOUBLE-QUOTED shell string, so a double
 # quote here ends the string and the rest becomes shell. That is not hypothetical -- it killed a
 # boot two minutes in, on a line containing a bare quoted question mark.
-for cs, want in (('full', 1269), ('full_no_new', 1109), ('minimal', 622)):
+for cs, want in (('full', 1269), ('full_no_new', 1109), ('minimal-v2', 622),
+                 ('default', 408), ('minimal-v3', 256)):
     X = molhume.featurize(['CC(=O)Oc1ccccc1C(=O)O'], columns=cs, standardize='none', fingerprint=False)
     assert X.shape[1] == want, (cs, X.shape, want)
     assert np.isfinite(X).sum() > want // 2, ('hume produced no values', cs)
@@ -199,7 +200,7 @@ ONLY_ARMS="${ONLY_ARMS:-}"
 want () { [ -z "$ONLY_ARMS" ] && return 0; case " $ONLY_ARMS " in *" $1 "*) return 0;; *) return 1;; esac; }
 EXPECT=""
 if [ "$ROLE" = "cpu" ]; then
-  for ARM in ecfp ecfp_r2 hume hume_minimal hume_no_new descriptastorus chemberta chemprop chemeleon; do
+  for ARM in ecfp ecfp_r2 hume hume_minimal hume_no_new hume_default hume_minimal256 descriptastorus chemberta chemprop chemeleon; do
     want "$ARM" && { run $A "$ARM" cpu; EXPECT="$EXPECT ${ARM}_cpu"; }
   done
   want mordred && { run $B mordred cpu; EXPECT="$EXPECT mordred_cpu"; }
