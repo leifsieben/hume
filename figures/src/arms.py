@@ -96,10 +96,14 @@ SHADES = {
                "#A87A22",   # [3] ECFP + RDKit only
                "#E0BC80",   # [4] ECFP + Mordred only
                "#C8912F"],  # [5] descriptors alone (mid, saturated -- CLIMB's ECFP4+desc hex)
-    "hume":   ["#2A7F62",   # [0] hume_core_custom -- the headline arm
-               "#63B097",   # [1] hume_core
-               "#164A38",   # [2] spare (dark)
-               "#9ED3C0"],  # [3] spare (light)
+    # A RAMP, DARK TO LIGHT BY COLUMN COUNT, so the eye reads width off the shade without the
+    # legend: HUME_full 1,269 is darkest, HUME_default 408 lightest. Same hue throughout --
+    # these are one method at three widths, not three competitors, and a hue change would say
+    # otherwise. The four lightness steps stay far enough apart to survive grayscale printing.
+    "hume":   ["#0F3527",   # [0] HUME_full      1,269 -- darkest
+               "#2A7F62",   # [1] HUME_no_new    1,109
+               "#63B097",   # [2] HUME_default     408 -- lightest of the drawn three
+               "#9ED3C0"],  # [3] the undrawn minimal specs (622, 256)
     "desc":   ["#2E6FAF", "#6396CA", "#A3C3E2"],
     # FIVE clm shades, not three: Figures B and C draw ChemBERTa-2 TWICE (the MLM and MTR
     # pretraining variants, see the ARMS entries) and add CDDD, whose input is also a string.
@@ -200,13 +204,13 @@ ARMS = {
     # cheaper and moves LEFT. HUME_no_new does not move: its 1,109 columns still span every one
     # of the nineteen families, so there is nothing for the plan to skip. Any figure that still
     # draws the three at one x is reading a pre-0.7.0 cost file.
-    "hume_minimal": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][2]),
+    "hume_minimal": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),
     # THE 0.10.0 SPECS. HUME_default is 408 columns and is free against HUME_full on 33 held-out
     # panels (+0.30%, p=0.711); HUME_minimal256 is 256 and is not (+2.49% on classification).
     # ⚠️ `hume_minimal` above is the OLD 622-column minimal-v2 and is kept under that key so
     # existing result files still resolve; the plates draw the two new ones.
-    "hume_default": dict(label="HUME_default", family="hume", color=SHADES["hume"][1]),
-    "hume_minimal256": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][2]),
+    "hume_default": dict(label="HUME_default", family="hume", color=SHADES["hume"][2]),
+    "hume_minimal256": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Gray, like every other control in the set.
