@@ -194,3 +194,52 @@ names.
 
 - **`fr_*` is in scope**, on the owner's call, as theoretically redundant with a good
   fingerprint. It cannot be cut on Stage 1 evidence — see §3(4).
+
+- **DROP 32 OF THE 72 `fr_*` FLAGS. KEEP 40. 622 → 590.** Decided on the Stage 2 ablation below.
+
+### Evidence: the `fr_*` ablation
+
+Split at "reaches the top 50 on ≥3 tasks", giving 40 top / 32 tail. The distribution is smooth
+with no natural gap, so the cut point is a choice and is recorded as one. **The statistic is
+recomputed leave-one-dataset-out**, so the split never sees the data it is scored on.
+
+Four arms, same head, same stored scaffold folds, 33 datasets. `fr_tail` is a **control**: if the
+split means nothing, keeping either half should cost the same.
+
+| arm | columns | median vs 622 | worse on | Wilcoxon vs baseline |
+| --- | ---: | ---: | ---: | ---: |
+| `full` | 622 | — | — | — |
+| `fr_top` — keep the 40 | 590 | **+0.29%** | 18/33 | **p = 0.634** |
+| `fr_tail` — keep the 32 | 582 | +0.45% | 23/33 | p = 0.025 |
+| `no_fr` — drop all 72 | 550 | +1.25% | 27/33 | p = 0.001 |
+
+Paired across datasets, which removes dataset-level variance:
+
+| comparison | median diff | first arm worse on | p |
+| --- | ---: | ---: | ---: |
+| `no_fr` vs `fr_top` | +0.94pp | 23/33 | **0.007** |
+| `fr_top` vs `fr_tail` | −0.45pp | 11/33 | **0.005** |
+| `no_fr` vs `fr_tail` | +0.03pp | 17/33 | 0.930 |
+
+**Three conclusions, in order of how much they are worth.**
+
+1. **The `fr_*` block is load-bearing.** Dropping all 72 costs a median 1.25% and is worse on 27
+   of 33 datasets, p = 0.001. The owner's observation that the flags help XGBoost substantially
+   is confirmed, and the theoretical argument that a good fingerprint makes them redundant does
+   not survive contact with the tree.
+2. **Dropping the 32-column tail is free.** `fr_top` against the full 622 is p = 0.634 — not
+   distinguishable. 32 columns for nothing measurable.
+3. **The split is real, and the control is what establishes it.** `fr_top` beats `fr_tail`
+   paired at p = 0.005, and — the sharper statement — keeping the *wrong* 32 is no better than
+   keeping none at all (`no_fr` vs `fr_tail`, p = 0.930). The tail carries essentially nothing.
+
+⚠️ **This is also the case for the two-stage method.** Stage 1 alone ranked `fr_*` worst of any
+large family and would have deleted all 72, at a measured cost of 1.25%. Stage 2 found that 40
+of them are worth keeping and 32 are free. A ranking would have got this exactly backwards.
+
+⚠️ **Two datasets dominate the arithmetic MEAN and it should not be quoted.** `hia` (−17.15%) and
+`vdss_lombardo` (−19.56%) have fold noise of 29.9% and 16.5%; they drag `fr_top`'s mean to
+−0.62%, which would read as "dropping columns improves the model". Medians and paired tests are
+used throughout for this reason.
+
+**Budget after this decision: 590. 290 still to find, and the sweeps in §0 are where they are.**
