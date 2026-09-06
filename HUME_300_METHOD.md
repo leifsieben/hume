@@ -405,3 +405,96 @@ obstacle — and it is the project owner's decision, not this document's.
 The defensible fallback is **418**, which is free by every test run here and still a 33% cut from
 622. If the budget argument requires 300, the cost above is what to quote; if it requires going
 below 350 at all, **250 costs the same as 300** and should be preferred.
+
+
+---
+
+## 11. The panel was too small, and five of it were spent
+
+Two corrections to everything above sections 3–9, both found by the project owner asking whether
+the measurement covered enough data.
+
+**The panel was 33 datasets; the lake has 37 DEV sets alone.** `tox21`, `sider`, `muv` and
+`toxcast` were absent because they are single CSVs with 12, 27, 17 and 617 label columns and the
+lake loader expects one. Split per endpoint each is an ordinary binary panel. The expanded
+selection panel is **66, with 46 classification against 13 before**.
+
+⚠️ **And five of the original 33 were chempfn LOCKED sets** — `herg` and the four `wong_*` —
+which that project reserves for one evaluation each after freeze. Every ablation in sections 3–9
+ran eleven arms against them. LOCKED/DEV is chempfn's protocol rather than this project's, so
+using them is not itself an error, but *choosing* a spec on sets reserved for final evaluation
+spends them, and it was not a deliberate decision. They are excluded from selection here and are
+**not** reused as held-out either: they are already spent.
+
+Checked rather than assumed: the original "selection beats random" result does **not** depend on
+them. On the 28 DEV panels of the old study, `combo418` still beats `random418` at p = 0.0037.
+
+## 12. Selection on 66 panels
+
+| arm | cols | median | p | vs random of the same size |
+| --- | ---: | ---: | ---: | --- |
+| `combo418` | 411 | −0.19% | 0.468 | — |
+| `rank350` | 350 | −0.38% | 0.132 | −1.17pp, **p = 0.0024** |
+| **`rank300`** | **300** | **−0.33%** | **0.594** | −1.18pp, **p = 0.0027** |
+| `rank250` | 250 | −0.04% | 0.468 | — |
+| `random350` | 350 | +0.69% | **0.033** | |
+| `random300` | 300 | +1.14% | **0.004** | |
+
+**300 is free, and only the right 300.** Every principled arm is indistinguishable from the
+baseline; the random arms get significantly worse as the budget tightens. The effective-rank
+allocation of §8 is what makes the difference.
+
+⚠️ **One control in this run was degenerate and its p-value means nothing.** `random411` drew 411
+columns without replacement from a pool of exactly 411 and therefore returned the pool — it was
+`combo418` under another name, and duly reported a null. Selection at 418 rests on §8 and on the
+28-panel re-check above, not on this run. The later runs draw controls from the 590.
+
+## 13. HELD OUT: one evaluation, 43 panels that chose nothing
+
+Six chempfn LOCKED ADME sets, `cbs`, `freesolv`, `qm7`, `moleculeace`, and 40 `toxcast` endpoints
+sampled evenly across the 617. None influenced any decision in this document.
+
+| arm | cols | median | p | worse on |
+| --- | ---: | ---: | ---: | ---: |
+| `combo418` | 411 | +0.15% | 0.995 | 23/43 |
+| `rank350` | 350 | −1.37% | 0.405 | 19/43 |
+| **`rank300`** | **300** | **−0.00%** | **0.967** | **21/43** |
+| `rank250` | 250 | −1.24% | 0.223 | 16/43 |
+| `random350` | 350 | +1.23% | 0.088 | 26/43 |
+| `random300` | 300 | +0.71% | 0.252 | 25/43 |
+
+**`rank300` costs nothing on data that had no say in choosing it**: median −0.00%, worse on 21 of
+43, which is a coin flip. That is the only number in this study with no optimism in it.
+
+The selection advantage replicates in direction and size — `rank300` vs `random300` is −1.78pp
+held-out against −1.18pp on the selection panel — but at p = 0.073 it is **not significant on 43
+panels**. Under-powered, not contradicted. So: *300 is free* is established on held-out data;
+*this particular 300 is necessary* is supported by the selection panel and only directional here.
+
+## 14. HUME_300
+
+**300 columns, 16 families.** RDKit 90, Mordred 167, ours 43.
+
+| family | n | | family | n |
+| --- | ---: | --- | --- | ---: |
+| blocks | 56 | | rdkcore | 15 |
+| frag | 35 | | spectral | 13 |
+| estate | 31 | | counts | 12 |
+| constit | 28 | | chi | 11 |
+| vsa | 21 | | infocontent | 9 |
+| misc | 18 | | topocharge | 9 |
+| estate_ext | 17 | | topomisc | 8 |
+| ringcount | 16 | | alias | 1 |
+
+Derived as: 622 → 590 (drop the 32 `fr_*` with no task-level utility) → 418 (halve each of eight
+over-resolved parametric sweeps) → 300 (allocate the remaining budget across families in
+proportion to each family's effective rank, not its width).
+
+⚠️ **FIGURE C'S 33 DATASETS ARE SPENT FOR THIS SPEC.** Every selection round used all of them.
+A HUME_300 arm on that plate would carry an advantage the other representations do not, and the
+plate would stop being a comparison of representations. Report HUME_300 from §13 instead, or
+label it on the plate as selection-set performance.
+
+`minimal-v2` (622) is not in this position: it was chosen on mechanism — units, ECFP-carried,
+arithmetic identity — and only *checked* on the 33. The difference between a spec those datasets
+validated and a spec they selected is worth keeping in the write-up.
