@@ -1,5 +1,53 @@
 # Changelog
 
+## 0.10.0 — 2026-09-06
+
+**Two new specs, chosen under a pre-registered rule and evaluated once on held-out data.**
+
+| name | versioned | cols | held-out vs HUME_full (1,269) |
+| --- | --- | ---: | --- |
+| `default` | `default-v1` | **408** | **+0.30%**, 95% CI [−1.13, +0.80], p = 0.711; −0.07% on classification |
+| `minimal` | `minimal-v3` | **256** | +1.47%, CI [−1.16, +1.90]; **+2.49% on classification** |
+| — | `minimal-v2` | 622 | −1.17%, CI [−1.71, −0.30], p = 0.001 — *better* than HUME_full |
+
+**`default` is the new default.** `featurize(smiles)` now returns 408 descriptors.
+
+### ⚠️ `minimal` NOW MEANS 256 COLUMNS. IT MEANT 622 IN 0.4.0–0.9.2.
+
+That is the **fourth** time this short name has changed contents, and it is the last. Passing
+`columns="minimal"` warns once, naming the change and the replacements. The old set has **not**
+moved — it is `columns="minimal-v2"`, frozen, and `minimal_columns()` still returns it.
+
+**Short names are pointers; versioned names are contracts.** Pin `default-v1`, `minimal-v3` or
+`minimal-v2` if the set must not move under you, or read `results/hume_default_408.txt` /
+`results/hume_minimal_256.txt`, which the test suite checks against the package so they cannot
+drift.
+
+### `minimal` (256) is NOT free, and the name does not say so
+
+`default` is free; `minimal` is a deliberate trade. Held out, its overall CI includes zero — so
+there is no *demonstrated* overall cost — but classification carries a CI upper bound of +3.32%
+against a +1.75% noise ceiling. Use it when the token budget is worth about 2.5% on
+classification tasks, and `default` otherwise.
+
+### How they were chosen
+
+`HUME_N_PREREGISTRATION.md`, committed before any result existed. 81 selection panels (tox21,
+sider, toxcast, ADME); the 33 Figure C panels held out from the first line and read once.
+
+The rule chose **200**, and the held-out gate **rejected it** — its 95% CI on Figure C excludes
+zero (+0.14% to +2.62%), and classification reached +4.51% against a +1.75% ceiling. 210 and 256
+failed the same gate. Only the 408-column pool passed, so that is what `default` is.
+
+The selection panel could not see the cost: its median fold noise is 6.59% against 2–5% on
+Figure C, so a real ~1.3% penalty sat inside its resolution. Expanding the panel from 33 to 81
+bought classification breadth and lost precision. **Without the pre-registered held-out gate this
+release would have shipped a 200-column default.**
+
+Selection is nonetheless doing real work: the 200 chosen columns beat 200 random ones by 2.72
+percentage points, worse on 8 of 33, p = 0.0000. They are far better than arbitrary columns —
+just not as good as 408.
+
 ## 0.9.2 — 2026-09-03
 
 **`BalabanJ` returned `+inf` on any disconnected, acyclic molecule.** Salts, solvates and

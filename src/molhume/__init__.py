@@ -483,7 +483,14 @@ _COLUMN_FAMILY: tuple = tuple(
 #: The three named column sets. Values are resolved lazily because `minimal` lives in a generated
 #: module and `full_no_new` needs the additional-descriptor list, and neither is worth importing
 #: for a caller who only ever asks for `full`.
-COLUMN_SETS: tuple[str, ...] = ("minimal", "full_no_new", "full")
+COLUMN_SETS: tuple[str, ...] = ("default", "minimal", "full_no_new", "full")
+
+#: Short names are POINTERS; versioned names are CONTRACTS. `minimal` meant 622 columns in
+#: 0.4.0-0.9.2 and means 256 from 0.10.0. Anything that must not shift across releases should ask
+#: for a versioned name, or read one of the column lists in results/.
+_VERSIONED = {"minimal-v2": "MINIMAL_V2_COLUMNS", "default-v1": "DEFAULT_V1_COLUMNS",
+              "minimal-v3": "MINIMAL_V3_COLUMNS"}
+_MINIMAL_MEANING_WARNED = False
 
 
 def column_set(name: str, *, extra=()) -> tuple:
@@ -523,21 +530,39 @@ def column_set(name: str, *, extra=()) -> tuple:
         base = column_set(name)
         seen = set(base)
         return base + tuple(c for c in extra if c not in seen)
+    global _MINIMAL_MEANING_WARNED
+    from . import _minimal
+    if name in _VERSIONED:
+        return getattr(_minimal, _VERSIONED[name])
     if name == "full":
         return tuple(c for c in ALL_COLUMNS if c not in set(OPTIONAL_COLUMNS))
+    if name == "default":
+        return _minimal.DEFAULT_V1_COLUMNS
     if name == "minimal":
-        from . import _minimal
-        return _minimal.MINIMAL_COLUMNS
+        # LOUD, ONCE. Silently changing what a name returns is how two callers end up disagreeing
+        # about a cached feature matrix, and this name has now moved four times.
+        if not _MINIMAL_MEANING_WARNED:
+            _MINIMAL_MEANING_WARNED = True
+            warnings.warn(
+                "columns='minimal' is 256 columns (minimal-v3) from 0.10.0; it was 622 "
+                "(minimal-v2) in 0.4.0-0.9.2. minimal-v3 is NOT free -- it costs about 2.5% on "
+                "classification against the full set on held-out data. For the free 408-column "
+                "set use columns='default'; for the old behaviour use columns='minimal-v2'. "
+                "Pin a versioned name if the set must not move under you.",
+                UserWarning, stacklevel=3)
+        return _minimal.MINIMAL_V3_COLUMNS
     if name == "full_no_new":
         drop = set(_additional_names()) | set(OPTIONAL_COLUMNS)
         return tuple(c for c in ALL_COLUMNS if c not in drop)
     raise ValueError(
-        f"column_set({name!r}) is not a set this build carries. The three are 'minimal' "
-        f"({len(ALL_COLUMNS)} -> 622 columns, the default), 'full_no_new' (1,109 -- everything "
-        "RDKit or Mordred already defines, without the 160 that are ours) and 'full' (all "
-        "1,269). None of them includes `qed`, which is opt-in for cost: "
-        "column_set('full', extra=['qed']). For anything else, pass a list of column names; "
-        "molhume.ALL_COLUMNS lists every available name.")
+        f"column_set({name!r}) is not a set this build carries. The four short names are "
+        "'default' (408, free against the full set on held-out data and the default here), "
+        "'minimal' (256, cheaper and NOT free -- about 2.5% on classification), 'full_no_new' "
+        "(1,109 -- everything RDKit or Mordred already defines) and 'full' (all 1,269). The "
+        "versioned names are 'default-v1', 'minimal-v3' and 'minimal-v2' (622, what 'minimal' "
+        "meant before 0.10.0); pin one of those if the set must not move between releases. None "
+        "includes `qed`, which is opt-in: column_set('full', extra=['qed']). For anything else "
+        "pass a list of names; molhume.ALL_COLUMNS lists every one.")
 
 
 def _resolve_columns(columns):
@@ -632,7 +657,7 @@ def _compute_plan(idx):
     return fams, opt, select
 
 
-def feature_names(*, columns="minimal", fingerprint: bool = True,
+def feature_names(*, columns="default", fingerprint: bool = True,
                   fp_size: int = 2048) -> tuple:
     """The column names `featurize` produces for the same flags, in the same order.
 
@@ -716,7 +741,7 @@ def _removed_kwarg(removed):
     raise TypeError("featurize(): " + " ".join(lines))
 
 
-def featurize(smiles: Iterable, *, columns="minimal", standardize=_UNSET, threads: int = 0,
+def featurize(smiles: Iterable, *, columns="default", standardize=_UNSET, threads: int = 0,
               fingerprint: bool = True, fp_radius: int = 3, fp_size: int = 2048,
               on_error: str = "nan", dtype=np.float64, batch_size: int = 4096,
               **removed) -> np.ndarray:

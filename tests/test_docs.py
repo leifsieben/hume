@@ -70,7 +70,9 @@ def test_the_live_counts_are_what_the_docs_claim():
     """The numbers the prose is allowed to use, read off the package."""
     assert len(molhume.column_set("full")) == 1269
     assert len(molhume.column_set("full_no_new")) == 1109
-    assert len(molhume.column_set("minimal")) == 622
+    assert len(molhume.column_set("default")) == 408
+    assert len(molhume.column_set("minimal-v3")) == 256
+    assert len(molhume.column_set("minimal-v2")) == 622
     assert len(molhume.ALL_COLUMNS) == 1270
     fams = [f for f, (a, b) in molhume.FAMILY_OFFSETS.items()
             if b > a and f not in molhume.OPTIONAL_COLUMNS]

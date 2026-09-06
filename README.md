@@ -14,7 +14,7 @@ pip install mol-hume
 import molhume
 
 X = molhume.featurize(["CCO", "CC(=O)Oc1ccccc1C(=O)O"], standardize="none")
-# (2, 2670) float64: 622 minimal descriptors, then 2,048 ECFP bits
+# (2, 2456) float64: 408 `default` descriptors, then 2,048 ECFP bits
 
 xgboost.XGBRegressor().fit(X, y)
 ```
@@ -33,11 +33,27 @@ Pass both functions the same arguments and the names line up with the columns.
 One parameter, four ways to answer it:
 
 ```python
-molhume.featurize(smiles, columns="minimal")      # 622, the default
+molhume.featurize(smiles, columns="default")      # 408, the default -- free
+molhume.featurize(smiles, columns="minimal")      # 256 -- cheaper, NOT free
 molhume.featurize(smiles, columns="full_no_new")  # 1,109 -- RDKit and Mordred definitions only
 molhume.featurize(smiles, columns="full")         # all 1,269
 molhume.featurize(smiles, columns=["TPSA", "AvgIpc", "BCUTc-1h"])   # these, in this order
 ```
+
+Measured once on 33 held-out tasks that took no part in choosing them, against the full 1,269:
+
+| set | cols | vs full | classification |
+| --- | ---: | ---: | ---: |
+| `default` | 408 | +0.30%, p = 0.711 | −0.07% |
+| `minimal` | 256 | +1.47% | **+2.49%** |
+| `minimal-v2` | 622 | −1.17%, p = 0.001 | −1.12% |
+
+`default` is free. `minimal` is a stated trade — use it when the budget is worth roughly 2.5% on
+classification. `minimal-v2` is *better* than the full set on this panel.
+
+⚠️ **`minimal` means 256 columns from 0.10.0 and meant 622 before it.** Short names are pointers;
+`default-v1`, `minimal-v3` and `minimal-v2` are contracts. Pin one, or read
+`results/hume_default_408.txt`.
 
 `column_set(name)` returns the names in any of the three sets. `ALL_COLUMNS` lists every name a
 manual selection can use.
@@ -110,7 +126,7 @@ Passing `"none"` explicitly is silent; omitting it warns.
 
 | argument | default | effect |
 | --- | --- | --- |
-| `columns` | `"minimal"` | `"minimal"` (622), `"full_no_new"` (1,109), `"full"` (1,269), or a list of names in the order wanted. Decides what is computed as well as what is returned |
+| `columns` | `"default"` | `"default"` (408), `"minimal"` (256), `"full_no_new"` (1,109), `"full"` (1,269), the versioned `"default-v1"` / `"minimal-v3"` / `"minimal-v2"`, or a list of names in the order wanted. Decides what is computed as well as what is returned |
 | `standardize` | `"none"`, warns if unset | what molecule the numbers describe |
 | `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` when the caller is already parallel; it costs about 3x |
 | `fingerprint` | `True` | append `fp_size` ECFP bit columns after the descriptors, so descriptor indices do not shift when the flag changes. Off saves about 30 us/molecule that cannot be threaded |
