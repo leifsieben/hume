@@ -61,7 +61,7 @@ FIGB_BASES = ["ecfp", "desc", "ecfp_all_desc"]
 FIGB_ANCHOR = "ecfp_all_desc"
 FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
 FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "hume_minimal",
-             "hume", "hume_no_new",
+             "hume", "hume_no_new", "hume_default", "hume_minimal256",
              "minimol", "chemeleon", "chemberta_mtr"]
 #: THE THREE HUME ARMS ARE EACH MEASURED NOW, and none of them is aliased to another.
 #:
@@ -101,6 +101,7 @@ COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
 #: trade. Stated rather than hidden.
 COST_KEY = {"ecfp": "ecfp_r2", "hume": "hume", "chemeleon": "chemeleon",
             "hume_minimal": "hume_minimal", "hume_no_new": "hume_no_new",
+            "hume_default": "hume_default", "hume_minimal256": "hume_minimal256",
             "chemberta_mtr": "chemberta", "minimol": "minimol"}
 
 

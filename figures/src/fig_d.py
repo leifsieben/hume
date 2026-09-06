@@ -84,9 +84,11 @@ LABEL = {
     # THE THREE HUME WIDTHS. They are three arms rather than one because since mol-hume 0.7.0
     # the column selection is a compute plan, so they have three different costs -- before that
     # they were one point and drawing three would have been three markers on top of each other.
-    "hume":         "HUME_full",
-    "hume_minimal": "HUME_minimal",
-    "hume_no_new":  "HUME_no_new",
+    "hume":            "HUME_full",
+    "hume_default":    "HUME_default",
+    "hume_minimal256": "HUME_minimal",
+    "hume_minimal":    "HUME_minimal622",
+    "hume_no_new":     "HUME_no_new",
     "chemprop":  "Chemprop",
     "chemberta": "ChemBERTa",
     "chemeleon": "CheMeleon",
@@ -100,6 +102,7 @@ LABEL = {
 # drawn in two colors across two figures.
 ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
           "hume_minimal": "hume_minimal", "hume_no_new": "hume_no_new",
+          "hume_default": "hume_default", "hume_minimal256": "hume_minimal256",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
           "mordred": "ecfp_all_desc",
           "rdkit_desc": "ecfp_rdkit_desc", "mordred_desc": "ecfp_mordred_desc"}
@@ -108,7 +111,7 @@ ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
 ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
-         "hume_minimal", "hume_no_new", "hume",
+         "hume_default", "hume_minimal256", "hume_minimal", "hume_no_new", "hume",
          "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
@@ -148,7 +151,8 @@ HATCH = "///"
 BAR_LABEL_LIFT = 1.08
 
 
-SHORT = {"ecfp_r2": "ECFP", "hume": "HUME_full", "hume_minimal": "HUME_minimal",
+SHORT = {"ecfp_r2": "ECFP", "hume": "HUME_full", "hume_default": "HUME_default",
+         "hume_minimal256": "HUME_minimal", "hume_minimal": "HUME_minimal622",
          "hume_no_new": "HUME_no_new", "chemprop": "chemprop",
          "chemberta": "ChemBERTa", "chemeleon": "CheMeleon",
          "rdkit_desc": "+RDKit", "mordred_desc": "+Mordred", "mordred": "+all desc"}

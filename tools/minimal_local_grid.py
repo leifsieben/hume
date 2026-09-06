@@ -90,8 +90,14 @@ def score(ds, cols):
             m.fit(F[tr], y[tr]); out.append(float(np.sqrt(np.mean((y[te] - m.predict(F[te])) ** 2))))
     return np.array(out), task
 
-FULL = set(names); MIN = set(molhume.minimal_columns())
-print(f"  hume {len(FULL)} columns vs hume_minimal {len(MIN)}\n  caching:")
+FULL = set(names)
+# THE ARMS TO SCORE, by VERSIONED spec name. `minimal` moved from 622 to 256 in 0.10.0, so a row
+# labelled with the short name would be ambiguous the moment it is read back.
+ARMS = {"hume_default": set(molhume.column_set("default-v1")),
+        "hume_minimal256": set(molhume.column_set("minimal-v3")),
+        "hume_minimal": set(molhume.column_set("minimal-v2"))}
+print(f"  hume {len(FULL)} columns vs " + ", ".join(f"{k} {len(v)}" for k, v in ARMS.items())
+      + "\n  caching:")
 todo = [d for t in TASKS.values() for d in t]
 for ds in todo:
     try: cache(ds)
@@ -101,19 +107,25 @@ rows = []
 for ds in todo:
     if not (OUT / f"{ds}.npz").exists(): continue
     try:
-        a, task = score(ds, FULL); b, _ = score(ds, MIN)
+        a, task = score(ds, FULL)
+        got = {k: score(ds, v)[0] for k, v in ARMS.items()}
     except Exception as e:
         print(f"    ! {ds}: {e}", flush=True); continue
     higher = task == "binary"
+    b = got["hume_default"]
     rel = (a.mean() - b.mean()) / abs(a.mean()) if higher else (b.mean() - a.mean()) / abs(a.mean())
     rows.append(dict(dataset=ds, panel=panel[ds], task=task, hume=a.mean(),
                      minimal=b.mean(), rel=rel, sd=a.std(ddof=1) / abs(a.mean()),
+                     arm_means={k: float(v.mean()) for k, v in got.items()},
+                     arm_folds={k: v.tolist() for k, v in got.items()},
                      # PER-FOLD too, so these can be written back into the downstream grid as
                      # hume_minimal records. The grid merges on (dataset, arm, FOLD), so a mean
                      # alone cannot replace the AWS records it supersedes.
                      hume_folds=a.tolist(), minimal_folds=b.tolist(),
                      metric="auroc" if task == "binary" else "rmse"))
-    print(f"    {ds:16s} {panel[ds]:9s} {a.mean():9.4f} {b.mean():9.4f} {rel*100:+7.2f}%", flush=True)
+    print(f"    {ds:16s} {panel[ds]:9s} hume={a.mean():8.4f}  "
+          + "  ".join(f"{k.replace('hume_','')}={v.mean():8.4f}" for k, v in got.items()),
+          flush=True)
 json.dump(rows, open("results/reanalysis/minimal_local_grid.json", "w"), indent=1)
 print()
 import collections
