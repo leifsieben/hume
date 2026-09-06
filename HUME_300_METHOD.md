@@ -346,3 +346,62 @@ found, not the one the design proposed, and it is recorded that way round on pur
 Applying the same rule again — proportional reduction within every family, so coverage is
 preserved — against the `random300` control that is already measured at +2.54%. Arms at 250, 300
 and 350 to find where it breaks rather than assuming 300 is the right stopping point.
+
+
+---
+
+## 9. 418 → 350 / 300 / 250: where it breaks
+
+Stratified across `molhume.FAMILY_OFFSETS` — proportional share per family, never fewer than one,
+within-family ordering by utility rank, selection leave-one-dataset-out. Against the 590 baseline.
+
+| arm | cols | median | worse on | p vs 590 | vs its random control |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `combo418` | 418 | +0.17% | 19/33 | **0.846** | −1.17pp, p = 0.000 |
+| `strat350` | 350 | +0.45% | 19/33 | **0.135** | −0.22pp, p = 0.711 |
+| `strat300` | 300 | +1.48% | 23/33 | 0.035 | −0.61pp, p = 0.358 |
+| `strat250` | 250 | +1.48% | 22/33 | 0.037 | −0.84pp, p = 0.019 |
+
+Step by step, paired:
+
+| step | median | worse on | p |
+| --- | ---: | ---: | ---: |
+| 418 → 350 | +0.57pp | 23/33 | 0.144 |
+| **350 → 300** | **+0.96pp** | 23/33 | **0.016** |
+| 300 → 250 | +0.01pp | 17/33 | 0.659 |
+
+**The cost is a step, not a slope, and it sits between 350 and 300.** Going from 300 to 250 costs
+nothing further — the same median, p = 0.659. So below 350 there is no reason to stop at 300:
+250 is the same price for 50 fewer columns.
+
+### ⚠️ The cost is almost entirely in classification
+
+| arm | classification (13) | | regression (20) | |
+| --- | ---: | ---: | ---: | ---: |
+| `combo418` | +0.17% | p = 1.000 | +0.15% | p = 0.841 |
+| `strat350` | +2.59% | p = 0.110 | +0.07% | p = 0.648 |
+| `strat300` | **+4.35%** | **p = 0.048** | +0.82% | p = 0.349 |
+| `strat250` | +3.60% | p = 0.110 | +0.90% | p = 0.202 |
+
+Regression is close to free all the way down to 250. Classification is not: at 300 it is worse on
+10 of 13 panels at p = 0.048. A spec chosen on the pooled number would hide that, and the panel
+that pays is the one most ADME endpoints live in.
+
+`hia` swings +82% at `strat300` and is an outlier on a panel with 29.9% fold noise; the medians
+above are robust to it, and the 10-of-13 count does not depend on it.
+
+## 10. What the evidence supports
+
+| set | cols | overall | classification | verdict |
+| --- | ---: | ---: | ---: | --- |
+| `combo418` | 418 | +0.17%, p = 0.846 | +0.17%, p = 1.000 | **free** |
+| `strat350` | 350 | +0.45%, p = 0.135 | +2.59%, p = 0.110 | free overall; classification drifting |
+| `strat300` | 300 | +1.48%, p = 0.035 | +4.35%, p = 0.048 | **a real, measured cost** |
+
+**300 ± 20 is reachable and it is not free.** The honest price is ~1.5% overall and ~4.4% on
+classification. That is a decision about what the token budget is worth, not a technical
+obstacle — and it is the project owner's decision, not this document's.
+
+The defensible fallback is **418**, which is free by every test run here and still a 33% cut from
+622. If the budget argument requires 300, the cost above is what to quote; if it requires going
+below 350 at all, **250 costs the same as 300** and should be preferred.
