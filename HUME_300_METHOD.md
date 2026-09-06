@@ -1,0 +1,196 @@
+# HUME_300 — method
+
+*How a ~300-column spec is being chosen, what each step can and cannot establish, and what
+would falsify it. Live document; decisions are recorded as they are made, with the evidence.*
+
+Target: **300 ± 20 columns**, from the 622 of `minimal-v2`.
+
+---
+
+## 0. Why this is a different problem from 1,269 → 622
+
+`minimal-v2` was built on **mechanism**, and its three levers are now spent:
+
+- the same physical quantity in different units (three electronegativity scales, mass against
+  atomic number);
+- already carried by the ECFP that ships alongside;
+- an exact arithmetic identity of columns that remain.
+
+None of those apply to what is left. 622 → 300 cannot be argued from construction, so it needs a
+different lever and an empirical one. That change of lever is the whole reason this document
+exists: a cut that cannot say *why* is a cut nobody downstream can defend.
+
+**The lever that is available is RESOLUTION.** Most of the remaining 622 is parametric sweeps —
+one construct evaluated at many orders, lags, bins or window sizes, where the resolution was
+chosen by a library author and not by chemistry:
+
+| sweep | columns | parameter |
+| --- | ---: | --- |
+| chi connectivity | 56 | path order 0–7, valence and simple |
+| E-state atom types | 86 | atom environment type |
+| VSA surface bins | 55 | 5 schemes x 10–14 bins |
+| ring counts | 47 | size x aromatic/aliphatic x hetero/carbo x saturation |
+| ours: walk statistics | 49 | window size x 4 statistics |
+| ours: autocorrelation | 39 | lag 1–4 x 4 properties |
+| charge | 26 | Galvez lag 1–10 |
+| information content | 21 | order 0–5 x 4 normalisations |
+
+Choosing a resolution is defensible in a methods section. "We pruned to 300" is not.
+
+---
+
+## 1. What the 622 are
+
+Provenance, by name against RDKit's `_descList` and Mordred's 2D calculator:
+
+| source | n | share | note |
+| --- | ---: | ---: | --- |
+| Mordred | 292 | 47% | 18% of Mordred's 1,613 survived deduplication |
+| RDKit | 188 | 30% | nearly all of RDKit's 217 |
+| ours | 142 | 23% | no RDKit or Mordred counterpart |
+
+⚠️ The intuition that this would be ~2/3 RDKit is wrong in count and right in proportion: almost
+all of RDKit is here, but RDKit is small.
+
+## 2. How much of it is distinct information
+
+Effective rank on 477,115 molecules (the 33 cached downstream datasets), in **rank space**,
+because a tree reads order and not magnitude:
+
+| space | 300 PCs retain | components for 99.9% |
+| --- | --- | ---: |
+| raw, unstandardised | 100.0000% | **2** |
+| standardised | 99.38% | 394 |
+| rank | 99.11% | **448** |
+
+⚠️ **A "99.9% of variance at 300 components" claim is a preprocessing artifact.** In raw space
+two components reach it, because `WPath` runs to 2.3e12 and dominates the covariance. Any PCA
+statement about this matrix has to name its space.
+
+⚠️ **AND LINEAR VARIANCE IS THE WRONG CRITERION ANYWAY.** This project has already paid for that
+lesson: `minimal-v1` was an ordering derived from linear recoverability and was withdrawn,
+because columns recoverable at linear R² 0.997 were **not** recoverable by a depth-6 tree (tree
+median R² 1.0000 against linear 0.9971 on the same held-out columns). PCA retention is an upper
+bound on what may be dropped, never a licence.
+
+Within-group rank, columns needed for 95% of within-group variance — where the slack is:
+
+| group | n | → 95% |
+| --- | ---: | ---: |
+| chi connectivity | 56 | 10 |
+| ours: walks/paths | 49 | 9 |
+| information content | 22 | 5 |
+| charge | 28 | 12 |
+| ours: rings/conjugation | 34 | 14 |
+| composition counts | 40 | 18 |
+| ring counts | 47 | 21 |
+| ours: autocorrelation | 39 | 24 |
+| VSA bins | 55 | 34 |
+| E-state | 86 | 42 |
+| BCUT | 19 | 11 |
+| `fr_*` flags | 72 | **55** |
+
+Summed, ~255 plus the ungrouped remainder — close to 300, which is encouraging and is not
+evidence.
+
+---
+
+## 3. Stage 1 — per-column utility ranking (done)
+
+`tools/h300/utility.py`. For each of the 33 cached datasets: the **same** untuned XGBoost head
+and the **same** stored 5-fold Murcko scaffold splits the downstream grid uses, fitted on the 622
+columns, recording per-column **gain** summed over folds. Columns are then ranked within each
+dataset (1 = most used) and aggregated as **mean rank across datasets**.
+
+**Why gain, and why on a tree.** The question is which columns a tree uses, and a tree does not
+use linear combinations — the minimal-v1 error again. Gain is measured on the consumer that
+actually reads these features.
+
+**Why mean RANK and not summed gain.** Gain is not comparable between tasks with different
+targets and scales; summing it would let the largest dataset choose the spec.
+
+### What Stage 1 established
+
+- **No column is dead.** All 622 are used by at least one dataset; 228 are used by all 33. There
+  is no free lunch to collect before the real decision.
+- BCUT ranks best of any family by median (186 of 622) despite being an eigenvalue summary.
+- Ring counts rank worst as a family (median 428) and **no** ring-count column is used by all 33.
+
+### ⚠️ Three things Stage 1 CANNOT establish, and one it actively gets wrong
+
+1. **Gain splits between correlated columns.** Eight near-identical chi orders share the credit,
+   so each looks mediocre while the group is load-bearing. Ranking by gain therefore
+   systematically over-cuts correlated sweeps — which is most of what is left.
+2. **Usage is not necessity.** A column can be used constantly and still be free to drop, because
+   a correlate would have been used instead.
+3. **It is a ranking, not a set.** `minimal-v1` was a ranking and was withdrawn for it.
+4. **It scores sparse flags backwards.** Measured:
+
+   | | n | median mean rank | median **best** rank | top-50 on ≥1 task |
+   | --- | ---: | ---: | ---: | ---: |
+   | `fr_*` | 72 | **447** (worst family) | **10** | 88% |
+   | everything else | 550 | 289 | 20 | 81% |
+
+   `fr_*` flags are **more** likely to be decisive on some task than the average column, and
+   useless on most. `fr_barbitur` is unused on 27 of 33 tasks and rank 50 on `pb_logd`. Mean rank
+   would delete all 72; that would be wrong, and it is why Stage 1 does not select.
+
+   Confirmed independently by the project owner: the flags "help XGBoost quite a lot in many
+   situations" despite being theoretically redundant with a good fingerprint. They are in scope
+   for the cut, but they cannot be cut on mean rank.
+
+---
+
+## 4. Stage 2 — grouped ablation (the decision)
+
+Stage 1 ranks; **Stage 2 decides.** For a candidate reduction, remove the whole group, refit the
+same head on the same folds, and measure the change in the dataset's own metric against the
+622-column baseline. Groups, not columns, because that is the only way to defeat the gain-splitting
+problem in (1): a correlated team has to be dropped together or its members hide behind each other.
+
+The units of the ablation are the sweeps in §0 at reduced resolution — chi at orders 0–3 rather
+than 0–7, IC at two normalisations rather than four — plus the `fr_*` block as a whole and in
+halves.
+
+**Accept a cut when the mean change across 33 datasets is within fold noise, and no panel is
+worse by more than its own fold-to-fold spread.** That is the bar `minimal-v2` was held to
+(mean −0.02%, 1 of 33 above fold noise) and there is no reason to lower it.
+
+### Selection bias, and the control for it
+
+Choosing on the same 33 datasets the result is reported on would overfit the spec to them. The
+control is **leave-datasets-out**: choose the cut on a subset of the panels, report it on the
+held-out ones. A spec that only survives on the datasets that chose it is not a spec.
+
+### What would falsify the whole exercise
+
+A 300-column set whose loss exceeds fold noise on any panel, or whose held-out loss exceeds its
+selection-set loss by more than noise. Either result means 622 is closer to the floor than the
+effective-rank analysis suggests, and the honest answer becomes a number above 300.
+
+---
+
+## 5. Known confound in the ChemPFN experiment
+
+The TabPFN experiment (13% of pool, 3 seeds) found no reduced variant worse than the full set,
+and pruning level with projection. Its own stated confound stands: TabPFN degrades past ~500
+features and `full` is 2,670-dimensional against 2,112–2,348 for the reduced arms, so `full`
+coming last is partly a dimensionality handicap in the evaluator.
+
+It is suggestive that the cut is cheap. It is not evidence about the descriptors, and the
+decision above does not rest on it. The tree route in §4 needs no GPU and no checkpoint, and
+answers the question the paper's downstream claims actually rest on.
+
+**Projection is not a shippable route regardless of how it scores**: it changes the scheme hash,
+destroys column interpretability, and requires fitting on a corpus — which makes the spec a
+function of that corpus and versions it accordingly. Pruning keeps a spec that is a list of
+names.
+
+---
+
+## 6. Decisions
+
+*(recorded as they are made, each with the evidence that decided it)*
+
+- **`fr_*` is in scope**, on the owner's call, as theoretically redundant with a good
+  fingerprint. It cannot be cut on Stage 1 evidence — see §3(4).
