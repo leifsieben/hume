@@ -243,3 +243,54 @@ of them are worth keeping and 32 are free. A ranking would have got this exactly
 used throughout for this reason.
 
 **Budget after this decision: 590. 290 still to find, and the sweeps in §0 are where they are.**
+
+
+---
+
+## 7. The sweep ablation — every reduction is free, and so is every control
+
+Eight parametric sweeps, each reduced two ways against the 590 baseline: `_lo` keeps the low
+orders and short lags, `_hi` is the control that keeps the same kind of thing at high orders and
+long lags. 33 datasets, same head, same stored folds. Positive = worse than baseline.
+
+| sweep | drops | `_lo` median | p | `_hi` median | p | lo vs hi | p |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| vsa | 30 | −0.41% | 0.685 | +1.02% | 0.051 | −0.92pp | 0.060 |
+| charge | 12 | −0.19% | 0.469 | +0.28% | 0.480 | −0.24pp | 0.135 |
+| rings | 18 | −0.16% | 1.000 | −0.25% | 0.406 | +0.04pp | 0.846 |
+| ic | 11 | −0.06% | 0.480 | +0.02% | 0.376 | −0.03pp | 0.406 |
+| autocorr | 18 | −0.04% | 0.944 | +0.23% | 0.502 | −0.24pp | 0.304 |
+| chi | 35 | +0.14% | 0.447 | −0.21% | 0.846 | +0.29pp | 0.242 |
+| walk | 16 | +0.17% | 0.502 | −0.50% | 0.228 | +0.11pp | 0.513 |
+| estate | 32 | +0.46% | 0.386 | +0.12% | 0.621 | +0.79pp | 0.367 |
+
+**Every arm is indistinguishable from the 590 baseline.** 24 tests, and the smallest p is 0.051.
+
+### What that does and does not license
+
+**Each sweep is individually over-resolved.** Dropping 11–35 columns from any one of them costs
+nothing measurable. That is the finding, and it is consistent across all eight.
+
+⚠️ **THE ORDERING PRINCIPLE IS NOT ESTABLISHED, AND I EXPECTED IT TO BE.** `_lo` never beats
+`_hi` significantly — the best is vsa at p = 0.060. Low orders and short lags are *not*
+demonstrably more informative than high orders and long lags; **either half of a sweep suffices**.
+So the reduction cannot be justified as "keep the informative end", only as "keep half, any
+half". That is a weaker and more honest claim, and it means the principle cannot be extended to
+an untested sweep without measuring it.
+
+The one directional hint is `vsa`: keeping SlogP and PEOE while dropping SMR, EState and
+VSA_EState is −0.41%, while the reverse is +1.02% (p = 0.051). Suggestive, not established, and
+one hint out of eight tests at p ≈ 0.05 is what chance produces.
+
+⚠️ **INDIVIDUALLY FREE DOES NOT COMPOSE.** Applying all eight reductions at once removes 172
+columns, 590 → **418**. Each was measured with the other seven sweeps still present to absorb the
+loss. Once they are all gone, the redundancy that made each one free is gone too. The joint
+effect has to be measured; it cannot be summed.
+
+### Next: the combination, and the control that matters most
+
+- `combo` — all eight reductions, 418 columns.
+- `random418` — **the control**: 418 columns drawn at random from the 590. If the principled
+  combination is no better than a random subset of the same size, then nothing about *which*
+  columns were chosen matters and the result is purely about column count. That would be worth
+  knowing and would change what HUME_300 can claim.
