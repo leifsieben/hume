@@ -60,8 +60,13 @@ TASKS = {
 FIGB_BASES = ["ecfp", "desc", "ecfp_all_desc"]
 FIGB_ANCHOR = "ecfp_all_desc"
 FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
-FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc", "hume_minimal",
-             "hume", "hume_no_new", "hume_default", "hume_minimal256",
+#: THREE HUME ARMS ON THE PLATES, not five (Leif 2026-09-06). `hume_minimal` (622, minimal-v2)
+#: and `hume_minimal256` (256, minimal-v3) are both measured and both stay out: 256 is dominated
+#: by 408 on BOTH axes -- 122.4 against 116.7 us/mol and 2.5% worse on classification -- so it
+#: has nothing to say on a cost-versus-accuracy plate, and 622 sits between two arms that bracket
+#: it. Their numbers are in the grid and in HUME_N_PREREGISTRATION.md for anyone who wants them.
+FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc",
+             "hume", "hume_no_new", "hume_default",
              "minimol", "chemeleon", "chemberta_mtr"]
 #: THE THREE HUME ARMS ARE EACH MEASURED NOW, and none of them is aliased to another.
 #:

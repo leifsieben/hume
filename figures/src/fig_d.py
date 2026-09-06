@@ -111,7 +111,7 @@ ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
 ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
-         "hume_default", "hume_minimal256", "hume_minimal", "hume_no_new", "hume",
+         "hume_default", "hume_no_new", "hume",
          "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
@@ -122,7 +122,10 @@ ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
 #: `ecfp` is the r=3 variant. This plate now draws `ecfp_r2` instead, because ECFP4 (r=2) is the
 #: baseline Figures A, B and C actually run; r=3 is the radius HUME carries INTERNALLY and the two
 #: were being used interchangeably. Both stay measured, and the legend says which is drawn.
-COST_ONLY = {"ecfp", "minimol"}
+#: `hume_minimal` (622) and `hume_minimal256` (256) are measured and deliberately not drawn --
+#: see the note in collect_downstream.py. check_known() refuses an arm it does not know, so an
+#: arm that is intentionally absent has to be declared rather than left to fall through it.
+COST_ONLY = {"ecfp", "minimol", "hume_minimal", "hume_minimal256"}
 
 #: WHICH HARDWARE EACH ARM IS PLOTTED ON: THE ONE IT IS FASTEST ON, DECIDED BY MEASUREMENT.
 #:

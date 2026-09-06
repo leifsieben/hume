@@ -48,11 +48,9 @@
   "ecfp_rdkit_desc",
   "ecfp_mordred_desc",
   "ecfp_all_desc",
-  "hume_minimal",
   "hume",
   "hume_no_new",
   "hume_default",
-  "hume_minimal256",
   "minimol",
   "chemeleon",
   "chemberta_mtr"
@@ -86,13 +84,6 @@
     "mordred": 6200.209362878
    }
   },
-  "hume_minimal": {
-   "us_per_mol": 122.00628716699998,
-   "measured_on": "c7i.4xlarge, 16 vCPU",
-   "breakdown": {
-    "hume_minimal": 122.00628716699998
-   }
-  },
   "hume": {
    "us_per_mol": 144.521614088,
    "measured_on": "c7i.4xlarge, 16 vCPU",
@@ -112,13 +103,6 @@
    "measured_on": "c7i.4xlarge, 16 vCPU",
    "breakdown": {
     "hume_default": 116.723510282
-   }
-  },
-  "hume_minimal256": {
-   "us_per_mol": 122.38663654799996,
-   "measured_on": "c7i.4xlarge, 16 vCPU",
-   "breakdown": {
-    "hume_minimal256": 122.38663654799996
    }
   },
   "minimol": {
@@ -178,14 +162,6 @@
   },
   {
    "task": "physchem",
-   "arm": "hume_minimal",
-   "head": "xgboost",
-   "mean": 0.009769804652787012,
-   "sem": 0.010617838898911509,
-   "n_folds": 30
-  },
-  {
-   "task": "physchem",
    "arm": "hume",
    "head": "xgboost",
    "mean": 0.004873053896381781,
@@ -206,14 +182,6 @@
    "head": "xgboost",
    "mean": 0.00441963984754538,
    "sem": 0.006786790120008138,
-   "n_folds": 30
-  },
-  {
-   "task": "physchem",
-   "arm": "hume_minimal256",
-   "head": "xgboost",
-   "mean": 0.0037755089047575943,
-   "sem": 0.004662086552524193,
    "n_folds": 30
   },
   {
@@ -274,14 +242,6 @@
   },
   {
    "task": "adme",
-   "arm": "hume_minimal",
-   "head": "xgboost",
-   "mean": -0.0031182905081389213,
-   "sem": 0.014723974446357379,
-   "n_folds": 50
-  },
-  {
-   "task": "adme",
    "arm": "hume",
    "head": "xgboost",
    "mean": -0.00256213818819101,
@@ -302,14 +262,6 @@
    "head": "xgboost",
    "mean": 0.006214279728397887,
    "sem": 0.006747551181749768,
-   "n_folds": 50
-  },
-  {
-   "task": "adme",
-   "arm": "hume_minimal256",
-   "head": "xgboost",
-   "mean": -0.0010847312144455668,
-   "sem": 0.008359842120323665,
    "n_folds": 50
   },
   {
@@ -370,14 +322,6 @@
   },
   {
    "task": "classif",
-   "arm": "hume_minimal",
-   "head": "xgboost",
-   "mean": 0.001862796488578891,
-   "sem": 0.0019795587714426725,
-   "n_folds": 65
-  },
-  {
-   "task": "classif",
    "arm": "hume",
    "head": "xgboost",
    "mean": 0.003961547052308334,
@@ -398,14 +342,6 @@
    "head": "xgboost",
    "mean": 0.0014640231248776831,
    "sem": 0.0015343894661961222,
-   "n_folds": 65
-  },
-  {
-   "task": "classif",
-   "arm": "hume_minimal256",
-   "head": "xgboost",
-   "mean": 0.0028853500424689685,
-   "sem": 0.0016858905148103118,
    "n_folds": 65
   },
   {
@@ -466,14 +402,6 @@
   },
   {
    "task": "quantum",
-   "arm": "hume_minimal",
-   "head": "xgboost",
-   "mean": -0.006538768231357003,
-   "sem": 0.002427889227964888,
-   "n_folds": 20
-  },
-  {
-   "task": "quantum",
    "arm": "hume",
    "head": "xgboost",
    "mean": -0.006085749903142465,
@@ -494,14 +422,6 @@
    "head": "xgboost",
    "mean": -0.003351003718677366,
    "sem": 0.0031298922295206967,
-   "n_folds": 20
-  },
-  {
-   "task": "quantum",
-   "arm": "hume_minimal256",
-   "head": "xgboost",
-   "mean": 0.0008994400759229498,
-   "sem": 0.004130754095334406,
    "n_folds": 20
   },
   {
