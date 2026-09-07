@@ -108,10 +108,15 @@ SHADES = {
     # this space is contested.
     #
     # Ordered by column count, so darkness still tracks width without reading the legend.
-    "hume":   ["#0B5C4A",   # [0] HUME_full      1,269 -- deep blue-green, darkest
-               "#3E9B4F",   # [1] HUME_no_new    1,109 -- true green
-               "#8FC33F",   # [2] HUME_default     408 -- yellow-green, lightest of the drawn
-               "#C9E3A0"],  # [3] the undrawn minimal specs (622, 256) -- pale
+    # FIVE greens: four widths plus the no-new ablation. Hue sweeps blue-green to yellow-green
+    # AND lightness rises with it, so the arms separate by hue in colour and by lightness in
+    # greyscale. One family throughout, because these are one method at several widths rather
+    # than several competitors.
+    "hume":   ["#0B5C4A",   # [0] HUME_full     1,269 -- deep blue-green, darkest
+               "#1F7A5E",   # [1] HUME_default    622
+               "#3E9B4F",   # [2] HUME_small      408
+               "#8FC33F",   # [3] HUME_minimal    256 -- yellow-green
+               "#C9E3A0"],  # [4] HUME_no_new   1,109 -- pale, an ablation not a shipped set
     "desc":   ["#2E6FAF", "#6396CA", "#A3C3E2"],
     # FIVE clm shades, not three: Figures B and C draw ChemBERTa-2 TWICE (the MLM and MTR
     # pretraining variants, see the ARMS entries) and add CDDD, whose input is also a string.
@@ -195,30 +200,18 @@ ARMS = {
     # NAMED HUME_full, NOT "HUME" (Leif 2026-09-02). Three HUME arms are drawn together in
     # Figures C and D and one of them being the bare project name made the other two read as
     # variants of it rather than as three widths of one specification.
+    # THE FOUR HUME WIDTHS. Keys name the WIDTH, labels name the SET, and they are deliberately
+    # different: the width of a column set cannot change, but its name has moved five times
+    # before 1.0.0. A key of `hume_default` would have meant 408 columns for one release and 622
+    # after it, silently reinterpreting every stored record; `hume_622` cannot.
+    # `collect_downstream.py` maps the historical keys onto these on ingest.
     "hume": dict(label="HUME_full", family="hume", color=SHADES["hume"][0]),
-    # THE ABLATION PAIR. `hume_no_new` is HUME with the 185 columns wired after the
-    # deduplication masked out -- counts_ext, estate_ext, eta, spectral and misc_ext, minus the
-    # 43 the cost triage dropped. Same block, same model, same folds; the only difference is
-    # those columns, so the gap between the two IS what they are worth. Lighter shade of the
-    # same family, because it is the same method and not a competitor.
-    "hume_no_new": dict(label="HUME_no_new", family="hume", color=SHADES["hume"][1]),
-    # The 622-column reduced spec (minimal-v2).
-    #
-    #  ITS x POSITION IS NO LONGER HUME_full's, AND THAT IS A REAL CHANGE. Until mol-hume
-    # 0.7.0 the column selection chose what was RETURNED and not what was COMPUTED, so all three
-    # HUME arms sat on one point by construction and the panel read as "what does dropping the
-    # columns cost, for free". Since 0.7.0 the selection is a compute plan -- a descriptor family
-    # none of whose columns are selected is not calculated -- so HUME_minimal is genuinely
-    # cheaper and moves LEFT. HUME_no_new does not move: its 1,109 columns still span every one
-    # of the nineteen families, so there is nothing for the plan to skip. Any figure that still
-    # draws the three at one x is reading a pre-0.7.0 cost file.
-    "hume_minimal": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),
-    # THE 0.10.0 SPECS. HUME_default is 408 columns and is free against HUME_full on 33 held-out
-    # panels (+0.30%, p=0.711); HUME_minimal256 is 256 and is not (+2.49% on classification).
-    # `hume_minimal` above is the OLD 622-column minimal-v2 and is kept under that key so
-    # existing result files still resolve; the plates draw the two new ones.
-    "hume_default": dict(label="HUME_default", family="hume", color=SHADES["hume"][2]),
-    "hume_minimal256": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),
+    "hume_622": dict(label="HUME_default", family="hume", color=SHADES["hume"][1]),
+    "hume_408": dict(label="HUME_small", family="hume", color=SHADES["hume"][2]),
+    "hume_256": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),
+    # THE ABLATION ARM. HUME with the columns wired after the deduplication masked out -- same
+    # block, same model, same folds, so the gap between it and HUME_full is what they are worth.
+    "hume_no_new": dict(label="HUME_no_new", family="hume", color=SHADES["hume"][4]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Gray, like every other control in the set.
@@ -339,7 +332,7 @@ ARMS = {
 # the axis the whole paper is about.
 ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
-             "hume", "hume_no_new", "hume_minimal", "hume_default", "hume_minimal256",
+             "hume", "hume_622", "hume_408", "hume_256", "hume_no_new",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
              # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all
@@ -372,8 +365,8 @@ SHORT_LABEL = {
     # "all desc" for the identical set.
     "desc": "RDKit + Mordred", "ecfp_rdkit_desc": "ECFP + RDKit",
     "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
-    "hume": "HUME_full", "hume_no_new": "HUME_no_new", "hume_minimal": "HUME_minimal622",
-    "hume_default": "HUME_default", "hume_minimal256": "HUME_minimal",
+    "hume": "HUME_full", "hume_622": "HUME_default", "hume_408": "HUME_small",
+    "hume_256": "HUME_minimal", "hume_no_new": "HUME_no_new",
     "minimol": "MiniMol",
     "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",

@@ -178,10 +178,11 @@ def test_default_is_the_default_arm():
                           equal_nan=True)
 
 
-def test_an_unknown_set_name_lists_the_three():
-    with pytest.raises(ValueError, match="minimal.*full_no_new.*full"):
-        molhume.column_set("small")
-    with pytest.raises(ValueError, match="minimal.*full_no_new.*full"):
+def test_an_unknown_set_name_lists_the_four():
+    for bad in ("tiny", "medium"):
+        with pytest.raises(ValueError, match="default.*small.*minimal"):
+            molhume.column_set(bad)
+    with pytest.raises(ValueError, match="default.*small.*minimal"):
         molhume.featurize(SMIS, standardize="none", columns="tiny")
 
 
@@ -209,7 +210,7 @@ def test_fingerprint_is_on_by_default_and_the_bits_go_last():
     on = _quiet(SMIS, standardize="none")
     off = _quiet(SMIS, standardize="none", fingerprint=False)
     assert off.shape[1] == len(molhume.column_set("default")), (
-        "the default descriptor block is default-v1")
+        "the default descriptor block is default-v2 (622)")
     assert on.shape[1] == off.shape[1] + 2048, "default output is descriptors + 2048 ECFP bits"
     assert np.array_equal(on[:, :off.shape[1]], off, equal_nan=True), (
         "fingerprint bits must go LAST, so descriptor column indices do not shift with the flag")
@@ -440,7 +441,7 @@ def test_the_poison_molecule_does_not_kill_the_process():
     """If this regresses the test process dies, so a failure here is not a normal assertion."""
     with pytest.warns(UserWarning, match="could not be computed"):
         X = molhume.featurize([POISON], standardize="none", fingerprint=False, on_error="nan")
-    assert X.shape == (1, 408)
+    assert X.shape == (1, 622)
 
 
 def test_it_costs_four_columns_and_not_the_row():
@@ -535,10 +536,10 @@ def test_on_error_branches_on_a_row_failure(monkeypatch):
     smis = ["CCO", "c1ccccc1", "CCN"]
     with pytest.warns(UserWarning, match="still aligns"):
         X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="nan")
-    assert X.shape == (3, 408) and np.all(np.isnan(X[1]))
+    assert X.shape == (3, 622) and np.all(np.isnan(X[1]))
     with pytest.warns(UserWarning, match="no longer aligns"):
         X = molhume.featurize(smis, standardize="none", fingerprint=False, on_error="skip")
-    assert X.shape == (2, 408)
+    assert X.shape == (2, 622)
     with pytest.raises(RuntimeError, match="index 1"):
         molhume.featurize(smis, standardize="none", fingerprint=False, on_error="raise")
 
@@ -554,13 +555,13 @@ def test_empty_smiles_does_not_segfault():
     """
     with pytest.warns(UserWarning, match="did not parse"):
         X = molhume.featurize([""], standardize="none", fingerprint=False)
-    assert X.shape == (1, 408) and np.all(np.isnan(X))
+    assert X.shape == (1, 622) and np.all(np.isnan(X))
 
 
 def test_an_empty_smiles_costs_only_its_own_row():
     with pytest.warns(UserWarning, match="did not parse"):
         X = molhume.featurize(["", "CCO", ""], standardize="none", fingerprint=False)
-    assert X.shape == (3, 408)
+    assert X.shape == (3, 622)
     assert np.all(np.isnan(X[0])) and np.all(np.isnan(X[2]))
     assert np.array_equal(X[[1]], _quiet(["CCO"], standardize="none", fingerprint=False),
                           equal_nan=True)
@@ -574,7 +575,7 @@ def test_empty_is_the_same_kind_of_failure_as_unparseable():
         molhume.featurize(["@@@", "CCO"], standardize="none", on_error="raise")
     with pytest.warns(UserWarning):
         assert molhume.featurize(["", "CCO"], standardize="none", fingerprint=False,
-                                 on_error="skip").shape == (1, 408)
+                                 on_error="skip").shape == (1, 622)
 
 
 def test_a_zero_atom_mol_object_is_caught_too():
@@ -637,8 +638,11 @@ def test_no_column_is_infinite_on_a_salt():
 # ------------------------------------------------- the 0.10.0 spec rename
 
 def test_the_four_short_names_and_the_three_versioned_ones():
-    assert len(molhume.column_set("default")) == 408
-    assert len(molhume.column_set("default-v1")) == 408
+    assert len(molhume.column_set("default")) == 622
+    assert len(molhume.column_set("default-v2")) == 622
+    assert len(molhume.column_set("small")) == 408
+    assert len(molhume.column_set("small-v1")) == 408
+    assert len(molhume.column_set("default-v1")) == 408, "deprecated alias must keep resolving"
     assert len(molhume.column_set("minimal-v3")) == 256
     assert len(molhume.column_set("minimal-v2")) == 622, "the old set must stay reachable"
     assert set(molhume.column_set("minimal-v3")) <= set(molhume.column_set("default-v1")), \
@@ -649,25 +653,31 @@ def test_minimal_changing_meaning_is_loud():
     """It moved four times. A short name is a pointer; silence here is how caches diverge."""
     import importlib
     importlib.reload(molhume) if False else None
-    molhume._MINIMAL_MEANING_WARNED = False
-    with pytest.warns(UserWarning, match="256 columns"):
+    molhume._MEANING_WARNED.clear()
+    with pytest.warns(UserWarning, match="256"):
         c = molhume.column_set("minimal")
     assert len(c) == 256
+    molhume._MEANING_WARNED.discard("default")
+    with pytest.warns(UserWarning, match="622"):
+        assert len(molhume.column_set("default")) == 622
 
 
 def test_versioned_names_never_warn():
-    molhume._MINIMAL_MEANING_WARNED = False
+    molhume._MEANING_WARNED.clear()
     with warnings.catch_warnings():
         warnings.simplefilter("error")
         assert len(molhume.column_set("minimal-v2")) == 622
         assert len(molhume.column_set("default-v1")) == 408
+        assert len(molhume.column_set("default-v2")) == 622
+        assert len(molhume.column_set("small-v1")) == 408
 
 
 def test_the_shipped_column_lists_match_the_specs():
     """results/*.txt is what the other project reads; it must not drift from the package."""
     import pathlib
     root = pathlib.Path(__file__).resolve().parents[1] / "results"
-    for fn, spec in (("hume_default_408.txt", "default-v1"), ("hume_minimal_256.txt", "minimal-v3")):
+    for fn, spec in (("hume_default_622.txt", "default-v2"), ("hume_small_408.txt", "small-v1"),
+                     ("hume_minimal_256.txt", "minimal-v3")):
         names = [l.strip() for l in (root / fn).read_text(encoding="utf-8").splitlines()
                  if l.strip() and not l.startswith("#")]
         assert tuple(sorted(names)) == tuple(sorted(molhume.column_set(spec))), fn

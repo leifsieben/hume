@@ -28,10 +28,19 @@ from pathlib import Path
 
 import numpy as np
 
-ROOT = Path(__file__).resolve().parent
+# .parents[1]: this file moved into bench/ and every path below is repo-relative
+ROOT = Path(__file__).resolve().parents[1]
 BUCKET = "hume-bench-use1-075120018132"
 OUT_B = ROOT / "results" / "figures" / "figB" / "results.json"
 OUT_C = ROOT / "results" / "figures" / "figC" / "results.json"
+OUT_SI_A = ROOT / "results" / "figures" / "SI_figA" / "results.json"
+
+#: SI_fig_a: the four shipped HUME widths against the classical baseline, and nothing else.
+#: Same construction as Figure C -- same anchor, same metric, same measured cost axis -- but
+#: with only one method family on it, so the four points can actually be told apart. On the main
+#: plate they sit within 30 us/mol of each other on a log axis running to 6,200 and overlap
+#: whatever colours they are given.
+SI_A_ARMS = ["ecfp_all_desc", "hume", "hume_622", "hume_408", "hume_256"]
 CACHE = ROOT / "results" / "figures" / "downstream_raw.json"
 
 #: Dataset -> task. Grouped by endpoint AND metric: a task whose members are scored in two
@@ -65,8 +74,21 @@ FIGB_ADDS = ["chemeleon", "chemberta_mtr", "minimol", "molformer"]
 #: by 408 on BOTH axes -- 122.4 against 116.7 us/mol and 2.5% worse on classification -- so it
 #: has nothing to say on a cost-versus-accuracy plate, and 622 sits between two arms that bracket
 #: it. Their numbers are in the grid and in docs/selection/HUME_N_PREREGISTRATION.md for anyone who wants them.
+#: THE MAIN PLATE DRAWS THREE HUME ARMS: full, no_new and the default. The four-width comparison
+#: is SI_fig_a, where it is the only thing on the panel and the points can be told apart; on
+#: Figure C the four sit within 30 us/mol of each other on a log axis running to 6,200 and
+#: overlap regardless of colour.
+#:
+#: ARM KEYS NAME THE WIDTH, NOT THE SET. The historical keys are mapped onto them on ingest --
+#: see ARM_RENAME. `hume_default` meant 408 columns for one release and 622 after it, so a stored
+#: record under that key is ambiguous; `hume_622` never can be.
+#: Historical arm keys -> width-named keys. The bench harness and the AWS records still use the
+#: old names; renaming on ingest keeps every stored measurement usable without rewriting S3.
+ARM_RENAME = {"hume_minimal": "hume_622", "hume_default": "hume_408",
+              "hume_minimal256": "hume_256"}
+
 FIGC_ARMS = ["ecfp", "ecfp_rdkit_desc", "ecfp_mordred_desc", "ecfp_all_desc",
-             "hume", "hume_no_new", "hume_default",
+             "hume", "hume_no_new", "hume_622",
              "minimol", "chemeleon", "chemberta_mtr"]
 #: THE THREE HUME ARMS ARE EACH MEASURED NOW, and none of them is aliased to another.
 #:
@@ -105,8 +127,10 @@ COST_SUM = {"ecfp_rdkit_desc": ["rdkit_desc"],
 #: cost, and re-measuring a 1.7-hour Mordred sweep to change a number by 0.3% is not a good
 #: trade. Stated rather than hidden.
 COST_KEY = {"ecfp": "ecfp_r2", "hume": "hume", "chemeleon": "chemeleon",
-            "hume_minimal": "hume_minimal", "hume_no_new": "hume_no_new",
-            "hume_default": "hume_default", "hume_minimal256": "hume_minimal256",
+            # identity now: collect_scale.py applies the same ARM_RENAME, so the scale files
+            # already carry width-named keys and a second mapping here would miss them
+            "hume_622": "hume_622", "hume_no_new": "hume_no_new",
+            "hume_408": "hume_408", "hume_256": "hume_256",
             "chemberta_mtr": "chemberta", "minimol": "minimol"}
 
 
@@ -148,6 +172,8 @@ def fetch():
         iid = k.split(".")[0]
         for x in rows:
             x.setdefault("proto", 2 if iid in PROTO2_RUNS else 1)
+            # Width-named keys, applied on ingest so stored records stay usable -- see ARM_RENAME
+            x["arm"] = ARM_RENAME.get(x["arm"], x["arm"])
             key = (x["dataset"], x["arm"], x["fold"])
             prev = merged.get(key)
             if prev is None or x["proto"] >= prev["proto"]:
@@ -269,7 +295,9 @@ def costs():
         print(f"  ! {a}: us/mol is NOT flat across N -- {vs} at N={ns}. The largest N is used; "
               f"the per-molecule axis is an asymptote for this arm, not a constant.")
     out, missing = {}, []
-    for arm in FIGC_ARMS:
+    # The union, not just the main plate: SI_fig_a draws arms Figure C does not, and they have
+    # measured costs. Scoping this to FIGC_ARMS silently gave the SI plate no x-axis for them.
+    for arm in list(dict.fromkeys(FIGC_ARMS + SI_A_ARMS)):
         if arm in COST_SUM:
             parts = COST_SUM[arm]
             if any(p not in best for p in parts):
@@ -354,6 +382,26 @@ def main():
                           "Anchor is 0 by construction; lower is better."},
          "tasks": specs, "arms": arms, "cost": cost, "records": crecs}, indent=1))
     print(f"  -> {OUT_C.relative_to(ROOT)}  {len(crecs)} cells, {len(arms)} arms")
+
+    # ---- SI figure A: the HUME widths on their own --------------------------------------
+    si_arms = [a for a in SI_A_ARMS if a in cost and any((t["key"], a) in agg for t in specs)]
+    si_recs = [{"task": t["key"], "arm": a, "head": "xgboost",
+                "mean": agg[(t["key"], a)][0], "sem": agg[(t["key"], a)][1],
+                "n_folds": agg[(t["key"], a)][2]}
+               for t in specs for a in si_arms if (t["key"], a) in agg]
+    missing = [a for a in SI_A_ARMS if a not in si_arms]
+    if missing:
+        print(f"  ! SI figure A is missing {missing}; it needs a measured cost AND downstream "
+              f"records for every arm, and will be drawn without them")
+    OUT_SI_A.parent.mkdir(parents=True, exist_ok=True)
+    OUT_SI_A.write_text(json.dumps(
+        {"meta": {"source": "bench/bench_downstream.py + results/scale",
+                  "n_records": len(recs),
+                  "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same "
+                          "dataset; regression error = rmse / sd(y), classification = 1 - auroc. "
+                          "Anchor is 0 by construction; lower is better."},
+         "tasks": specs, "arms": si_arms, "cost": cost, "records": si_recs}, indent=1))
+    print(f"  -> {OUT_SI_A.relative_to(ROOT)}  {len(si_recs)} cells, {len(si_arms)} arms")
 
     with open(ROOT / "figures" / "build" / "downstream_by_dataset.csv", "w") as fh:
         fh.write("task,dataset,arm,metric,value,anchor,ratio\n")

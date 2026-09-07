@@ -14,6 +14,10 @@ from __future__ import annotations
 import json, statistics, subprocess, sys, time
 from pathlib import Path
 
+#: Historical arm names -> width-named keys. Kept identical to collect_downstream's map.
+ARM_RENAME = {"hume_minimal": "hume_622", "hume_default": "hume_408",
+              "hume_minimal256": "hume_256"}
+
 BUCKET = "hume-bench-use1-075120018132"
 REGION = "us-east-1"
 LOCATION = "US East (N. Virginia)"
@@ -78,6 +82,10 @@ def main() -> None:
         # is a re-measurement and supersedes, which is the same rule bench/collect_downstream.py uses.
         for q in d["points"]:
             q["_started"] = m.get("started", "")
+            # Width-named arm keys, for the reason in collect_downstream.ARM_RENAME: the harness
+            # still measures under the old names and `hume_default` meant two different widths in
+            # two releases. Renaming on collection keeps every stored measurement usable.
+            q["arm"] = ARM_RENAME.get(q["arm"], q["arm"])
         by_instance.setdefault(tag, {"meta": m, "points": []})["points"].extend(d["points"])
     for tag, blob in by_instance.items():
         newest: dict = {}

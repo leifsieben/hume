@@ -1,68 +1,36 @@
-"""HUME_minimal: the frozen reduced column set.
+"""The named column sets. GENERATED -- do not edit by hand.
 
-GENERATED -- regenerate with tools/gen_minimal.py. See docs/selection/HUME_Minimal_definition.md for how every
-column earned or lost its place, and docs/DESCRIPTOR_MAP.md for what the families measure.
+Four sets ship, and from 1.0.0 the short names that point at them do not move again:
 
-spec "minimal-v2"
-  built from   mol-hume 0.5.0, rdkit 2025.9.2, standardize="none"
-  size         622 of the 1,269 emitted columns
+    full         1,269   every descriptor the build emits
+    default        622   the safest cut: it BEATS the full set on held-out data
+    small          408   free against the full set, and the cheapest to compute
+    minimal        256   a stated trade -- about 2.5% on classification
 
- THE CONTENTS OF minimal-v2 HAVE CHANGED TWICE. 550 columns in 0.4.0, 612 in 0.5.0, 622 in
-0.6.0. The spec NAME did not change, so THE PACKAGE VERSION IS THE ONLY THING DISTINGUISHING
-THEM -- if you cached features, check the installed version. Editing a published spec in place
-is not the normal practice here (specs are added, not edited); it was done deliberately while
-the releases were hours old with no pinned consumers, and it should stop now that there are.
+Each short name resolves to a VERSIONED spec, and versioned specs are frozen forever:
 
-WHY THE fr_* FLAGS CAME BACK. They were dropped in 0.4.0 because they are detectable from the
-ECFP shipped alongside at AUROC 1.000.  That figure turned out to be conditional on the
-CORPUS, not just on the fingerprint. ChemPFN measured the same flags on a corpus with 5.4%
-salts and got median 0.9929 with a floor of 0.786; `fr_quatN` reads 0.9995 here and 0.73 there
--- same flag, same fingerprint class, different chemistry. A 2x2 over radius (2 vs 3) and
-decoder (logistic vs XGBoost) on our corpus moves the median by less than 0.001, so neither
-explains the gap: the corpus does.
+    default -> default-v2      small -> small-v1      minimal -> minimal-v3
 
-So detectability was never sound grounds for the drop, and the 62 that returned are kept on
-MECHANISM instead -- they are curated assertions that no structural descriptor derives:
+⚠ replaced by a plain warning: the two deprecated names from before 1.0.0 still resolve and
+always will. `minimal-v2` is the same 622 columns as `default-v2`; `default-v1` is the same 408
+as `small-v1`. Anything that pinned them keeps working and keeps getting the same columns.
 
-  * metabolic liability. fr_Ndealkylation1/2, fr_para_hydroxylation, fr_allylic_oxid encode
-    "a CYP enzyme attacks here", which is enzymology, not graph structure.
-  * ionization state. fr_quatN is PERMANENTLY charged; the library's only other ionization
-    signal is a computed Gasteiger charge, not a curated one.
-  * toxicophores. fr_nitro, fr_hdrzine, fr_epoxide and the rest are curated toxicity knowledge.
-  * heterocycle identity. Our ring family counts a "6-membered aromatic hetero ring" but never
-    says which heteroatom or where -- pyridine, pyrimidine and pyrazine are one cell to it.
-  * OH type. Aliphatic and aromatic hydroxyls differ by ~4 pKa units; NumHDonors counts both
-    the same.
+WHY THE SHORT NAMES MOVED SO OFTEN BEFORE 1.0.0, recorded so the churn is not repeated: `minimal`
+meant 550 columns in 0.4.0, 612 in 0.5.0, 622 in 0.6.0-0.9.2 and 256 in 0.10.0; `default` meant
+408 for the single release 0.10.0 and means 622 here. Each move had a reason and none of them was
+worth the confusion. The lesson is in the design above: a short name is a pointer that can be
+repointed, a versioned name is a contract that cannot. Pin the versioned name, or read one of the
+column lists under results/.
 
-THREE STAY OUT, and only three, on the same mechanistic reasoning applied in the other
-direction -- they duplicate counts the library already emits:
+HOW THESE WERE CHOSEN. docs/selection/HUME_N_PREREGISTRATION.md, whose rule was committed before
+any result existed, and which is also the record of the rule rejecting a 200-column set that the
+selection panel had passed. Held out on 33 tasks that took no part in the selection, measured
+against the full 1,269:
 
-    fr_halogen   [F,Cl,Br,I]   against nF / nCl / nBr / nI / nX
-    fr_Ar_N      the SMARTS n  against the aromatic-nitrogen count
-    fr_bicyclic  [R2][R2]      against ring perception
-
- 0.5.0 HELD OUT THIRTEEN, AND TEN OF THOSE WERE MIS-GROUPED. fr_sulfone, fr_sulfide, fr_SH,
-fr_nitrile, fr_C_S, fr_alkyl_halide, fr_ArN, fr_phos_ester, fr_term_acetylene and
-fr_unbrch_alkane were filed as "composition", but they are functional groups -- the same
-category as everything restored above. `nS` counts sulfur atoms and says nothing about oxidation
-state, so sulfide, sulfoxide and sulfone are three different things it cannot separate, and
-sulfones are oxidative metabolites of sulfides. They are restored in 0.6.0.
-
-WHAT minimal-v1 WAS AND WHY IT WENT. An ORDERING derived by rank-revealing QR on a
-linear-recoverability criterion: a column could go if the kept ones could rebuild it linearly.
-That describes a consumer that does not exist -- a depth-6 boosted tree cannot split on a linear
-combination of thirty columns -- and when the prediction was tested against a deeper tree and an
-MLP, neither recovered the loss. Withdrawn.
-
-Nothing here was removed on a variance ranking. That is the property that made v1 delete the
-rare tail: pivoted QR ranks by residual orthogonality, so columns firing on <=2% of molecules
-had median rank 71 of 1,267 against 704 for common ones.
-
- ONE DECISION REMAINS PROVISIONAL. The 227-column autocorrelation block was dropped on an
-ablation over five PHYSICOCHEMICAL datasets. It is now also supported by 13 classification and
-10 ADME sets that had no part in the decision, but the quantum panel is still outstanding.
+    default  622   -1.17%   95% CI [-1.71,-0.30]   p=0.001   better than the full set
+    small    408   +0.30%   95% CI [-1.13,+0.80]   p=0.711   free
+    minimal  256   +1.47%   95% CI [-1.16,+1.90]             +2.49% on classification
 """
-
 MINIMAL_V2_COLUMNS = (
     'AXp-0d',
     'AXp-0dv',
@@ -1363,6 +1331,13 @@ MINIMAL_V3_COLUMNS = (
 )
 
 #: Backwards-compatible alias. `minimal_columns()` still returns minimal-v2 by default.
-MINIMAL_COLUMNS = MINIMAL_V2_COLUMNS
+#: Frozen aliases from before 1.0.0. Same tuples, kept forever.
+MINIMAL_V2_ALIAS = MINIMAL_V2_COLUMNS
+DEFAULT_V1_ALIAS = DEFAULT_V1_COLUMNS
+
+#: The 1.0.0 names.
+DEFAULT_V2_COLUMNS = MINIMAL_V2_COLUMNS      # 622 -- the default
+SMALL_V1_COLUMNS = DEFAULT_V1_COLUMNS        # 408
+MINIMAL_COLUMNS = MINIMAL_V2_COLUMNS         # minimal_columns() is pinned to minimal-v2
 
 SPEC = "minimal-v2"

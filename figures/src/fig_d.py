@@ -69,8 +69,10 @@ try:
     import molhume as _hume
     # column_set("full"), NOT len(ALL_COLUMNS): since 0.8.0 the latter also counts `qed`, which
     # is opt-in, in no named set, and not computed by any arm on this plate.
+    # Versioned names: the short ones moved five times before 1.0.0 and a figure caption should
+    # not change meaning with the package it was rendered against.
     _HUME_NDESC = len(_hume.column_set("full"))
-    _HUME_NDESC_MIN = len(_hume.column_set("minimal"))
+    _HUME_NDESC_MIN = len(_hume.column_set("default-v2"))
     _HUME_NDESC_NN = len(_hume.column_set("full_no_new"))
 except Exception:
     _HUME_NDESC, _HUME_NDESC_MIN, _HUME_NDESC_NN = "1269?", "622?", "1109?"
@@ -84,11 +86,11 @@ LABEL = {
     # THE THREE HUME WIDTHS. They are three arms rather than one because since mol-hume 0.7.0
     # the column selection is a compute plan, so they have three different costs -- before that
     # they were one point and drawing three would have been three markers on top of each other.
-    "hume":            "HUME_full",
-    "hume_default":    "HUME_default",
-    "hume_minimal256": "HUME_minimal",
-    "hume_minimal":    "HUME_minimal622",
-    "hume_no_new":     "HUME_no_new",
+    "hume":        "HUME_full",
+    "hume_622":    "HUME_default",
+    "hume_408":    "HUME_small",
+    "hume_256":    "HUME_minimal",
+    "hume_no_new": "HUME_no_new",
     "chemprop":  "Chemprop",
     "chemberta": "ChemBERTa",
     "chemeleon": "CheMeleon",
@@ -101,8 +103,8 @@ LABEL = {
 # used to point at `ecfp_mordred_desc`, a DIFFERENT arm, and the same measurement was therefore
 # drawn in two colors across two figures.
 ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
-          "hume_minimal": "hume_minimal", "hume_no_new": "hume_no_new",
-          "hume_default": "hume_default", "hume_minimal256": "hume_minimal256",
+          "hume_622": "hume_622", "hume_no_new": "hume_no_new",
+          "hume_408": "hume_408", "hume_256": "hume_256",
           "chemberta": "chemberta_mlm", "chemeleon": "chemeleon",
           "mordred": "ecfp_all_desc",
           "rdkit_desc": "ecfp_rdkit_desc", "mordred_desc": "ecfp_mordred_desc"}
@@ -111,7 +113,7 @@ ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
 ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
-         "hume_default", "hume_no_new", "hume",
+         "hume_622", "hume_no_new", "hume",
          "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
@@ -125,7 +127,7 @@ ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
 #: `hume_minimal` (622) and `hume_minimal256` (256) are measured and deliberately not drawn --
 #: see the note in bench/collect_downstream.py. check_known() refuses an arm it does not know, so an
 #: arm that is intentionally absent has to be declared rather than left to fall through it.
-COST_ONLY = {"ecfp", "minimol", "hume_minimal", "hume_minimal256"}
+COST_ONLY = {"ecfp", "minimol", "hume_256", "hume_408"}
 
 #: WHICH HARDWARE EACH ARM IS PLOTTED ON: THE ONE IT IS FASTEST ON, DECIDED BY MEASUREMENT.
 #:
@@ -154,8 +156,8 @@ HATCH = "///"
 BAR_LABEL_LIFT = 1.08
 
 
-SHORT = {"ecfp_r2": "ECFP", "hume": "HUME_full", "hume_default": "HUME_default",
-         "hume_minimal256": "HUME_minimal", "hume_minimal": "HUME_minimal622",
+SHORT = {"ecfp_r2": "ECFP", "hume": "HUME_full", "hume_408": "HUME_small",
+         "hume_256": "HUME_minimal", "hume_622": "HUME_default",
          "hume_no_new": "HUME_no_new", "chemprop": "chemprop",
          "chemberta": "ChemBERTa", "chemeleon": "CheMeleon",
          "rdkit_desc": "+RDKit", "mordred_desc": "+Mordred", "mordred": "+all desc"}

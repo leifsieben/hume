@@ -1,5 +1,54 @@
 # Changelog
 
+## 1.0.0 — 2026-09-07
+
+**The short names stop moving.** That is what the version number is for.
+
+| name | versioned | cols | held out on 33 tasks, vs the full 1,269 |
+| --- | --- | ---: | --- |
+| `full` | — | 1,269 | the reference |
+| **`default`** | `default-v2` | **622** | **−1.17%**, 95% CI [−1.71, −0.30], p = 0.001 — it *beats* the full set |
+| `small` | `small-v1` | 408 | +0.30%, CI [−1.13, +0.80], p = 0.711 — free, and cheapest to compute |
+| `minimal` | `minimal-v3` | 256 | +1.47%, CI [−1.16, +1.90]; +2.49% on classification |
+| `full_no_new` | — | 1,109 | everything RDKit or Mordred already defines |
+
+`featurize(smiles)` returns the 622-column `default`. It is the default because it is the safest
+option available, not the smallest: on held-out data it is the only set that is *better* than
+computing all 1,269.
+
+### Short names are frozen; versioned names were always the contract
+
+Before 1.0.0 a short name moved five times — `minimal` meant 550 columns in 0.4.0, 612 in 0.5.0,
+622 in 0.6.0–0.9.2 and 256 in 0.10.0; `default` meant 408 for the single release 0.10.0. Every
+move had a reason and none was worth the confusion.
+
+From 1.0.0 the short names are fixed. The versioned names are frozen **forever**, including the
+two from before this release: `minimal-v2` is the same 622 columns as `default-v2`, and
+`default-v1` the same 408 as `small-v1`. Anything pinned to those keeps getting exactly what it
+got. `columns="default"` and `columns="minimal"` each warn once that their meaning changed here.
+
+### `minimal` is not cheaper to compute than `small`
+
+122.4 against 116.7 us/mol on c7i.4xlarge at N=10⁶ — 256 columns are *slower* than 408. Compute
+is gated per descriptor family and 256 touches every family 408 does, so dropping columns inside
+a family saves nothing. Its benefit is fewer columns downstream, not less work. Use `small` for
+speed.
+
+### How the sets were chosen
+
+`docs/selection/HUME_N_PREREGISTRATION.md`, whose stopping rule was committed before any result
+existed. Selection ran on 81 tasks; the 33 Figure C tasks were held out from the first line and
+read once. The rule chose a 200-column set and the held-out gate **rejected** it — its confidence
+interval excluded zero, and classification cost 4.5% against a 1.75% noise ceiling. That
+rejection is why `small` is 408 and not 200.
+
+### Repository
+
+106 root-level files down to 10. Process scaffolding written for coding agents is deleted; the
+Python reference implementations and the exactness scripts are in `verification/`; one-off
+analyses are in `research/` behind a README saying they are unmaintained. The pip sdist is
+unchanged — it ships only build inputs plus README, CHANGELOG, LICENSE and METHODS.
+
 ## 0.10.0 — 2026-09-06
 
 **Two new specs, chosen under a pre-registered rule and evaluated once on held-out data.**

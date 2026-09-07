@@ -483,14 +483,30 @@ _COLUMN_FAMILY: tuple = tuple(
 #: The three named column sets. Values are resolved lazily because `minimal` lives in a generated
 #: module and `full_no_new` needs the additional-descriptor list, and neither is worth importing
 #: for a caller who only ever asks for `full`.
-COLUMN_SETS: tuple[str, ...] = ("default", "minimal", "full_no_new", "full")
+COLUMN_SETS: tuple[str, ...] = ("full", "default", "small", "minimal", "full_no_new")
 
-#: Short names are POINTERS; versioned names are CONTRACTS. `minimal` meant 622 columns in
-#: 0.4.0-0.9.2 and means 256 from 0.10.0. Anything that must not shift across releases should ask
-#: for a versioned name, or read one of the column lists in results/.
-_VERSIONED = {"minimal-v2": "MINIMAL_V2_COLUMNS", "default-v1": "DEFAULT_V1_COLUMNS",
-              "minimal-v3": "MINIMAL_V3_COLUMNS"}
-_MINIMAL_MEANING_WARNED = False
+#: SHORT NAME -> VERSIONED SPEC. From 1.0.0 this mapping is frozen: a short name will not be
+#: repointed again. Before 1.0.0 it moved five times, which is why the versioned names exist.
+_SHORT = {"default": "default-v2", "small": "small-v1", "minimal": "minimal-v3"}
+
+#: Versioned specs are contracts and are frozen forever, including the two deprecated names from
+#: before 1.0.0 -- `minimal-v2` is the same 622 columns as `default-v2`, `default-v1` the same
+#: 408 as `small-v1`. Anything pinned to those keeps getting exactly the columns it got.
+_VERSIONED = {"default-v2": "DEFAULT_V2_COLUMNS", "small-v1": "SMALL_V1_COLUMNS",
+              "minimal-v3": "MINIMAL_V3_COLUMNS",
+              "minimal-v2": "MINIMAL_V2_ALIAS", "default-v1": "DEFAULT_V1_ALIAS"}
+
+#: Short names whose meaning changed at 1.0.0, warned once each. `default` was 408 in 0.10.0 and
+#: is 622 here; `minimal` was 622 up to 0.9.2 and is 256 here.
+_MOVED_AT_1_0 = {
+    "default": "was 408 columns in 0.10.0 and is 622 here -- the safest set, and the only one "
+               "that beats the full set on held-out data. The 408 set is now columns='small' "
+               "(spec small-v1), and columns='default-v1' still returns it.",
+    "minimal": "was 622 columns in 0.4.0-0.9.2 and is 256 here. 256 is NOT free: about 2.5% on "
+               "classification against the full set. The 622 set is now columns='default' "
+               "(spec default-v2), and columns='minimal-v2' still returns it.",
+}
+_MEANING_WARNED: set = set()
 
 
 def column_set(name: str, *, extra=()) -> tuple:
@@ -530,39 +546,34 @@ def column_set(name: str, *, extra=()) -> tuple:
         base = column_set(name)
         seen = set(base)
         return base + tuple(c for c in extra if c not in seen)
-    global _MINIMAL_MEANING_WARNED
     from . import _minimal
     if name in _VERSIONED:
         return getattr(_minimal, _VERSIONED[name])
     if name == "full":
         return tuple(c for c in ALL_COLUMNS if c not in set(OPTIONAL_COLUMNS))
-    if name == "default":
-        return _minimal.DEFAULT_V1_COLUMNS
-    if name == "minimal":
-        # LOUD, ONCE. Silently changing what a name returns is how two callers end up disagreeing
-        # about a cached feature matrix, and this name has now moved four times.
-        if not _MINIMAL_MEANING_WARNED:
-            _MINIMAL_MEANING_WARNED = True
+    if name in _SHORT:
+        # LOUD, ONCE PER NAME. Silence is how two callers end up disagreeing about a cached
+        # feature matrix, and these two names moved at 1.0.0.
+        if name in _MOVED_AT_1_0 and name not in _MEANING_WARNED:
+            _MEANING_WARNED.add(name)
             warnings.warn(
-                "columns='minimal' is 256 columns (minimal-v3) from 0.10.0; it was 622 "
-                "(minimal-v2) in 0.4.0-0.9.2. minimal-v3 is NOT free -- it costs about 2.5% on "
-                "classification against the full set on held-out data. For the free 408-column "
-                "set use columns='default'; for the old behaviour use columns='minimal-v2'. "
-                "Pin a versioned name if the set must not move under you.",
+                f"columns={name!r} {_MOVED_AT_1_0[name]} Short names are frozen from 1.0.0; pin "
+                "a versioned name if you need certainty across releases.",
                 UserWarning, stacklevel=3)
-        return _minimal.MINIMAL_V3_COLUMNS
+        return getattr(_minimal, _VERSIONED[_SHORT[name]])
     if name == "full_no_new":
         drop = set(_additional_names()) | set(OPTIONAL_COLUMNS)
         return tuple(c for c in ALL_COLUMNS if c not in drop)
     raise ValueError(
-        f"column_set({name!r}) is not a set this build carries. The four short names are "
-        "'default' (408, free against the full set on held-out data and the default here), "
-        "'minimal' (256, cheaper and NOT free -- about 2.5% on classification), 'full_no_new' "
-        "(1,109 -- everything RDKit or Mordred already defines) and 'full' (all 1,269). The "
-        "versioned names are 'default-v1', 'minimal-v3' and 'minimal-v2' (622, what 'minimal' "
-        "meant before 0.10.0); pin one of those if the set must not move between releases. None "
-        "includes `qed`, which is opt-in: column_set('full', extra=['qed']). For anything else "
-        "pass a list of names; molhume.ALL_COLUMNS lists every one.")
+        f"column_set({name!r}) is not a set this build carries. The short names are 'full' "
+        "(1,269), 'default' (622, the safest -- it beats the full set on held-out data), 'small' "
+        "(408, free and the cheapest to compute), 'minimal' (256, about 2.5% worse on "
+        "classification) and 'full_no_new' (1,109, everything RDKit or Mordred already defines). "
+        "Short names are frozen from 1.0.0; the versioned names 'default-v2', 'small-v1' and "
+        "'minimal-v3' are frozen forever, as are the pre-1.0.0 'minimal-v2' (= default-v2) and "
+        "'default-v1' (= small-v1). None includes `qed`, which is opt-in: "
+        "column_set('full', extra=['qed']). For anything else pass a list of names; "
+        "molhume.ALL_COLUMNS lists every one.")
 
 
 def _resolve_columns(columns):

@@ -44,16 +44,11 @@
   }
  ],
  "arms": [
-  "ecfp",
-  "ecfp_rdkit_desc",
-  "ecfp_mordred_desc",
   "ecfp_all_desc",
   "hume",
-  "hume_no_new",
   "hume_622",
-  "minimol",
-  "chemeleon",
-  "chemberta_mtr"
+  "hume_408",
+  "hume_256"
  ],
  "cost": {
   "ecfp": {
@@ -144,30 +139,6 @@
  "records": [
   {
    "task": "physchem",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 0.06802377914412282,
-   "sem": 0.016376242790456224,
-   "n_folds": 30
-  },
-  {
-   "task": "physchem",
-   "arm": "ecfp_rdkit_desc",
-   "head": "xgboost",
-   "mean": 0.004732976016656685,
-   "sem": 0.0068288157872979744,
-   "n_folds": 30
-  },
-  {
-   "task": "physchem",
-   "arm": "ecfp_mordred_desc",
-   "head": "xgboost",
-   "mean": 0.016046375103809202,
-   "sem": 0.009923569510255852,
-   "n_folds": 30
-  },
-  {
-   "task": "physchem",
    "arm": "ecfp_all_desc",
    "head": "xgboost",
    "mean": 0.0,
@@ -184,14 +155,6 @@
   },
   {
    "task": "physchem",
-   "arm": "hume_no_new",
-   "head": "xgboost",
-   "mean": 0.006368340536803713,
-   "sem": 0.0038793844331373784,
-   "n_folds": 30
-  },
-  {
-   "task": "physchem",
    "arm": "hume_622",
    "head": "xgboost",
    "mean": 0.009769804652787012,
@@ -200,51 +163,19 @@
   },
   {
    "task": "physchem",
-   "arm": "minimol",
+   "arm": "hume_408",
    "head": "xgboost",
-   "mean": 0.0508919645997588,
-   "sem": 0.014029134733157868,
+   "mean": 0.00441963984754538,
+   "sem": 0.006786790120008138,
    "n_folds": 30
   },
   {
    "task": "physchem",
-   "arm": "chemeleon",
+   "arm": "hume_256",
    "head": "xgboost",
-   "mean": 0.043352074934061374,
-   "sem": 0.00660952455754605,
+   "mean": 0.0037755089047575943,
+   "sem": 0.004662086552524193,
    "n_folds": 30
-  },
-  {
-   "task": "physchem",
-   "arm": "chemberta_mtr",
-   "head": "xgboost",
-   "mean": 0.15406065059248922,
-   "sem": 0.01689886150768472,
-   "n_folds": 30
-  },
-  {
-   "task": "adme",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 0.019497020632922458,
-   "sem": 0.014330938714851728,
-   "n_folds": 50
-  },
-  {
-   "task": "adme",
-   "arm": "ecfp_rdkit_desc",
-   "head": "xgboost",
-   "mean": -0.009651349625511108,
-   "sem": 0.012306372791920466,
-   "n_folds": 50
-  },
-  {
-   "task": "adme",
-   "arm": "ecfp_mordred_desc",
-   "head": "xgboost",
-   "mean": -0.0035172979327760755,
-   "sem": 0.005121519796555294,
-   "n_folds": 50
   },
   {
    "task": "adme",
@@ -264,14 +195,6 @@
   },
   {
    "task": "adme",
-   "arm": "hume_no_new",
-   "head": "xgboost",
-   "mean": 0.029895838481386716,
-   "sem": 0.010384194358376285,
-   "n_folds": 50
-  },
-  {
-   "task": "adme",
    "arm": "hume_622",
    "head": "xgboost",
    "mean": -0.0031182905081389213,
@@ -280,51 +203,19 @@
   },
   {
    "task": "adme",
-   "arm": "minimol",
+   "arm": "hume_408",
    "head": "xgboost",
-   "mean": 0.02673163735668623,
-   "sem": 0.017968436036504023,
+   "mean": 0.006214279728397887,
+   "sem": 0.006747551181749768,
    "n_folds": 50
   },
   {
    "task": "adme",
-   "arm": "chemeleon",
+   "arm": "hume_256",
    "head": "xgboost",
-   "mean": 0.035467966834922274,
-   "sem": 0.011655415059238318,
+   "mean": -0.0010847312144455668,
+   "sem": 0.008359842120323665,
    "n_folds": 50
-  },
-  {
-   "task": "adme",
-   "arm": "chemberta_mtr",
-   "head": "xgboost",
-   "mean": 0.0892969170421129,
-   "sem": 0.018781900334600067,
-   "n_folds": 50
-  },
-  {
-   "task": "classif",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 0.011167826758983704,
-   "sem": 0.0028979100122201295,
-   "n_folds": 65
-  },
-  {
-   "task": "classif",
-   "arm": "ecfp_rdkit_desc",
-   "head": "xgboost",
-   "mean": -0.0007703185534547314,
-   "sem": 0.0016095344262288761,
-   "n_folds": 65
-  },
-  {
-   "task": "classif",
-   "arm": "ecfp_mordred_desc",
-   "head": "xgboost",
-   "mean": 0.0019513214045700712,
-   "sem": 0.0017814857140063124,
-   "n_folds": 65
   },
   {
    "task": "classif",
@@ -344,14 +235,6 @@
   },
   {
    "task": "classif",
-   "arm": "hume_no_new",
-   "head": "xgboost",
-   "mean": 0.003197046725289805,
-   "sem": 0.001239255722478895,
-   "n_folds": 65
-  },
-  {
-   "task": "classif",
    "arm": "hume_622",
    "head": "xgboost",
    "mean": 0.001862796488578891,
@@ -360,51 +243,19 @@
   },
   {
    "task": "classif",
-   "arm": "minimol",
+   "arm": "hume_408",
    "head": "xgboost",
-   "mean": -0.0001508019450639369,
-   "sem": 0.00445782035744203,
+   "mean": 0.0014640231248776831,
+   "sem": 0.0015343894661961222,
    "n_folds": 65
   },
   {
    "task": "classif",
-   "arm": "chemeleon",
+   "arm": "hume_256",
    "head": "xgboost",
-   "mean": -0.00026169202937618665,
-   "sem": 0.0024043701867746264,
+   "mean": 0.0028853500424689685,
+   "sem": 0.0016858905148103118,
    "n_folds": 65
-  },
-  {
-   "task": "classif",
-   "arm": "chemberta_mtr",
-   "head": "xgboost",
-   "mean": 0.02569798774618173,
-   "sem": 0.004261590106268325,
-   "n_folds": 65
-  },
-  {
-   "task": "quantum",
-   "arm": "ecfp",
-   "head": "xgboost",
-   "mean": 0.07613839202779764,
-   "sem": 0.01412914385783167,
-   "n_folds": 20
-  },
-  {
-   "task": "quantum",
-   "arm": "ecfp_rdkit_desc",
-   "head": "xgboost",
-   "mean": 0.01280600053487068,
-   "sem": 0.002902870660062511,
-   "n_folds": 20
-  },
-  {
-   "task": "quantum",
-   "arm": "ecfp_mordred_desc",
-   "head": "xgboost",
-   "mean": 0.004492192865011513,
-   "sem": 0.0022760618696634097,
-   "n_folds": 20
   },
   {
    "task": "quantum",
@@ -424,14 +275,6 @@
   },
   {
    "task": "quantum",
-   "arm": "hume_no_new",
-   "head": "xgboost",
-   "mean": -0.0004547908069519255,
-   "sem": 0.0036259161913585426,
-   "n_folds": 20
-  },
-  {
-   "task": "quantum",
    "arm": "hume_622",
    "head": "xgboost",
    "mean": -0.006538768231357003,
@@ -440,26 +283,18 @@
   },
   {
    "task": "quantum",
-   "arm": "minimol",
+   "arm": "hume_408",
    "head": "xgboost",
-   "mean": -0.0030019847241717704,
-   "sem": 0.012270739587045491,
+   "mean": -0.003351003718677366,
+   "sem": 0.0031298922295206967,
    "n_folds": 20
   },
   {
    "task": "quantum",
-   "arm": "chemeleon",
+   "arm": "hume_256",
    "head": "xgboost",
-   "mean": 0.049521386309466675,
-   "sem": 0.009612630827309813,
-   "n_folds": 20
-  },
-  {
-   "task": "quantum",
-   "arm": "chemberta_mtr",
-   "head": "xgboost",
-   "mean": 0.1760442005378589,
-   "sem": 0.015498165199159305,
+   "mean": 0.0008994400759229498,
+   "sem": 0.004130754095334406,
    "n_folds": 20
   }
  ]

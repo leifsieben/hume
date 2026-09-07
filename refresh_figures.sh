@@ -45,3 +45,7 @@ PY
 echo
 echo "=== render ==="
 for f in fig_b fig_c fig_d; do $PY figures/src/$f.py 2>&1 | grep -E "saved|WARNING|SKIP" || true; done
+
+# SI figure A: the four HUME widths against the classical baseline, same construction
+# as Figure C but with one method family on the axis so the points separate.
+$PY figures/src/si_fig_a.py

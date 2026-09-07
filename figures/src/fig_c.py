@@ -71,11 +71,17 @@ from style import (FS, STYLE, check_font, mark_empty, row_ncol,    # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RESULTS = ROOT / "results" / "figures" / "figC" / "results.json"
+#: Output stem. SI_fig_a is the same plate with a different arm list, so it reuses this renderer
+#: rather than being a copy that drifts -- one construction, two arm sets.
+STEM = "fig_c"
 DEFAULT_HEAD = "xgboost"
 
 
 def load():
     global RESULTS
+    global STEM
+    if len(sys.argv) > 2:
+        STEM = sys.argv[2]
     if len(sys.argv) > 1:
         RESULTS = Path(sys.argv[1])
         print(f"  reading {RESULTS}  (override; not the canonical results file)")
@@ -347,7 +353,7 @@ def main() -> None:
     lax.legend(handles=handles, loc="center", ncol=row_ncol(handles, rows=2), frameon=False,
                fontsize=FS["legend"], handlelength=0.8, columnspacing=0.8,
                handletextpad=0.4)
-    save(fig, "fig_c")
+    save(fig, STEM)
     plt.close(fig)
 
     # THE NUMBERS BEHIND THE WHISKERS THAT CANNOT BE SEEN. A standard error smaller than the
@@ -359,7 +365,7 @@ def main() -> None:
     # subtracted from itself.
     build = Path(__file__).resolve().parents[1] / "build"
     build.mkdir(parents=True, exist_ok=True)
-    with open(build / "fig_c.csv", "w", newline="") as fh:
+    with open(build / f"{STEM}.csv", "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["task", "arm", "delta_error_vs_anchor", "sem", "n_folds",
                     "us_per_mol", "cost_measured_on", "is_anchor"])
@@ -368,7 +374,7 @@ def main() -> None:
             w.writerow([r["task"], r["arm"], f"{r['mean']:.6f}", f"{r['sem']:.6f}",
                         r.get("n_folds", ""), f"{c.get('us_per_mol', float('nan')):.2f}",
                         c.get("measured_on", ""), int(r["arm"] == "ecfp_all_desc")])
-    print(f"  wrote  figures/build/fig_c.csv")
+    print(f"  wrote  figures/build/{STEM}.csv")
 
 
 if __name__ == "__main__":

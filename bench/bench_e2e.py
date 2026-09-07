@@ -70,7 +70,8 @@ from pathlib import Path  # noqa: E402
 
 import numpy as np  # noqa: E402
 
-ROOT = Path(__file__).resolve().parent
+# .parents[1]: this file moved into bench/ and every path below is repo-relative
+ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "results" / "e2e"
 CORPUS = ROOT / "cpp" / "hard.smi"
 
