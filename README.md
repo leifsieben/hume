@@ -51,7 +51,7 @@ Measured once on 33 held-out tasks that took no part in choosing them, against t
 `default` is free. `minimal` is a stated trade — use it when the budget is worth roughly 2.5% on
 classification. `minimal-v2` is *better* than the full set on this panel.
 
-⚠️ **`minimal` means 256 columns from 0.10.0 and meant 622 before it.** Short names are pointers;
+**`minimal` means 256 columns from 0.10.0 and meant 622 before it.** Short names are pointers;
 `default-v1`, `minimal-v3` and `minimal-v2` are contracts. Pin one, or read
 `results/hume_default_408.txt`.
 
@@ -181,7 +181,7 @@ format version from 2025.09 and is accepted because 4,000 corpus molecules pickl
 differing only in the version triple, and all 1,269 columns over 8,000 molecules come out
 bit-identical. Widening the range for a future release is one command,
 `tools/check_rdkit_release.py`, plus work on the reader if the blobs did change. See
-`MAINTENANCE.md`.
+`docs/MAINTENANCE.md`.
 
 The upper bound is loose deliberately: it is a courtesy to resolvers, stopping a fresh install
 from picking an RDKit years newer than anything measured, not a claim about 2027. If the pickle
@@ -256,7 +256,7 @@ columns help.
 
 For contrast, the retired `minimal-v1` cost +3.83% on the physicochemical panel at 800 columns.
 v2 is smaller and that loss is gone; the difference is what the two cut on. Full reasoning,
-decision by decision, is in `HUME_Minimal_definition.md`.
+decision by decision, is in `docs/selection/HUME_Minimal_definition.md`.
 
 ## Platforms
 

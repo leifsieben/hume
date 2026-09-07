@@ -45,7 +45,7 @@
 // 7f08884f8700c23fd41e2a5315870a2e BYTE FOR BYTE over all 98,905 molecules. Adding the tenth
 // weight moved no cell of the other nine. That is a statement about this file's arithmetic and
 // it stands on its own; the mordred grade of the 54 new columns is cpp/verify_ac.py's to make
-// and belongs in PORT_STATUS.md next to its version banner, not asserted here.
+// and belongs in docs/notes/PORT_STATUS.md next to its version banner, not asserted here.
 //
 // `Z` is APPENDED as weight index 9 rather than inserted in mordred's getter order, so no
 // pre-existing column changed its name.

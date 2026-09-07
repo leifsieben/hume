@@ -25,8 +25,8 @@ releases and the difference would not be a regression.
 
 ## Slow — root-level `verify_*.py`, needs the corpus and a second environment
 
-`verify_counts.py`, `verify_estate.py`, `verify_eta.py`, `verify_misc.py`, `verify_spectral.py`,
-`verify_sps.py` and `verify.py` are the exactness checks against RDKit and Mordred. They read the
+`verification/verify_counts.py`, `verification/verify_estate.py`, `verification/verify_eta.py`, `verification/verify_misc.py`, `verification/verify_spectral.py`,
+`verification/verify_sps.py` and `verification/verify.py` are the exactness checks against RDKit and Mordred. They read the
 42k corpus from `data/`, and the Mordred comparison needs a Python 3.11 environment (mordred
 1.2.0 imports `distutils`). They are what the exactness numbers in `README.md` and `METHODS.md`
 come from, and they are not part of the fast suite.

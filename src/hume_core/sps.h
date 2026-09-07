@@ -60,7 +60,7 @@
 //     `includeAtomMaps` is false (`df_useAtomMapsOnDummies` defaults true). SMILES with mapped
 //     dummies would need that field.
 // A mol-file-sourced corpus would need those three across the boundary. For SMILES they are
-// provably absent and the perception is exact; see verify_sps.py.
+// provably absent and the perception is exact; see verification/verify_sps.py.
 #ifndef HUME_SPS_H
 #define HUME_SPS_H
 

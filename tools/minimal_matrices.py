@@ -3,7 +3,7 @@
     .venv/bin/python tools/minimal_matrices.py
 
 Three samples, and the split is the scientific claim rather than a convenience (see
-docs/MINIMAL_SPEC.md section on sampling):
+docs/selection/MINIMAL_SPEC_v1_withdrawn.md section on sampling):
 
   repA  24,000 from the 1M TRAINING corpus -- the representative draw. Not a benchmark set:
         selecting on benchmark molecules would tune the spec to the chemistry those benchmarks

@@ -33,7 +33,7 @@
 // not a cycle, so a future corpus that breaks the argument fails loudly instead of silently.
 //
 // THE RING SET IS THE REPAIRED ONE, which is a DELIBERATE DIVERGENCE FROM RDKit on 32 of 100,000
-// molecules. `Chem.GetSymmSSSR` is not a function of the molecular graph (PORT_STATUS.md house
+// molecules. `Chem.GetSymmSSSR` is not a function of the molecular graph (docs/notes/PORT_STATUS.md house
 // rule 1 and src/hume/_rings.py); the same repair that makes mordred's 49 RingCount columns
 // deterministic necessarily moves RDKit's 13 on the same molecules. Measured, per column, over
 // the whole corpus:

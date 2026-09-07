@@ -13,7 +13,7 @@ Hand-copying any of those would put a second copy of RDKit's numbers in this rep
 is the thing cpp/crippen_tables.h and cpp/estate_tables.h both exist to avoid. So they are asked
 of the live RDKit and written out, exactly as cpp/export_crippen.py does for Crippen.txt.
 
-THE DRIFT GUARD IS A HASH OF THE NUMBERS, not of this file (house rule 6 in PORT_STATUS.md).
+THE DRIFT GUARD IS A HASH OF THE NUMBERS, not of this file (house rule 6 in docs/notes/PORT_STATUS.md).
 `--check` re-derives every value from whichever RDKit is installed and compares the digest
 against the one baked into the header. cpp/verify_molpickle.py runs it as part of the same
 process that produces the exactness evidence, so a moved atomic weight cannot pass unnoticed.

@@ -17,7 +17,7 @@ COLUMNS: tuple[str, ...] = (
     # BalabanJ / BalabanJ_mordred -- same formula, weighted vs unweighted distance matrix
     "BalabanJ",
     "BalabanJ_mordred",
-    # chi.py
+    # verification/chi.py
     "chi0n",
     "chi1n",
     "chi2n",
@@ -44,7 +44,7 @@ COLUMNS: tuple[str, ...] = (
     "path_total",
     "path_ratio",
     "chi_nv_ratio",
-    # cycles.py, minus C_sssr and C_redundancy (see cpp/verify_hume.py)
+    # verification/cycles.py, minus C_sssr and C_redundancy (see cpp/verify_hume.py)
     "C3",
     "C4",
     "C5",
@@ -76,7 +76,7 @@ COLUMNS: tuple[str, ...] = (
     "C5_arom",
     "C6_arom",
     "C6_carbo",
-    # conjugation.py
+    # verification/conjugation.py
     "n_sys",
     "conj_atoms",
     "conj_frac",
@@ -101,7 +101,7 @@ COLUMNS: tuple[str, ...] = (
     "het_in_max",
     "het_frac_max",
     "sys_max_rings",
-    # stereo.py
+    # verification/stereo.py
     "S_sum",
     "S_absum",
     "S_sum_norm",
@@ -125,7 +125,7 @@ COLUMNS: tuple[str, ...] = (
     "XATS2",
     "XATS3",
     "XATS4",
-    # resistance.py
+    # verification/resistance.py
     "RATSC0_m",
     "RATSC0_e",
     "RATSC0_p",

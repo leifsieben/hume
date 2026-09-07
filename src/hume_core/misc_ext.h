@@ -1378,7 +1378,7 @@ inline double logEE_A(const Mol &m, Scratch &S) {
 //! the same graph; running them again here measured 58.6 + 13.1 us/mol of pure duplication.
 //! Pass the caller's Scratch and this reuses it verbatim -- same Mol, same accumulators, so the
 //! values are identical rather than merely equal. Null keeps the self-contained behaviour that
-//! verify_misc.py exercises.
+//! verification/verify_misc.py exercises.
 inline void compute(const Mol &m, Scratch &S, double *out,
                     const chisub::Scratch *chi_in = nullptr,
                     const pathcount::Scratch *pc_in = nullptr) {

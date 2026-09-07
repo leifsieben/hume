@@ -27,7 +27,7 @@
 // molecules -- JGI4 on 70,043 of them -- at a relative size never exceeding 2.9e-15. GGI1 never
 // moved, on any molecule.
 //
-// That is NOT ill-posedness in the PORT_STATUS.md sense -- the quantity is a permutation
+// That is NOT ill-posedness in the docs/notes/PORT_STATUS.md sense -- the quantity is a permutation
 // invariant, a sum of absolute values over an unordered set of atom pairs, and the mathematics
 // does not depend on the numbering. What moves is the FLOATING-POINT SUMMATION ORDER: `A.dot(D2)`
 // is a BLAS dgemm (Accelerate, on this machine), whose accumulation order over an atom's

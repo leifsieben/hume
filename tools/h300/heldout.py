@@ -2,7 +2,7 @@
 
     CHEMPFN_DATA_ROOT=... PYTHONPATH=<chempfn> .venv/bin/python tools/h300/heldout.py
 
-Every number in HUME_300_METHOD.md so far was measured on the panels the selection was made on.
+Every number in docs/selection/HUME_300_METHOD.md so far was measured on the panels the selection was made on.
 The leave-one-dataset-out in the earlier runs protected the within-family RANKING only; the
 decisions that matter -- which sweeps to cut, proportional against effective-rank allocation,
 which arm to ship -- all saw every panel. A spec chosen and reported on one set of tasks has an

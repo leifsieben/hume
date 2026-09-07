@@ -9,10 +9,10 @@ that made it. Nothing here is edited by hand; regenerate rather than patch.
 
 | path | produced by | consumed by |
 | --- | --- | --- |
-| `figures/downstream_raw.json` | `collect_downstream.py` | the two below |
-| `figures/figB/results.json` | `collect_downstream.py` | `figures/src/fig_b.py` |
-| `figures/figC/results.json` | `collect_downstream.py` | `figures/src/fig_c.py` |
-| `scale/*.json` | `collect_scale.py` | figure C's cost axis, figure D |
+| `figures/downstream_raw.json` | `bench/collect_downstream.py` | the two below |
+| `figures/figB/results.json` | `bench/collect_downstream.py` | `figures/src/fig_b.py` |
+| `figures/figC/results.json` | `bench/collect_downstream.py` | `figures/src/fig_c.py` |
+| `scale/*.json` | `bench/collect_scale.py` | figure C's cost axis, figure D |
 
 `./refresh_figures.sh` runs the whole chain: pull from S3, rebuild the contracts, re-render, and
 print what is still missing. It is safe to run at any time and as often as you like.
@@ -33,7 +33,7 @@ datasets in the current grid were actually produced.
 | `minimal/selection_repAonly.json` | the same, derived on the training corpus alone (the comparison that motivated pooling) |
 
 The frozen result lives in the package as `src/molhume/_minimal.py`, not here. Method and
-validation: `docs/MINIMAL_SPEC.md`.
+validation: `docs/selection/MINIMAL_SPEC_v1_withdrawn.md`.
 
 ## Reanalysis
 
@@ -44,7 +44,7 @@ validation: `docs/MINIMAL_SPEC.md`.
 | `reanalysis/head_sweep_summary.json` | `tools/head_sweep_report.py` |
 
 **The cached features are the point.** Until they existed, changing the prediction head meant a
-full EC2 re-run, because `bench_downstream.py` holds features in memory and ships only scores.
+full EC2 re-run, because `bench/bench_downstream.py` holds features in memory and ships only scores.
 With them, "same molecules, same folds, different head" is a minute on a laptop — and the folds
 are *stored* rather than recomputed, so a reanalysis is comparable with the grid it is being
 compared against rather than approximately so.

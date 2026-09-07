@@ -132,7 +132,7 @@ def report(label: str, got: np.ndarray, want: np.ndarray, names, tol: float = 0.
            note: str = "", nan_eq: bool = False) -> int:
     """-> number of failing columns.
 
-    THE MAX DEVIATION IS ALWAYS PRINTED, tolerance or not. House rule 5 in PORT_STATUS.md: a
+    THE MAX DEVIATION IS ALWAYS PRINTED, tolerance or not. House rule 5 in docs/notes/PORT_STATUS.md: a
     tolerance is allowed only alongside the max observed deviation and a floating-point reason,
     and a column reported as EXACT under a tolerance should have to show how much slack it used.
 
@@ -234,7 +234,7 @@ def write_ac_io(mols, path: Path) -> None:
             # makes the 54 `c` columns differ from the wiring in the 12th digit and says nothing
             # about whether the graph is right. %.17g round-trips a float64 exactly, so the
             # comparison below is against the same numbers the wiring used. (This is the same
-            # effect PACKAGING.md records for the old %.10g Gasteiger export, one digit worse.)
+            # effect docs/notes/PACKAGING.md records for the old %.10g Gasteiger export, one digit worse.)
             rows.append(f"{a.GetAtomicNum()} {a.GetFormalCharge()} {a.GetTotalNumHs()} {c:.17g}")
         bonds = [f"{b.GetBeginAtomIdx()} {b.GetEndAtomIdx()}" for b in mh.GetBonds()]
         out.append(f"{mh.GetNumAtoms()} {len(bonds)}\n" + "\n".join(rows) +
@@ -518,7 +518,7 @@ def check_mordred(mols, X) -> int:
     # the REPAIRED ring set (`_rings.rings_for`, the same one RingCount gets), while mordred's
     # `Rings()` is raw `Chem.GetSymmSSSR` -- and the two differ on roughly 1 molecule in 3,000,
     # where `symmetrizeSSSR` finds a symmetry-equivalent extra ring it does not always find
-    # (PORT_STATUS.md: 22 of 100,000 move under atom+bond shuffling before the repair, 0 after).
+    # (docs/notes/PORT_STATUS.md: 22 of 100,000 move under atom+bond shuffling before the repair, 0 after).
     # Two constit columns read rings: `fMF` directly and `Vabc` through naRing/nARing.
     ringdiff = np.array([sorted(sorted(int(i) for i in r) for r in rings_for(m)) !=
                          sorted(sorted(int(i) for i in r) for r in Chem.GetSymmSSSR(m))
@@ -859,7 +859,7 @@ def nan_audit(mols, X) -> int:
     """WHICH cells of the three new families are non-finite, and whether that is the two known
     placeholders or something nobody decided.
 
-    PORT_STATUS.md records that non-finite values are CORRECT and expected in this matrix (144 of
+    docs/notes/PORT_STATUS.md records that non-finite values are CORRECT and expected in this matrix (144 of
     1015 columns for ethanol are `AATS<k>*` beyond the molecule's diameter). That makes a bare NaN
     count useless as a guard, so this prints the per-column non-finite rate for the new families
     and asserts only the thing that IS decided: the set of columns that are NaN on EVERY molecule

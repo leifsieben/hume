@@ -6,7 +6,7 @@ silent -- a stale "1,266 columns, 14 families" reads exactly like a current one 
 found by a human asking "are the docs up to date", which is not a mechanism.
 
 This checks the live package against the docs that make current-tense claims. It does NOT check
-CHANGELOG.md, API.md's superseded-specification table, docs/MINIMAL_SPEC.md or PACKAGING.md's
+CHANGELOG.md, docs/API.md's superseded-specification table, docs/selection/MINIMAL_SPEC_v1_withdrawn.md or docs/notes/PACKAGING.md's
 captured transcripts: those record what WAS true, and a test that forced them to say what is
 true now would destroy the record it is meant to protect.
 """
@@ -25,7 +25,7 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 #: is UTF-8; say so rather than inheriting whatever the host thinks.
 
 #: Docs that describe the package AS IT IS. A stale number in one of these is a bug.
-CURRENT = ["README.md", "MAINTENANCE.md", "METHODS.md", "docs/HUME_DESCRIPTORS.md",
+CURRENT = ["README.md", "docs/MAINTENANCE.md", "METHODS.md", "docs/DESCRIPTORS.md",
            "docs/DESCRIPTOR_MAP.md", "HANDOVER_minimal_v2.md"]
 
 #: Counts that have been wrong in the docs before, with what they should be now.
@@ -77,7 +77,7 @@ def test_the_live_counts_are_what_the_docs_claim():
     fams = [f for f, (a, b) in molhume.FAMILY_OFFSETS.items()
             if b > a and f not in molhume.OPTIONAL_COLUMNS]
     assert len(fams) == 19, (
-        f"{len(fams)} descriptor families, but README and docs/HUME_DESCRIPTORS.md both say "
+        f"{len(fams)} descriptor families, but README and docs/DESCRIPTORS.md both say "
         "nineteen. Update the prose or explain the new one.")
 
 
@@ -97,7 +97,8 @@ def test_no_pre_rename_package_name(doc):
 
 def test_minimal_spec_v1_is_marked_superseded():
     """It documents a withdrawn spec and several files still cite its sections."""
-    head = (ROOT / "docs" / "MINIMAL_SPEC.md").read_text(encoding="utf-8")[:1500]
+    head = (ROOT / "docs" / "selection" / "MINIMAL_SPEC_v1_withdrawn.md").read_text(
+        encoding="utf-8")[:1500]
     assert "SUPERSEDED" in head and "minimal-v1" in head, (
-        "docs/MINIMAL_SPEC.md describes the withdrawn v1 ordering. Without a banner it reads as "
+        "docs/selection/MINIMAL_SPEC_v1_withdrawn.md describes the withdrawn v1 ordering. Without a banner it reads as "
         "the method behind the shipped set, which is what it says in its own first line.")

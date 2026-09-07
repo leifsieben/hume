@@ -487,7 +487,7 @@ def stress() -> None:
 # the 50 columns
 # ---------------------------------------------------------------------------------------------
 def hume_estate_columns() -> list[str]:
-    """The 50 EState columns HUME's dedupe actually keeps, from blocks.py -- not a pasted list."""
+    """The 50 EState columns HUME's dedupe actually keeps, from verification/blocks.py -- not a pasted list."""
     sys.path.insert(0, str(ROOT))
     import blocks
     from mordred import Calculator, descriptors

@@ -1,7 +1,7 @@
 # What the 1,269 columns actually measure
 
 *A provenance map, built by reading the implementations rather than by correlating them. The
-companion to `docs/MINIMAL_SPEC.md`, which selects columns; this one says what they are.*
+companion to `docs/selection/MINIMAL_SPEC_v1_withdrawn.md`, which selects columns; this one says what they are.*
 
 Correlation tells you two columns move together on the molecules you looked at. It cannot tell
 you they are **the same measurement in different units**, and it cannot tell you two columns
@@ -102,7 +102,7 @@ value.
 | `ETA_dEpsilon_B` | 0.36 | 15.9% | mordred, documented |
 | `ETA_epsilon_4`, `ETA_dEpsilon_C` | 0.24 | 33.1% | mordred, documented |
 
-**The six ring-system columns share one root cause, and it is instructive.** `conjugation.py`
+**The six ring-system columns share one root cause, and it is instructive.** `verification/conjugation.py`
 already identified the tie-break and pinned the sort to `kind="stable"`, with a long comment
 explaining that an unstable sort picked different pi systems depending on RDKit's atom
 numbering. That fix made the value **reproducible** — the same SMILES always gives the same

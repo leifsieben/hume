@@ -2,7 +2,7 @@
 
     .venv/bin/python tools/head_sweep.py
 
-THE HYPOTHESIS BEING TESTED, stated so it can fail. docs/MINIMAL_SPEC.md section 11 explains the
+THE HYPOTHESIS BEING TESTED, stated so it can fail. docs/selection/MINIMAL_SPEC_v1_withdrawn.md section 11 explains the
 +3.83% physchem cost as follows: the spec guarantees dropped columns are LINEARLY recoverable,
 but a depth-6 boosted tree splits on individual columns and cannot split on a linear combination
 of thirty of them. If that explanation is right, then a head that CAN form linear combinations
@@ -74,7 +74,7 @@ def run():
         z = np.load(FEAT / f"{ds}.npz", allow_pickle=False)
         X, fp, y, folds = z["X"], z["fp"], z["y"], z["folds"]
         mask = z["minimal_mask"]
-        # +/-inf -> NaN, EXACTLY AS bench_downstream.py DOES. rdkit emits inf on real
+        # +/-inf -> NaN, EXACTLY AS bench/bench_downstream.py DOES. rdkit emits inf on real
         # molecules (Ipc overflows on larger graphs, the partial-charge descriptors on a few odd
         # valences) and xgboost refuses it outright: "Input data contains `inf` or a value too
         # large". Trees then read NaN as missing. Doing anything different here would make the

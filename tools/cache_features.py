@@ -4,7 +4,7 @@
       .venv/bin/python tools/cache_features.py esol lipophilicity ...
 
 WHY THIS EXISTS. Every AWS box so far recomputed features, scored them, shipped the scores and
-threw the features away -- `bench_downstream.py` keeps them in `_BLOCK_CACHE`, which it clears
+threw the features away -- `bench/bench_downstream.py` keeps them in `_BLOCK_CACHE`, which it clears
 at the top of every dataset. That makes any reanalysis ("what if the head were an MLP?", "what
 if the trees were deeper?") a full re-run on EC2 instead of a minute on a laptop, and it means
 the numbers in the paper cannot be interrogated after the fact. Persisting the matrices makes
@@ -32,6 +32,7 @@ import numpy as np
 
 sys.path.insert(0, "/Users/lsieben/VSCode/ChemPFN")
 sys.path.insert(0, ".")
+sys.path.insert(0, "bench")
 
 from rdkit import Chem, RDLogger  # noqa: E402
 

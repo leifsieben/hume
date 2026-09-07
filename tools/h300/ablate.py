@@ -2,7 +2,7 @@
 
     .venv/bin/python tools/h300/ablate.py OUT.json
 
-Stage 2 of HUME_300_METHOD.md. Stage 1 ranks columns; this decides. Groups rather than columns,
+Stage 2 of docs/selection/HUME_300_METHOD.md. Stage 1 ranks columns; this decides. Groups rather than columns,
 because gain splits between correlated columns and a correlated team has to be dropped together
 or its members hide behind each other.
 

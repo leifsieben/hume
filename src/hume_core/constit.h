@@ -1502,7 +1502,7 @@ inline void compute(const Mol& m, const Inputs& in, double* out, double tpsa) {
 //          stereoBond[e] = after `rdmolops.FindPotentialStereoBonds(Chem.Mol(m))`,
 //                          bond e is DOUBLE and its GetStereo() != STEREONONE
 //      It is NOT derived: it is a perception, not a graph query.  It costs 52 us/mol, which is
-//      the price of this one column and is recorded in PORT_STATUS.md rather than buried.
+//      the price of this one column and is recorded in docs/notes/PORT_STATUS.md rather than buried.
 //
 //      IT IS NOT THE SAME PERCEPTION `NumAtomStereoCenters` AND
 //      `NumUnspecifiedAtomStereoCenters` WANT, and this note used to claim it was ("one boundary

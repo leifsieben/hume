@@ -389,7 +389,7 @@ def _perm_one(arg):
 
 def perm(limit: int | None = None) -> None:
     """Renumber the atoms and recompute WITH MORDRED. Any column that moves is not a function of
-    the molecule. PORT_STATUS.md house rule 1."""
+    the molecule. docs/notes/PORT_STATUS.md house rule 1."""
     from multiprocessing import Pool
     _numpy_shim()
     versions("perm")

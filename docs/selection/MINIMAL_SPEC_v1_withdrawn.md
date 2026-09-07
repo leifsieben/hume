@@ -1,0 +1,261 @@
+# HUME_minimal v1: deriving a reduced column spec — **SUPERSEDED**
+
+>**THIS DOCUMENT DESCRIBES `minimal-v1`, WHICH WAS WITHDRAWN. It is not how the shipped set
+> was chosen.** `molhume.minimal_columns(spec="minimal-v1")` raises, and `minimal_curve()`,
+> `minimal_recovery()` and `minimal_gated()` no longer exist.
+>
+> **The live document is [`docs/selection/HUME_Minimal_definition.md`](../HUME_Minimal_definition.md).** The
+> shipped set is `minimal-v2`: **622 columns**, and since 0.7.0 the default.
+>
+> **Why v1 went.** It was an *ordering*, derived by rank-revealing QR on a linear-recoverability
+> criterion — a column could go if the kept ones could rebuild it linearly. No consumer works
+> that way. A depth-6 tree cannot split on a linear combination, and when it was tested neither a
+> deeper tree nor an MLP recovered the loss: tree median R² 1.0000 against linear 0.9971 on the
+> same held-out columns. v2 is a **set**, not a ranking, and drops a column only for being the
+> same physical quantity in different units, already carried by the ECFP that ships alongside, or
+> an exact arithmetic identity of columns that remain.
+>
+> **It is kept, not deleted, for its negative results** — the sampling and rank analysis below
+> are still the reason several later decisions went the way they did, and several files cite
+> sections of it. Read it as a record of an approach that did not work. Every operating point it
+> names (800, 640) and every API it mentions is dead.
+
+*Original front matter follows.*
+
+*How the v1 ordering was chosen, what it costs, and what would falsify it.*
+
+The method follows ChemPFN's `DESCRIPTOR_SELECTION_METHOD.md`, whose framing — coverage rather
+than compression, label-free, pivoted QR rather than correlation clustering — is right and is
+adopted here unchanged. Three things are done differently, each because measuring them changed
+the answer. They are in §4, §5 and §6, and the resulting operating point is **800**, not 640.
+
+---
+
+## 1. The objective
+
+**Find the smallest ordered column set `S` such that every column not in `S` is recoverable
+from `S`.**
+
+This is a **coverage** criterion, not a compression one, and the difference decides the answer.
+A dropped column costs a downstream model nothing if it can be reconstructed from what remains —
+the model rebuilds it internally. What is lost is only a column's *unique* variance. So the
+question is never "which columns explain the most variance", which keeps the loudest columns,
+but "from which columns can we rebuild all the others".
+
+## 2. Label-free, and not negotiable
+
+The procedure reads only the descriptor matrix. No target, no assay, no benchmark. Selecting on
+labels leaks whatever benchmark supplied them and picks descriptors suited to the chemistry that
+happened to be in the label set. Decisively: **a descriptor spec is a permanent contract**, and
+every downstream user inherits it, including users whose chemistry nobody in this loop has seen.
+Redundancy is a property of the molecules; informativeness is a property of somebody's targets.
+Only the first is safe to select on.
+
+The downstream benchmark in Figure C is therefore a **test** of this spec, never an input to it.
+
+## 3. Pivoted QR, not correlation clustering
+
+Cluster-by-|ρ| cannot see multi-column dependence: a column can be an exact linear combination
+of three others while correlating weakly with each, so it survives the filter and adds nothing.
+Column-pivoted QR orders columns by how much *new* direction each adds given those already
+chosen, and it selects **actual columns** rather than components — PCA answers "how many
+dimensions are there" but its components cannot be shipped as a descriptor list.
+
+## 4. What the missing values force
+
+**Only 4.6% of corpus molecules are finite in all 1,269 columns.** Dropping incomplete rows
+would leave ~1,100 rows against 1,269 columns — rank-deficient, and any `k` derived from it would
+be an artifact of the deficiency rather than a fact about chemistry. So: gate out columns below
+50% finite (the same usability gate HUME's own deduplication uses; it removes 2), then impute the
+remainder at the **column median**, median rather than mean because these distributions have
+heavy tails. 0.49% of cells on the representative sample, 2.9% on the adversarial one.
+
+Imputation makes a column slightly *more* predictable than it truly is, which biases toward
+dropping. `tools/minimal_select.py --finite-only` re-runs the whole derivation on the 1,024
+columns that are 100% finite, with no imputation at all, as a sensitivity check.
+
+## 5. Both distributions, or the spec is only for one
+
+Recoverability holds on the distribution you measure it on. Two samples, and the ordering is
+derived on **both stacked**, not derived on one and checked against the other:
+
+- **repA / repB** — 24,000 molecules each, disjoint, from `data/corpus1m/selected.txt`, the 1M
+  *training* corpus. Not a benchmark set.
+- **adv** — 24,000 from `cpp/hard.smi`: salts, mixtures, unusual elements, size extremes.
+
+**This is not a formality, and it moved the answer.** Deriving the ordering on the representative
+corpus alone closes coverage at k=704 — and leaves `Phi` and `Kappa2` at **R² = 0.07** on salts
+and mixtures. Both descend from `HallKierAlpha`, whose alpha table is solved over the
+(element, hybridisation) pairs the training corpora contained, and which METHODS.md §7.2 already
+records as failing on organometallics and metal salts. On that chemistry they carry unique
+variance nothing else reproduces. A spec derived on drug-like molecules alone would have silently
+dropped them and been wrong for anyone working with salts.
+
+Each sample is z-scored with its **own** statistics before stacking. Pooling first and scaling
+after lets whichever sample has the wider spread set the scale and dominate the pivoting.
+
+ The spec is tied to `standardize="none"`, recorded in `_minimal.py`. That setting changes
+descriptor values for every multi-fragment input, so a spec derived under one does not transfer.
+
+**A concrete instance of the limitation, found while writing the per-column API.** Two of the
+1,269 emitted columns were gated out of the ranking before it was derived, and the reason is the
+sample rather than the descriptor:
+
+| column | on the training corpus | on the benchmark corpus |
+| --- | --- | --- |
+| `n5FHRing` | nonzero on 1 of 120,000 (0.0008%) | nonzero on 484 of 62,000 (0.78%) |
+| `MDEC-11` | finite on 40% | finite on 52% |
+
+`n5FHRing` is a thousand times rarer in the corpus this spec was derived from than in the
+benchmark sets, so a 24,000-molecule draw contained none of it and there was nothing to rank.
+`MDEC-11` falls either side of the 50% finite gate depending on which sample you ask; the emit
+filter saw 52% and kept it, this derivation saw 40% and gated it.
+
+**Neither is a dead column and neither is an error in the emitted set** — both are informative
+where they occur. What they are is chemistry the derivation sample under-represents, which is
+exactly what this section warns about, made concrete. `molhume.minimal_gated()` reports them
+with these numbers rather than omitting them silently, because a user whose molecules contain
+that ring class needs to know the ranking never saw it.
+
+## 6. In-sample R² is not enough, and here it is actively misleading
+
+The acceptance criterion is the **worst-case R²** over dropped columns — never the mean, since a
+set where 799 columns sit at 0.999 and one at 0.40 has lost something real and an average hides
+exactly that — plus the count below 0.99.
+
+But **the kept set is numerically singular**: its condition number reaches 1e15 by k=512, against
+a double-precision epsilon of 2.2e-16. Unregularised least squares in that regime produces
+coefficients that fit collinear directions, and they do not transfer at all. Measured, fitting
+the reconstruction on repA and scoring it on the disjoint repB:
+
+| k | in-sample worst R² | held-out worst R², **unregularised** |
+| --- | --- | --- |
+| 400 | 0.852 | 0.803 |
+| 512 | 0.914 | **−3.2 × 10¹⁸** |
+| 800 | 0.991 | **−1.1 × 10²⁰** |
+
+An in-sample number of 0.99 alongside a held-out number of −10²⁰ is not coverage; it is a solve
+exploiting a singularity. **This is the single most important correction to the method**, and any
+`k` chosen from in-sample R² alone — including the 640 in the source document — is reporting a
+quantity that does not survive contact with a second sample.
+
+The fix is a ridge penalty of `0.01·n` on the reconstruction fit, chosen from a grid
+{1e-6, 1e-4, 1e-2, 1, 1e2}·n by held-out worst-case R²; it was best at every k tested and the
+answer is flat from 1e-6 to 1e-2. It is not a knob on the answer — it exists so the question can
+be asked at all.
+
+ Linear recoverability errs in the safe direction. A column that is a *non-linear* function of
+the kept set looks unrecoverable and is kept unnecessarily, so the method keeps slightly too
+much — which is the right way to be wrong.
+
+## 7. The coverage curve
+
+Fitted on repA and the adversarial set stacked; scored in-sample on each of the three, and
+held-out by fitting on repA and scoring on the disjoint repB.
+
+| k | worst in-sample (min of repA/repB/adv) | cols < 0.99 | worst held-out | held-out < 0.99 | cond(kept) |
+| --- | --- | --- | --- | --- | --- |
+| 256 | 0.585 | 991 | 0.316 | 989 | 2.5e1 |
+| 400 | 0.817 | 719 | 0.803 | 738 | 5.9e1 |
+| 512 | 0.913 | 516 | 0.885 | 495 | 1.1e15 |
+| 640 | 0.957 | 259 | 0.952 | 240 | 1.3e15 |
+| 704 | 0.977 | 105 | 0.957 | 111 | 1.4e15 |
+| 768 | 0.981 | 17 | 0.973 | 30 | 2.2e15 |
+| **800** | **0.990** | **1** | **0.986** | **16** | 3.1e15 |
+| 832 | 0.992 | 0 | 0.989 | 7 | 3.3e15 |
+| 896 | 0.994 | 0 | 0.989 | 2 | 6.0e15 |
+| 1024 | 0.999 | 0 | 0.990 | 0 | 7.3e15 |
+
+## 8. Validation before freezing
+
+**Stability across disjoint samples (§7.1).** Re-deriving the ordering on repB + adv and
+comparing the top-k set with the shipped one:
+
+| k | overlap | Jaccard |
+| --- | --- | --- |
+| 640 | 600 / 640 | 0.882 |
+| **800** | **779 / 800** | **0.949** |
+| 896 | 878 / 896 | 0.961 |
+
+At 800 the two independent derivations agree on 97.4% of the set. At 640 they disagree on 40
+columns, which is the criterion being under-determined there — and the honest response to that
+is a larger k, not a coin flip.
+
+**Per-family survival (§7.2).** No chemically meaningful family is near-eliminated at k=800:
+`autocorr` 62%, `chi` 62%, `spectral` 69%, `estate` 66%, `eta` 45%, `pathcount` 27%,
+`topomisc` 31%. The low two are families whose members are near-duplicates by construction
+(path counts of increasing length). The only family at 0% is `alias`, whose single column is a
+documented duplicate of another — correct, not a flag. *This differs sharply from the source
+document's run, which saw `chi` fall to 7% and flagged it; deriving on the pooled sample does
+not gut it.*
+
+**Conditioning (§7.3).** Reported in the curve above, and the reason §6 exists.
+
+**Constant columns (§7.4).** 1 on repA, 2 on repB, 1 on adv — dropped free by the gate.
+
+## 9. Why 800
+
+Every criterion lands in the same place:
+
+- in-sample coverage effectively closes — 1 column below 0.99 on any of the three samples;
+- held-out worst-case is 0.986, and only 16 of 467 dropped columns fall below 0.99;
+- the selection is stable, 779/800 across independent derivations;
+- no family is gutted.
+
+640 is defensible on the representative corpus alone and on in-sample numbers. It is not
+defensible once salts are included (`Phi`, `Kappa2` at R² 0.07) or once the reconstruction has to
+transfer to a second sample. **The ordering is the product, not the number** — `minimal_curve()`
+publishes the whole table so a memory-constrained user can take 400 knowing exactly what they
+gave up.
+
+## 10. Frozen like an interface
+
+`src/molhume/_minimal.py` records the ordering, the sample, the seed, the `standardize` setting,
+the library and RDKit versions, and the curve. Treat a change as a **breaking** change: anyone
+who cached features under `minimal-v1` must be able to tell that they did. New specs are added
+under a new name rather than edited.
+
+## 11. The falsification test, and what it found
+
+The reconstruction criterion is a *proxy* for the thing anyone actually cares about: whether a
+model does as well on 800 columns as on 1,269. That is measured separately, as an arm in
+Figure C, using the benchmark as a **test** of the spec and never as an input to it (§2).
+
+**The proxy is only partly right, and the failure is systematic.** Measured with the same
+untuned XGBoost head and the same 5-fold scaffold splits, cost expressed as relative degradation
+against `hume` on the same dataset:
+
+| panel | datasets | mean cost | median | worst | direction |
+| --- | --- | --- | --- | --- | --- |
+| Classification | 13 / 13 | **−0.11%** | −0.09% | +0.70% | 4/13 worse (p=0.27) |
+| ADME & tox | 10 / 10 | **+0.29%** | +0.07% | +2.73% | 5/10 worse (p=1.00) |
+| Quantum energy | 4 / 4 | **+0.90%** | +0.76% | +1.83% | 4/4 worse (p=0.13) |
+| **Physicochemical** | 6 / 6 | **+3.83%** | +4.10% | **+7.33%** | **6/6 worse (p=0.031)** |
+| **All** | **35** | **+0.80%** | **+0.26%** | | |
+
+**Across all 35 datasets the median cost is 0.26% and the mean 0.80%**, so for most work the
+800-column set is a 37% reduction for nothing. On classification it is very slightly *better*
+than the full set, and on ADME the sign is as often negative as positive — in both, 5/10 and
+4/13 worse is exactly what chance produces.
+
+**Physicochemistry is the exception and it is a real one.** All six datasets move the same way
+(sign test p = 0.031, Wilcoxon p = 0.031), and the two with the tightest folds carry the two
+largest well-measured costs: `lipophilicity` +5.5% against a fold SD of 2.4%, `pb_water_sol`
++4.9% against 2.5%. `esol` is worst at +7.3%. The quantum panel is 4/4 in the same direction but
+at +0.90% mean, small enough to matter only if you are chasing the last percent.
+
+This is coherent rather than mysterious. Linear recoverability says a dropped column can be
+*reconstructed*; it does not say the reconstruction is as useful to a depth-6 tree ensemble as
+the column itself. A boosted tree splits on individual columns, and a quantity that exists only
+as a linear combination of thirty others is not available to it at any single split. Solubility
+and logP depend most directly on exactly the kind of additive atom-contribution descriptors that
+this makes expensive to rebuild.
+
+**What this does and does not change.** It does not license re-picking `k` against these
+numbers: choosing the operating point by benchmark performance is precisely the leakage §2
+forbids, and a spec tuned to these 33 datasets would narrow the library for everyone whose
+chemistry is not in them. The ordering and the default stand as derived. What it changes is the
+documentation: **a user whose endpoint is solubility or lipophilicity should take more than 800
+columns**, and the published ordering lets them, which is why §6 ships the ranking rather than a
+single frozen set. The honest summary is that `minimal-v1` buys a 37% column reduction for free
+on ADME and classification, and for about 4% on physicochemistry.

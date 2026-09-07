@@ -3,7 +3,7 @@
 ONE script, ONE figure: figures/fig_a.pdf (panels a–n), plus figures/build/fig_a.csv as the
 durable numeric record.
 
-    python3 figa_resolution.py          # measures; writes results/figures/figA/resolution.json
+    python3 research/figa_resolution.py          # measures; writes results/figures/figA/resolution.json
     python3 -m figures.fig_a            # draws
 
 THE AXIS IS HELD-OUT AUC, NOT A DISTANCE (Leif 2026-08-28). Every bar is a supervised question
@@ -64,7 +64,7 @@ this figure is asked to support.
 
 SPLITS ARE BY CONNECTED COMPONENT, NOT BY PAIR. 32 molecules in our set appear in more than one
 pair; a plain 80/20 over pairs can then put a molecule in train and in test, and the leak RAISES
-AUC, so the failure mode looks like a better result. figa_resolution.py groups pairs under
+AUC, so the failure mode looks like a better result. research/figa_resolution.py groups pairs under
 "shares a molecule" and assigns whole components, with an assertion that the two sides are
 disjoint. Largest component is 2 pairs (0.2%) in every mode, so the split stays clean.
 """
@@ -145,11 +145,11 @@ NULL_MODE = "matched_mw"
 def load():
     """-> (armlist, {arm: {mode: cell}}) from resolution.json.
 
-    Nothing is recomputed here. The AUCs come from figa_resolution.py, which owns the split, the
+    Nothing is recomputed here. The AUCs come from research/figa_resolution.py, which owns the split, the
     leak assertion and the seeds; a figure that re-derived them could disagree with the record.
     """
     if not RES.exists():
-        raise SystemExit(f"fig_a: {RES} does not exist. Run `python3 figa_resolution.py` first --\n"
+        raise SystemExit(f"fig_a: {RES} does not exist. Run `python3 research/figa_resolution.py` first --\n"
                          f"       it embeds nothing, it only scores whatever .npz files are in\n"
                          f"       {FIGA / 'embeddings'}.")
     raw = json.load(open(RES))
@@ -165,7 +165,7 @@ def load():
                 raise SystemExit(
                     f"fig_a: {arm}/{m} was scored on {c['n_seeds']} split seed(s). The error bars "
                     f"on this plate ARE the seed spread, and one seed cannot produce one. "
-                    f"Re-run figa_resolution.py (N_SEEDS is 5).")
+                    f"Re-run research/figa_resolution.py (N_SEEDS is 5).")
     return A.order([a for a in raw if a not in NOT_DRAWN]), raw
 
 
@@ -285,7 +285,7 @@ def main():
         f"fig_a: the matched-mass null is above 0.60 for {bad}. Two unrelated molecules carry no "
         f"consistent A/B signature, so this can only be a leak between the train and test halves "
         f"of the split. Do not publish the plate; re-check split_components() in "
-        f"figa_resolution.py.")
+        f"research/figa_resolution.py.")
 
 
 if __name__ == "__main__":

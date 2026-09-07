@@ -1,4 +1,4 @@
-# Packaging for HUME's verified blocks. See PACKAGING.md for why scikit-build-core + CMake +
+# Packaging for HUME's verified blocks. See docs/notes/PACKAGING.md for why scikit-build-core + CMake +
 # pybind11 rather than ctypes, Cython, or a subprocess over text files.
 #
 # BUILDING IN THIS REPO -- always with the constraints file:
@@ -84,7 +84,7 @@ requires-python = ">=3.10"
 # is a courtesy to resolvers: it keeps a FRESH install from picking an rdkit years newer than
 # anything measured, while leaving several release lines of headroom. Run
 # `tools/check_rdkit_release.py` when a new line appears and record the result; see
-# MAINTENANCE.md section 1.
+# docs/MAINTENANCE.md section 1.
 #
 # Within the supported range the values are still version-relative: rdkit's perceived atom and
 # bond properties drift, and the exactness numbers are quoted against 2025.9.2 specifically.

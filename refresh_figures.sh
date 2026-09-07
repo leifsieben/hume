@@ -11,11 +11,11 @@ cd "$(dirname "$0")"
 PY=.venv/bin/python
 
 echo "=== cost axis (results/scale) ==="
-$PY collect_scale.py 2>&1 | grep -E "arms:|priced" || true
+$PY bench/collect_scale.py 2>&1 | grep -E "arms:|priced" || true
 
 echo
 echo "=== downstream grid ==="
-$PY collect_downstream.py 2>&1 | grep -vE "^  i-" || true
+$PY bench/collect_downstream.py 2>&1 | grep -vE "^  i-" || true
 
 echo
 echo "=== what is still missing ==="

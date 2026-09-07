@@ -7,7 +7,7 @@ travel is everything that defines the *comparison*:
   * `prep_blocks.npz` -- the target preprocessing FIT ON THE LOCAL TRAINING SPLIT. Re-fitting it
     remotely would standardise against slightly different statistics and make the R^2 values
     incomparable with ridge/linquad/pinet/mlp.
-  * `models.py` itself, so `train_gnn` and `graph_of` are the same code, not a reimplementation.
+  * `verification/models.py` itself, so `train_gnn` and `graph_of` are the same code, not a reimplementation.
     `device` is the only argument that differs between the two runs.
 """
 from __future__ import annotations
@@ -32,7 +32,7 @@ def main(limit=None):
         smi, Y, bs = smi[:limit], Y[:limit], bs[:2000]
     cut = min(CUT, int(len(smi) * 0.9))
 
-    # Same order of operations as models.py: drop dead targets FIRST, then apply the prep
+    # Same order of operations as verification/models.py: drop dead targets FIRST, then apply the prep
     # fitted on the survivors. prep["keep"] is 165 wide because the constant column was already
     # removed when it was fitted; applying it to the raw 166 would silently misalign every
     # target by one from the drop point onward.
@@ -59,7 +59,7 @@ def main(limit=None):
                         Ytr=apply_prep(Y[:cut]), Yva=apply_prep(Y[cut:]))
     json.dump({"cut": cut, "n_corpus": len(smi), "n_bench": len(bs),
                "n_targets": int(keep.sum())}, open(OUT / "manifest.json", "w"), indent=2)
-    for f in ("models.py",):
+    for f in ("verification/models.py",):
         (OUT / f).write_bytes((ROOT / f).read_bytes())
     (OUT / "prep_blocks.npz").write_bytes((ROOT / "data/surrogate/prep_blocks.npz").read_bytes())
 

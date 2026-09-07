@@ -126,7 +126,7 @@ def pareto(xs, ys):
 #: An earlier version of this read the LOCAL machine's core count and printed "8 cores" under an
 #: axis whose numbers all came from a 16-vCPU c7i.4xlarge. Every point on this axis is an AWS
 #: measurement; the machine rendering the figure has nothing to do with it, and asking the host
-#: was simply the wrong question. `measured_on` is carried per-arm by collect_downstream.py.
+#: was simply the wrong question. `measured_on` is carried per-arm by bench/collect_downstream.py.
 def _cost_hardware(cost: dict) -> str:
     seen = {v.get("measured_on") for v in cost.values() if isinstance(v, dict)}
     seen.discard(None)

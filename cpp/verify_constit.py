@@ -537,7 +537,7 @@ def cmd_bench(n, reps):
     takes as inputs (MolLogP, MolMR, TPSA, HBD, HBA, rotatable bonds, ring counts), because the
     C++ arm does not compute those either; they are on some other header's bill on both sides.
     Reporting a ratio that quietly charges mordred for work the C++ arm never does is the mistake
-    bench_e2e.py's `report` exists to refuse.
+    bench/bench_e2e.py's `report` exists to refuse.
 
     THE MACHINE.  The spread over reps is reported, not just the mean.  A contended box shows up
     as a large SD and the number should be read as an ordering, not as a measurement.

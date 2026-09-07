@@ -185,3 +185,7 @@ build_sps/
 # ~140 MB for the six physchem sets. The SCRIPT and the results JSON are tracked; the matrices
 # are not, for the same reason data/ is not.
 results/reanalysis/features/
+
+# machine-local job state, not project content
+.aws-job-resume
+.scale_instance_id

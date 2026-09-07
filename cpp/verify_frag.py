@@ -71,7 +71,7 @@ CSV = os.path.join(RDConfig.RDDataDir, "FragmentDescriptors.csv")
 #     sp = blocks.split(json.load(open('fam.json')))
 #     [n for s, n, f in sp['core'] + sp['predict'] if f == 'rdkit_core']
 # and intersected with the CSV's row names.  Regenerating that list is the census snippet at the
-# bottom of PORT_STATUS.md.
+# bottom of docs/notes/PORT_STATUS.md.
 COLS_JSON = os.path.join(ROOT, "data", "rdkit_core_columns.json")
 
 # The six pattern descriptors that are NOT rows of FragmentDescriptors.csv.  `mode` is how the
@@ -127,7 +127,7 @@ def require_pin():
 
 def wanted_fr():
     if not os.path.exists(COLS_JSON):
-        sys.exit("missing %s -- derive it with blocks.split(fam) (see PORT_STATUS.md) and\n"
+        sys.exit("missing %s -- derive it with blocks.split(fam) (see docs/notes/PORT_STATUS.md) and\n"
                  "write the rdkit_core name list there.  Do not type it by hand." % COLS_JSON)
     return set(json.load(open(COLS_JSON)))
 

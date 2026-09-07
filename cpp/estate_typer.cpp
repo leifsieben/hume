@@ -8,7 +8,7 @@
 // WHY PER ATOM AND NOT PER COLUMN. `NsCH3` is a count, so two atoms mistyped in opposite
 // directions cancel and the column still matches. An atom's TYPE TUPLE cannot cancel: the
 // reference file carries RDKit's own answer as pattern INDICES, in pattern order, and this
-// compares the whole tuple. The 50-column check in verify_estate.py then runs on top of the
+// compares the whole tuple. The 50-column check in verification/verify_estate.py then runs on top of the
 // types this binary emits, so it is a consequence of the atom check rather than a substitute.
 //
 // The file this reads is written by cpp/verify_estate.py; the format is documented there in
@@ -158,7 +158,7 @@ static int verify(const char* path) {
   return nbad ? 1 : 0;
 }
 
-// Re-emit what the C++ decided, so verify_estate.py can build mordred's 50 columns from it and
+// Re-emit what the C++ decided, so verification/verify_estate.py can build mordred's 50 columns from it and
 // compare against mordred itself. One line per molecule: nat, then per atom `k i0 i1 ...`.
 static int dump(const char* in, const char* out) {
   load(in);

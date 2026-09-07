@@ -145,7 +145,7 @@ static void distances(const Mol &m, std::vector<int> &D) {
 // columns (Chi2n/2v/3n/3v/4n/4v).
 static constexpr int CHI_MAX = 7;
 
-// Ported from chi.py, which is verified against RDKit over the 1M corpus. Three separate
+// Ported from verification/chi.py, which is verified against RDKit over the 1M corpus. Three separate
 // contributions, and the third is the one every naive implementation gets wrong:
 //
 //   1. OPEN PATHS       plain atom-distinct DFS, halved (each found from both ends).
@@ -164,7 +164,7 @@ static constexpr int CHI_MAX = 7;
 // only appears at order 4 and only on molecules with a small ring carrying a substituent.
 static constexpr int PMAX = CHI_MAX;
 
-// `cnt` rides along with the chi sums because chi.py's path1..path7 columns are literally the
+// `cnt` rides along with the chi sums because verification/chi.py's path1..path7 columns are literally the
 // same enumeration with the 1/sqrt(prod) term replaced by 1 -- counting them separately would
 // walk the graph a second time for numbers already in hand. It is halved on the same schedule
 // as chin/chiv (open paths only), because a cycle and a lollipop are each discovered once.
@@ -212,7 +212,7 @@ static void chi_tail(ChiAcc &S, std::vector<char> &seen, int u, int depth, doubl
 // indices, and drop the second (reverse-direction) discovery.
 //
 // A CYCLE IS NOT ITS VERTEX SET. Deduplicating on the sorted member list -- which is what this
-// did, and what chi.py's `key = tuple(sorted(path))` still does -- silently merges distinct
+// did, and what verification/chi.py's `key = tuple(sorted(path))` still does -- silently merges distinct
 // cycles that happen to span the same atoms. The counter-example is K4, the complete graph on
 // four vertices, which is a real and synthesisable substructure: TETRAHEDRANE. Its three
 // distinct 4-cycles (a-b-c-d, a-b-d-c, a-c-b-d) all have vertex set {a,b,c,d}, so two of the
@@ -255,7 +255,7 @@ static void chi_cycles(const Mol &m, std::vector<std::vector<int>> &out) {
 }
 
 // cn[k], cv[k] = Chi_k n- and v-variant; cc[k] = the number of order-k paths, k = 0..PMAX.
-// cc[0] is meaningless (chi.py's path columns start at 1) and is left at zero.
+// cc[0] is meaningless (verification/chi.py's path columns start at 1) and is left at zero.
 //
 // RDKIT'S CONVENTION THROUGHOUT, INCLUDING WHERE RDKIT IS INTERNALLY INCONSISTENT ABOUT
 // EXPLICIT HYDROGEN. Chi is somebody else's descriptor and our number has no standing, so the
@@ -276,13 +276,13 @@ static void chi_cycles(const Mol &m, std::vector<std::vector<int>> &out) {
 // confirming the trigger is an explicit H ATOM and not an isotope label.
 //
 // CRUCIALLY, the delta of a heavy atom is NOT adjusted for its explicit-H neighbours. RDKit
-// drops the H from the paths but leaves GetTotalNumHs alone. chi.py used to call
+// drops the H from the paths but leaves GetTotalNumHs alone. verification/chi.py used to call
 // RemoveHs(removeIsotopes=True) here, which does BOTH -- it deletes the H and increments the
 // neighbour's hydrogen count -- and thereby normalised [2H]C(C)O onto plain ethanol. That
 // normalisation is gone: it disagreed with RDKit on 468 of 468 explicit-H molecules tested,
 // while its docstring claimed the opposite.
 //
-// The path COUNTS (cc[], chi.py's path1..path7) stay on the heavy graph at every k, including
+// The path COUNTS (cc[], verification/chi.py's path1..path7) stay on the heavy graph at every k, including
 // k = 1. They are our own descriptor with no RDKit counterpart, and keeping them on one graph
 // is the consistent choice; only chi0n/chi1n follow RDKit across the H boundary because only
 // those are RDKit's to define.
@@ -501,11 +501,11 @@ static double balaban_unweighted(const Mol &m, const std::vector<int> &D) {
 // ------------------------------------------------------------------------------- cycles
 //
 // Exact cycle counts. C3/C4/C5 in closed form on traces of A^k; C6..C8 by bounded DFS.
-// Ported from cycles.py, which is verified against the 1M corpus.
+// Ported from verification/cycles.py, which is verified against the 1M corpus.
 //
-// cycles.py's enumerator has NO de-duplication -- it yields every cycle twice, once per
+// verification/cycles.py's enumerator has NO de-duplication -- it yields every cycle twice, once per
 // direction, and the caller halves. That is the RIGHT design and is exactly what saved it from
-// the bug chi.py had, where a sorted-vertex-set key silently merged the three distinct 4-cycles
+// the bug verification/chi.py had, where a sorted-vertex-set key silently merged the three distinct 4-cycles
 // of a K4 into one. Re-checked here against brute force (all vertex subsets, Hamiltonian test)
 // at every length 3..8 on cubane (16 six-cycles, 6 four-cycles, 6 eight-cycles), prismane,
 // adamantane, bicyclo[2.2.2]octane, naphthalene and K4: the yield is exactly 2x the true count
@@ -684,7 +684,7 @@ static void cycle_counts(const Mol &m, double *out) {
   for (int i = 0; i < 5; i++) out[26 + i] = typed[i];
 }
 
-// Z-indexed atomic weight, exactly resistance.py's _T[1] = PeriodicTable.GetAtomicWeight(Z).
+// Z-indexed atomic weight, exactly verification/resistance.py's _T[1] = PeriodicTable.GetAtomicWeight(Z).
 // This is the ELEMENT AVERAGE weight. Mol::mass is GetMass(), which is isotope-aware, so
 // substituting it would silently change every RATSC*_m column on any molecule carrying a
 // [2H] or [13C] label -- and this corpus is full of them. Index 0 is 0.0, as in the module.
@@ -711,7 +711,7 @@ static const double RW_MASS[119] = {
     289.0, 288.0, 293.0, 292.0, 294.0,
 };
 
-// Z-indexed vdW volume 4/3 pi Rvdw^3, exactly resistance.py's _T[4].
+// Z-indexed vdW volume 4/3 pi Rvdw^3, exactly verification/resistance.py's _T[4].
 static const double RW_VVOL[119] = {
     0.0, 7.238229473870882, 11.494040321933852, 44.6022381005655, 28.730912014629848, 24.429024474314232,
     20.579526276115534, 17.15728467880506, 15.598531123848922, 14.137166941154067, 15.298567668493963, 57.90583579096705,
@@ -735,7 +735,7 @@ static const double RW_VVOL[119] = {
     33.510321638291124, 33.510321638291124, 33.510321638291124, 33.510321638291124, 33.510321638291124,
 };
 
-// Pauling electronegativity and atomic polarizability, restated from resistance.py. Anything
+// Pauling electronegativity and atomic polarizability, restated from verification/resistance.py. Anything
 // off the list falls back to CARBON rather than NaN -- one exotic atom must not void a whole
 // molecule's descriptor. Z = 0 is 0.0, matching the module's zero-initialised table row.
 static double r_en(int z) {
@@ -757,7 +757,7 @@ static double r_pol(int z) {
 
 // ---- random-walk return probabilities: 28 columns, k = 2,3,4,6,8,12,16 ------------------
 //
-// diag((D^-1 A)^k) == diag(S^k) for S = D^-1/2 A D^-1/2, and S is SYMMETRIC. resistance.py
+// diag((D^-1 A)^k) == diag(S^k) for S = D^-1/2 A D^-1/2, and S is SYMMETRIC. verification/resistance.py
 // walks Pk = Pk @ S one step at a time and so pays 16 matrix products to reach k=16. Symmetry
 // buys that down to FIVE, because for symmetric M
 //
@@ -849,12 +849,12 @@ static void rw_returns(const Mol &m, double *out) {
 // -------------------------------------------------------------------------- resistance
 //
 // Omega_ij = L+_ii + L+_jj - 2 L+_ij, via one dense solve of (L + J/k) per connected
-// component. Ported from resistance.py -- all 65 columns.
+// component. Ported from verification/resistance.py -- all 65 columns.
 //
 // THE PAIR LOOP IS THE WHOLE BLOCK. Kf, Cyclicity, the Delta statistics and the 30
 // resistance-binned autocorrelation columns are all sums over the same upper-triangular pair
 // list, so they are accumulated in ONE pass rather than by materialising the n x n Omega and
-// scanning it six times. resistance.py builds Om, mask, delta, prod and a digitize/bincount
+// scanning it six times. verification/resistance.py builds Om, mask, delta, prod and a digitize/bincount
 // over full n x n arrays because numpy makes that the fast way to write it in Python; in C++
 // the same arithmetic is a single loop with no temporaries.
 //
@@ -878,14 +878,14 @@ static void rw_returns(const Mol &m, double *out) {
 //     on others, and on at least one (corpus index 87) all three are wrong.
 //
 // So the previously "verified" bin values were an artifact of one vendor's blocked kernel, and
-// the same resistance.py that defines them would produce different integers on a Linux box with
+// the same verification/resistance.py that defines them would produce different integers on a Linux box with
 // OpenBLAS. Chasing bit-identity here was chasing a number that was never reproducible.
 //
 // THE FIX, NOW APPLIED IN BOTH IMPLEMENTATIONS: delta is snapped onto a bin edge when it is
 // within 1e-9 of one, and only then digitized. Solver disagreement is ~1e-12 and the closest
 // two edges are 0.1 apart, so the snap window is a thousand times the noise and eight orders
 // below the narrowest real gap -- it catches every tie and can blur no genuine one. The C++
-// snap below and resistance.py's _snap_to_edges are the same tolerance, the same edges and the
+// snap below and verification/resistance.py's _snap_to_edges are the same tolerance, the same edges and the
 // same rule, and that file carries the full argument.
 //
 // THIS SUPERSEDES THE PREVIOUSLY PUBLISHED RATSC*/RPAIR* NUMBERS on every platform, macOS
@@ -910,9 +910,9 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
   for (int i = 0; i < 60; i++) out[i] = 0.0;
 
   // ---- centred atom properties: unity, mass, electronegativity, polarizability, vdW volume
-  // NOTE the mass here is the Z-indexed ELEMENT AVERAGE (RW_MASS), not Mol::mass. resistance.py
+  // NOTE the mass here is the Z-indexed ELEMENT AVERAGE (RW_MASS), not Mol::mass. verification/resistance.py
   // indexes a table by atomic number, so a [13C] and a [12C] carry the same weight in this
-  // block -- while stereo.py's S_mass uses GetMass() and does not. Both are reproduced.
+  // block -- while verification/stereo.py's S_mass uses GetMass() and does not. Both are reproduced.
   // FOUR properties, not five. The unity weight that used to sit at index 0 is gone: the
   // autocorrelation is centred, a constant centres to exactly zero, and RATSC{0..4}_c was
   // therefore identically 0.0 for every molecule that can exist. RPAIR{b} is the uncentred
@@ -952,7 +952,7 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
     if (k < 2) continue;
     pos.assign(n, -1);
     for (int i = 0; i < k; i++) pos[comp[i]] = i;
-    // BUILD ORDER MATTERS, and this is not pedantry. resistance.py forms
+    // BUILD ORDER MATTERS, and this is not pedantry. verification/resistance.py forms
     // np.diag(A.sum(1)) - A, which is EXACT (every entry a small integer in double), and only
     // then broadcasts + 1.0/k, so each element is rounded exactly once. Accumulating 1/k first
     // and incrementing the diagonal per incident bond rounds three or four times instead, and
@@ -988,7 +988,7 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
     ipiv.assign(k, 0);
     int info = hume_lin::gesv(k, k, L.data(), k, ipiv.data(), I.data(), k);
     if (info != 0) continue;
-    // Lp = inv(L + J/k) - J/k, and Omega from Lp -- in THAT order, matching resistance.py.
+    // Lp = inv(L + J/k) - J/k, and Omega from Lp -- in THAT order, matching verification/resistance.py.
     // Folding the two 1/k terms algebraically (they cancel) is not the same in floating point.
     for (size_t t = 0; t < I.size(); t++) I[t] -= 1.0 / k;
     for (int a = 0; a < k; a++)
@@ -1009,9 +1009,9 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
         dev += delta;
         if (delta > dmaxv) dmaxv = delta;
         npair++;
-        // SNAP TO THE BIN EDGE, then digitize. resistance.py's _snap_to_edges, same tolerance,
+        // SNAP TO THE BIN EDGE, then digitize. verification/resistance.py's _snap_to_edges, same tolerance,
         // same edges, same order -- and the order cannot matter because the windows are
-        // disjoint. Read the long comment on _snap_to_edges in resistance.py for why this
+        // disjoint. Read the long comment on _snap_to_edges in verification/resistance.py for why this
         // exists; the short version is that delta lands EXACTLY on an edge for real molecules,
         // and without the snap the bin is decided by the host BLAS's summation order rather
         // than by the molecule.
@@ -1060,7 +1060,7 @@ static void resistance(const Mol &m, const std::vector<int> &D, double *out) {
 // ------------------------------------------------------------------------- conjugation
 //
 // Union-find over conjugated bonds, then per-system size / diameter / heteroatom statistics.
-// Ported from conjugation.py. The diameter comes from the shared distance matrix, so the only
+// Ported from verification/conjugation.py. The diameter comes from the shared distance matrix, so the only
 // new work is the union-find, which is O(n).
 static int uf_find(std::vector<int> &p, int x) {
   while (p[x] != x) { p[x] = p[p[x]]; x = p[x]; }
@@ -1113,7 +1113,7 @@ static void conjugation(const Mol &m, const std::vector<int> &D, double *out) {
       for (int a : mem)
         for (int b2 : mem) {
           int d = D[(size_t)a * n + b2];
-          // unreachable stays out: conjugation.py maps the 1e8 sentinel to 0.0 before max()
+          // unreachable stays out: verification/conjugation.py maps the 1e8 sentinel to 0.0 before max()
           if (d < BIG && d > dg) dg = d;
         }
     gdiam[g] = (double)dg;
@@ -1131,7 +1131,7 @@ static void conjugation(const Mol &m, const std::vector<int> &D, double *out) {
   // sys_max_rings -- are read off ONE chosen pi system, so the rule that chooses it is part of
   // the feature definition. It has to be a property of the molecule. It was not.
   //
-  // The old rule here was "last group of maximal size", matching conjugation.py's
+  // The old rule here was "last group of maximal size", matching verification/conjugation.py's
   // argsort(sizes, kind="stable")[::-1]. That made the answer REPRODUCIBLE -- the same SMILES
   // always gave the same number -- but not CANONICAL. `groups` is built by scanning atoms in
   // RDKit's atom order, so "last" means "last in the atom numbering", and rewriting the same
@@ -1232,7 +1232,7 @@ static void conjugation(const Mol &m, const std::vector<int> &D, double *out) {
 //
 // Odd-order terms in the atom parity s (which flip under reflection, so they separate
 // enantiomers) and even-order terms (which do not, so they separate diastereomers), plus the
-// achiral E/Z terms. Ported from stereo.py.
+// achiral E/Z terms. Ported from verification/stereo.py.
 static void stereo(const Mol &m, const std::vector<int> &D, double *out) {
   const int n = m.n;
   double ssum = 0, sabs = 0;
@@ -1251,7 +1251,7 @@ static void stereo(const Mol &m, const std::vector<int> &D, double *out) {
       else if (d < BIG) sats[0] += v;
     }
   // Centrality weight and mass weight. cen_i = 1/(1 + mean_j Dm_ij) over the WHOLE row
-  // including the diagonal zero, and Dm maps unreachable to 0 exactly as stereo.py does with
+  // including the diagonal zero, and Dm maps unreachable to 0 exactly as verification/stereo.py does with
   // np.where(isfinite & < 1e6, D, 0). `mass` is the atom's own GetMass(), so it IS isotope
   // aware here -- unlike the resistance autocorrelation weights, which are Z-indexed element
   // averages. The two blocks genuinely disagree about what "mass" means and both are matched.
@@ -2337,8 +2337,8 @@ static void bcut2d(const Mol &m, BcutWork &W, double *out) {
 // cannot silently shift the comparison onto the wrong pair of numbers:
 //
 //   [2]   BalabanJ, BalabanJ_mordred
-//   [26]  chi.py         [31] cycles.py (minus C_sssr/C_redundancy, see verify_hume.py)
-//   [24]  conjugation.py [23] stereo.py   [60] resistance.py
+//   [26]  verification/chi.py         [31] verification/cycles.py (minus C_sssr/C_redundancy, see verify_hume.py)
+//   [24]  verification/conjugation.py [23] verification/stereo.py   [60] verification/resistance.py
 //   [16]  RDKit tail: EState x4, Kappa1-3, HallKierAlpha, BCUT2D x8
 static constexpr int HUME_NBLOCK_COLS = 178;   // was 182; the four E-state extremes
                                               // moved to the RDKit block, see below

@@ -205,7 +205,7 @@ inline double nan_() { return std::numeric_limits<double>::quiet_NaN(); }
 //! away is by definition bonded to a heavy atom, so it was never its own fragment, and a
 //! hydrogen-only fragment (`[H][H]`, a lone `[2H]`) has no heavy neighbour to fold into and
 //! survives RemoveHs as its own component here too. Checked rather than argued -- the two counts
-//! agree on 20,000 of 20,000 corpus molecules (verify_spectral.py's serialise path).
+//! agree on 20,000 of 20,000 corpus molecules (verification/verify_spectral.py's serialise path).
 inline int n_fragments(const Mol &m, std::vector<int> &seen, std::vector<int> &q) {
   const int n = m.n;
   for (int i = 0; i < n; i++) seen[i] = 0;   // not assign(): Scratch only ever grows
@@ -351,7 +351,7 @@ inline bool spectrum(const double *M, int n, std::vector<double> &ev, hume_eig::
 //! eigenvalue because the factorisation came out exactly singular. A guard that never fires
 //! proves nothing unless someone can read the count, so it is readable -- and it is a
 //! function-local static inside an inline function, which is one object per program without
-//! putting a global in a header. verify_spectral.py prints it.
+//! putting a global in a header. verification/verify_spectral.py prints it.
 inline long long &shift_retries() { static long long n = 0; return n; }
 
 

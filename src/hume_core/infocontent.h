@@ -5,7 +5,7 @@
 // READ THIS FIRST: THIS FILE DELIBERATELY DOES NOT REPRODUCE MORDRED, AND THAT IS THE POINT.
 // ============================================================================================
 //
-// PORT_STATUS.md house rule 1 says: reproduce a QUIRK, diverge from an ILL-POSED DEFINITION,
+// docs/notes/PORT_STATUS.md house rule 1 says: reproduce a QUIRK, diverge from an ILL-POSED DEFINITION,
 // and the test is whether the upstream descriptor is a function of the molecule. mordred's
 // InformationContent is NOT a function of the molecule. It has two independent defects, both
 // established by measurement on cpp/hard.smi rather than by reading:
@@ -81,7 +81,7 @@
 //   every one of them MIC and every one carrying a [13C] or [15N].)
 //
 // ------------------------------------------------------------------------------------------
-// THE RESOLUTION IMPLEMENTED HERE -- decided by the project owner, recorded in PORT_STATUS.md
+// THE RESOLUTION IMPLEMENTED HERE -- decided by the project owner, recorded in docs/notes/PORT_STATUS.md
 // ------------------------------------------------------------------------------------------
 //
 //   R1. AN AROMATIC BOND KEEPS ITS OWN BOND-TYPE SYMBOL. `SYM_AROMATIC` is a fifth symbol
@@ -189,7 +189,7 @@
 //      n = 199    6 values, 0.6905 .. 1.5129        <- a factor of 2.2 apart
 //      n = 245    6 values, 1.6720 .. 1.6831
 //
-// So RDKIT'S `AvgIpc` fails PORT_STATUS.md house rule 1's test -- is it a function of the
+// So RDKIT'S `AvgIpc` fails docs/notes/PORT_STATUS.md house rule 1's test -- is it a function of the
 // molecule? -- for every molecule above about 70 heavy atoms, which is 2.9% of cpp/hard.smi.
 // Reproducing RDKit bit-for-bit there would again be reproducing a coin flip.
 //
@@ -819,7 +819,7 @@ namespace big {
 // ONLY THE LOOP BOUND CHANGED. The body is the runtime version's body character for character:
 // same limb order, same carry rule, same signed-overflow test. It is nevertheless checked by
 // measurement rather than left as an argument -- see the bit-identity run over all eight
-// ic_in*.txt dumps recorded in PORT_STATUS.md.
+// ic_in*.txt dumps recorded in docs/notes/PORT_STATUS.md.
 //
 // There is deliberately no runtime-W twin. The O(n) and O(W) callers (the trace, the diagonal
 // update) are inside the same templated recurrence and get W for free, and a second copy of a

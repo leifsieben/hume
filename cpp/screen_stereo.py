@@ -2,12 +2,12 @@
 
     NumAtomStereoCenters   NumUnspecifiedAtomStereoCenters   SPS
 
-House rule 1 in PORT_STATUS.md: perturb the input ordering and recompute; any column that moves
+House rule 1 in docs/notes/PORT_STATUS.md: perturb the input ordering and recompute; any column that moves
 is ill-posed and there is nothing there to be exact against. The screen must shuffle BONDS and
 not only atoms, because RDKit's perception reads the bond list and an atom-only screen
 under-samples the axis the answer depends on.
 
-THE OPEN PROBLEM THIS FILE EXISTS TO CLOSE, recorded in PORT_STATUS.md. The repo's existing
+THE OPEN PROBLEM THIS FILE EXISTS TO CLOSE, recorded in docs/notes/PORT_STATUS.md. The repo's existing
 atom+bond rebuild (`cpp/verify_ic.py:rebuilt`, used by `cpp/screen_constit.py`) is NOT
 chirality-preserving: it copies each atom's chiral tag verbatim while permuting the bond order
 that the tag is defined against. So it cannot answer this question -- it would report a

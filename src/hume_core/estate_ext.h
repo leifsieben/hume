@@ -45,7 +45,7 @@
 // It is a large fraction of the corpus, not a corner: 5,150 of the 20,000 molecules of
 // data/dedupe2 have no `sCH3` and 9,009 have no `ssNH`, so a "0 when absent" convention would
 // mis-fill 45% of `MIN/MAXssNH`. `N<t> == 0 <=> MAX<t> is NaN` is checked column by column over
-// all 20,000 in verify_estate.py rather than asserted here.
+// all 20,000 in verification/verify_estate.py rather than asserted here.
 //
 // THE COMPARISON IS CPython's, NOT std::max_element's. `max(it)` keeps the first element and
 // replaces it only on a STRICT `>`; `min` only on a strict `<`. The loops below are written that

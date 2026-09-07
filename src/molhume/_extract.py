@@ -124,7 +124,7 @@ import numpy as np
 from rdkit import Chem
 from rdkit.Chem import rdPartialCharges, rdmolops
 
-# E/Z as +/-1, matching stereo.py's _E exactly (TRANS is E, CIS is Z).
+# E/Z as +/-1, matching verification/stereo.py's _E exactly (TRANS is E, CIS is Z).
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 
@@ -390,14 +390,14 @@ def extract(mols, stereo: bool = True) -> Batch:
             charge.extend(repeat(0.0, n))
             ok = 0
         # CIP codes for the stereo block. MolFromSmiles assigns them already; the explicit call
-        # is the safety net stereo.py also carries, and is verified to change nothing here.
+        # is the safety net verification/stereo.py also carries, and is verified to change nothing here.
         #
         # `flagPossibleStereoCenters=True` IS NOT OPTIONAL AND OMITTING IT IS A SILENT ZERO.
         # `cleanIt=True, force=True` CLEARS `_ChiralityPossible` unless it is passed -- on 911 of
         # 2,000 corpus molecules, measured. `Descriptors.NumAtomStereoCenters` counts exactly that
         # flag, so without this argument the column comes back 0 with no symptom, and an
         # ill-posedness screen built on the same call reported a well-posed column as unstable on
-        # 4,125 of 9,000 shuffles. PORT_STATUS.md records it as trap #1.
+        # 4,125 of 9,000 shuffles. docs/notes/PORT_STATUS.md records it as trap #1.
         Chem.AssignStereochemistry(m, cleanIt=True, force=True, flagPossibleStereoCenters=True)
 
         z.extend(map(_atomic_num, ats))
@@ -673,7 +673,7 @@ def _check_pickle_version() -> None:
             "molecule through rdkit's Python API. It returns the 178 verified block columns "
             "rather than all 1,269.\n"
             "  * To add this format: tools/check_rdkit_release.py measures whether it is already "
-            "readable; see MAINTENANCE.md section 1."
+            "readable; see docs/MAINTENANCE.md section 1."
         ) from None
     _PICKLE_CHECKED = True
 

@@ -91,7 +91,7 @@
 // ETA_dEpsilon_B and ETA_dEpsilon_C are therefore ill-posed on the Kekule axis; the measurement
 // is in NOTES_eta.md.  As it happens the matching below agrees with RDKit on all 79 -- all three
 // columns come out bit-identical to mordred on 19,895 of 19,896 -- but that is a coincidence of
-// two similar depth-first searches, not a guarantee, and verify_eta.py's invariance screen shows
+// two similar depth-first searches, not a guarantee, and verification/verify_eta.py's invariance screen shows
 // the exposure directly: 14 cells of 12,000 move under renumbering, and none under a Kekule
 // round trip.  Everything else in this file is invariant on both axes.
 //

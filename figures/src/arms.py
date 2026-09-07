@@ -215,7 +215,7 @@ ARMS = {
     "hume_minimal": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),
     # THE 0.10.0 SPECS. HUME_default is 408 columns and is free against HUME_full on 33 held-out
     # panels (+0.30%, p=0.711); HUME_minimal256 is 256 and is not (+2.49% on classification).
-    # ⚠️ `hume_minimal` above is the OLD 622-column minimal-v2 and is kept under that key so
+    # `hume_minimal` above is the OLD 622-column minimal-v2 and is kept under that key so
     # existing result files still resolve; the plates draw the two new ones.
     "hume_default": dict(label="HUME_default", family="hume", color=SHADES["hume"][2]),
     "hume_minimal256": dict(label="HUME_minimal", family="hume", color=SHADES["hume"][3]),

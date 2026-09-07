@@ -2,10 +2,10 @@
 
     .venv/bin/python tools/h300/final_heldout.py OUT.json
 
-Everything in HUME_300_METHOD.md up to here was measured on the panels the selection was made
+Everything in docs/selection/HUME_300_METHOD.md up to here was measured on the panels the selection was made
 on. This is the only number in the study with no optimism in it, and it is run once.
 
-⚠️ Figure C's 33 datasets are SPENT for this spec. Every selection round used all of them, so a
+Figure C's 33 datasets are SPENT for this spec. Every selection round used all of them, so a
 HUME_300 arm on that plate would carry an advantage the other representations do not, and the
 plate would stop being a fair comparison. Report HUME_300 from here instead, or label it on the
 plate as selection-set performance.

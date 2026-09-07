@@ -1,0 +1,1097 @@
+# The port: all 865 columns in C++, no Python in the compute path
+
+**Goal.** Every one of the 865 deduplicated Mordred ∪ RDKit columns computed in C++, and the
+end-to-end SMILES → ECFP + descriptors time measured per step with a standard deviation, against
+an unoptimised RDKit + Mordred baseline.
+
+Regenerate this census with the snippet at the bottom. Do not hand-edit the counts.
+
+## Where it stands
+
+**TWO NUMBERS, AND THEY ARE NOT THE SAME NUMBER.** Conflating them overstates the position by
+2.7×, and this file did exactly that for a while:
+
+| | columns |
+|---|---|
+| **producing a value from the package** (`hume.featurize_all`) | **864** |
+| named by the package but NaN (`PENDING_COLUMNS`) | 0 |
+| verified C++ exists, but NOT wired into the extension | 0 |
+| not named at all | 0 |
+
+**REGENERATED FROM THE BUILT EXTENSION, NOT ADDED UP.** The previous version of this table was
+the stereo branch alone and said so; `qed` and `AvgIpc` were being closed in the same working
+tree at the same time, and it asked for exactly this re-measurement once both were in. Both
+numbers come from `bench_e2e._survivors_covered` on the installed wheel, run on
+`hume.ALL_COLUMNS` and on `set(ALL_COLUMNS) - set(PENDING_COLUMNS)`:
+
+    named by the package    (hume.ALL_COLUMNS)                864 of 864
+    PRODUCING A VALUE       (ALL_COLUMNS - PENDING_COLUMNS)   864 of 864
+    PENDING_COLUMNS                                           ()
+
+**The two counts are equal because `PENDING_COLUMNS` is empty, and that is the only reason.**
+They are still two different claims and must still be quoted apart — `PENDING_COLUMNS` is kept as
+an empty tuple rather than deleted precisely so the next column that lands NaN cannot be counted
+as covered.
+
+"Verified C++ exists" is a claim about `cpp/*.cpp`; "callable" is a claim about the wheel; and
+"produces a value" is a third claim, narrower than "has a name". Only the last one is what a user
+gets, and only the last belongs in a speed comparison. Both live numbers come from
+`bench_e2e._survivors_covered` — on `ALL_COLUMNS` for the named count, on
+`ALL_COLUMNS - PENDING_COLUMNS` for this one.
+
+Note also the dedupe set has **864 unique names**, not 865: one name is defined by both RDKit and
+Mordred and survives under both sources.
+
+**A warning about the number 182.** `hume.featurize_blocks` returns 182 columns and they are
+`ALL EXACT`, but they are **mostly HUME-specific descriptors** — `SATS*`, `RATSC*`, `RW*`,
+`sysbin*`, `conj_*`, `pa*_max`, `C3`–`C8` — and only about 22 of them are members of the 865.
+Reading "182 verified" as "182 of the 865 done" overstates the position by roughly eightfold.
+The bulk of the real coverage is elsewhere: `src/hume_core/autocorr.h` computes **419**
+Autocorrelation columns and `src/hume_core/estate_typer.h` computes **50** E-state columns.
+
+## Ported and verified
+
+| family | n | where | evidence |
+|---|---|---|---|
+| Autocorrelation | 419 | `src/hume_core/autocorr.h`, `cpp/ac_weights.h`, `cpp/ac_tables.h`, `cpp/ac.cpp` | ATS/AATS/ATSC/AATSC/MATS/GATS × **10 weights** = 540 emitted, covering all 419. The ten weight vectors are computed in C++, not handed in — that removed 473.9 µs/mol, the single largest item in the pipeline. `values_ac.txt` md5 `1fdb9ca4d92ce808cba2a3a466677fea`, 98,905 × 540. Two things proven, and they are different claims: (a) the 486 nine-weight columns are byte-for-byte unchanged by the `Z` addition (projection md5, whole corpus, see the handoff); (b) **through the shipped wiring, 540/540 columns agree with mordred 1.2.0 in-process on 2,000 molecules — 486/486 pre-existing, 54/54 new `Z`.** NOTE THIS FAMILY IS NOT BITWISE, unlike every other row in this table: the check is rel 1e-8 with an absolute floor at 1e-8 of each column's own scale. That is not slack, it is necessary — `ATSC`/`AATSC` centre by subtracting a mean, so agreement would require exact cancellation in two different summation orders, which IEEE arithmetic does not provide. Max deviation on the new weight is `Z` 3.648e-07, mid-range among the nine already verified (`d` 6.412e-07, `se` 3.630e-05, `are` 4.476e-05). The 98,905-molecule artifact grade is a third claim and was **started and abandoned** — I killed it at 3h25m after it exceeded its predicted cost while blocking the end-to-end measurement. It is claimed nowhere, and `cpp/verify_ac.py` now checkpoints its reference so a re-run resumes rather than restarts. |
+| EState | 50 | `src/hume_core/estate_typer.h`, `cpp/estate_tables.h` | 2,868,290 / 2,868,290 atoms exact on `cpp/hard.smi`; 100,000/100,000 column values vs mordred 1.2.0. 0.834 µs/mol vs 636. |
+| VSA binning | 59 | `src/hume_core/vsa_bins.h`, `cpp/vsa_tables.h` | **66/66 columns bit-exact vs RDKit** over 100,000 molecules, **5/5 vs mordred**, and all four per-atom vectors exact on 2,868,290 atoms. Labute ASA was the real work. |
+| RingCount + TopologicalCharge + PathCount | 81 | `src/hume_core/{ringcount,topocharge,pathcount}.h` | RingCount 49/49 and PathCount 11/11 bit-exact on 100,000. TopologicalCharge 12/21 bit-exact, the other 9 within 6.661e-16 relative — mordred disagrees with *itself* there on 21–70% of the corpus. **20.2 µs/mol against mordred's 11,602 (~575×).** |
+| rdkit_core fragments | 76 | `src/hume_core/frag_matcher.h`, `cpp/frag_program.h` | 74 SMARTS pattern counts + `NHOHCount` + `HeavyAtomCount`. **76/76 bit-exact vs RDKit's own `Descriptors` through the shipped wiring** on 5,000 molecules, every column exercised. Needed the tenth `atom_i` column, `tval`. 119.5 ± 7.80 µs/mol. The matcher now takes its program tables as a BOUND REFERENCE and runs a second program too — QED's 116 structural alerts, `cpp/qed_alert_program.h`. That refactor is proved inert: `cpp/frag` on the same 100,000-molecule dump is **byte-identical before and after**. |
+| QED structural alerts | (input to `qed`) | `src/hume_core/frag_matcher.h`, `cpp/qed_alert_program.h` | The 116 `QED.StructuralAlertSmarts`, compiled by the same `cpp/gen_frag_program.py` and matched by the same evaluator. Counted as a BOOLEAN per pattern (`HasSubstructMatch`), not as a match count. **`qedAlerts` 100,000 / 100,000 EXACT** as an integer against `sum(1 for a in QED.StructuralAlerts if m.HasSubstructMatch(a))`; 101 of the 116 fire at least once on `cpp/hard.smi`. 74.5 µs/mol. |
+| InformationContent | 33 | `src/hume_core/infocontent.h`, `cpp/ic_tables.h` | Not exact-vs-mordred — mordred is ill-posed here. **42 columns bit-identical under renumbering**, order-0 control passes. `Ipc` has an open bug; see the header. |
+
+Plus, inside the 182 blocks: `BCUT2D_*` (8), `Kappa1-3` + `HallKierAlpha` (4), RDKit `Chi*` (9),
+`BalabanJ` (1), and the four `*EStateIndex` reductions.
+
+## The two things standing between here and the goal
+
+**1. DONE — Autocorrelation is in the extension, all 419.** The computation moved into
+`src/hume_core/autocorr.h`, `cpp/ac.cpp` includes it, and `_extract.py` serialises the
+**hydrogen-added** molecule alongside the heavy-atom one so the charges are
+`_GasteigerCharge + _GasteigerHCharge` computed on that graph. The tenth weight `Z` closed the
+last 52 columns; see the 2026-08-28 handoff at the bottom.
+
+**2. ~~`infocontent` is now the pipeline~~ — FIXED. 280.8 → 62.4 µs/mol.** Two independent
+causes, and the larger one was invisible until the profiler was fixed (it had been wall-clock,
+reporting the same phase at 74 µs and 601 µs on consecutive runs):
+  * **68% of the cost was the `Ipc` block, whose three columns are not wired.** `bindings.cpp`
+    called `compute()` for all 45 and copied only 42, so every molecule paid an O(n³)
+    exact-integer Faddeev recurrence and the result went on the floor. One line: `computeIC()`.
+  * The equivalence codes are now a **128-bit packed injection** (`PKey`), not a hash — the
+    packed value's numeric order IS the byte key's memcmp order, so class ordering is preserved
+    bit-for-bit and there are no collisions to bound. 2.20× on top of the gating. One depth-5
+    DFS now serves all six orders: 4,480 → 2,007 tree nodes per molecule.
+It still has the open `Ipc` bug, which is untouched and out of scope of that work.
+
+## In flight
+
+| family | n | agent |
+|---|---|---|
+| `rdkit_core` | 99 | 76 wired (`frag_matcher.h`); the rest is stereo perception + FpDensity |
+
+## Still to port
+
+Grouped by the machinery they share, which is how they are being scheduled — not by size.
+
+**A. VSA binning, 59.** `rdkit_EState` 23, `rdkit_Crippen` 20, `rdkit_Gasteiger` 13, `MoeType` 3,
+`rdkit_TPSA` 1, `TopoPSA` 1, `SLogP` 1. One mechanism: a per-atom contribution vector, binned by
+fixed edges, summed. The contributions are already computed natively (Crippen from
+`crippen_typer.h`, Gasteiger from the boundary, E-state from `estate_from`). What is missing is
+Labute ASA and the bin machinery. `MoeType` resolves via `getattr` to the *same* code path and the
+*same* edges as the `rdkit_*` VSA columns, so it is not a separate implementation.
+
+**B. `rdkit_core`, 99 — ALL OF IT IS DONE.** Fragment counts (`fr_*`), H-bond
+donors/acceptors, ring and heteroatom counts, all wired via `src/hume_core/frag_matcher.h`; see
+"2. DONE" in the handoff. The 21 that are not substructure counts are in
+`src/hume_core/rdkcore.h` — 13 ring predicates, `HeavyAtomMolWt`, `FractionCSP3`, `Phi`, the
+three `FpDensityMorgan*`, and **`NumAtomStereoCenters` + `NumUnspecifiedAtomStereoCenters`**,
+which were the last hold-outs. Those two did NOT need `FindPotentialStereo`, and this file used to
+say they did: they count the LEGACY `_ChiralityPossible` flag, which was already in the pickle.
+See the 2026-08-28 stereo handoff.
+
+**C. Mordred Chi + walks, 55.** `Chi` 40 (`AXp-*`/`Xp-*` path, `Xc-*` cluster, `Xpc-*`
+path-cluster, `Xch-*` chain), `WalkCount` 6, `Constitutional` 4, `WienerIndex` 2,
+`TopologicalIndex` 2, `ABCIndex` 1. **Mordred's Chi is not RDKit's Chi** — the C++ already has
+RDKit-style `chi0n`–`chi7v`, which does not cover the cluster / path-cluster / chain variants.
+Those need `FindAllSubgraphsOfLengthN`.
+
+**D. `InformationContent` 33 + `rdkit_Ipc` 1.** The hard one. Order-dependent traversal, and Ipc is
+the information content of the characteristic polynomial's coefficients — numerically delicate at
+large *n*.
+
+**E. Small constitutional, 43.** `CarbonTypes` 9, `AtomCount` 8, `BondCount` 6,
+`KappaShapeIndex` 3, `MolecularDistanceEdge` 3, `CPSA` 2, `Lipinski` 2, `AcidBase` 2,
+`rdkit_composite` 2 (`qed`, `SPS`, `BertzCT`) — **both `qed` and `SPS` are done**, see the two
+2026-08-28 handoffs; `VdwVolumeABC` 1, `RotatableBond` 1,
+`Polarizability` 1, `LogS` 1, `Framework` 1, `FragmentComplexity` 1.
+
+## House rules for every port
+
+1. **The specification is the source code**, not the documentation. Reproduce upstream bugs and
+   say in a comment that you did. Two have already been found and kept: five E-state SMARTS rows
+   whose missing semicolon voids an aromaticity constraint, and `[SeD2H0]` decoding as an
+   element-number query with no aromaticity constraint at all.
+
+   **The exception, and it is not a small one: reproduce a QUIRK, diverge from an ILL-POSED
+   DEFINITION.** The two are distinguished by a single test — *is the upstream descriptor a
+   function of the molecule?* A quirk gives the same wrong answer every time, so we match it
+   bit-for-bit and comment why. An ill-posed descriptor gives different answers for the same
+   molecule depending on atom numbering or on which Kekulé structure the perceiver happened to
+   pick. There is nothing there to be exact against, and "we reproduce Mordred" would be a claim
+   about a coin flip.
+
+   **How to tell, mechanically: perturb the input ordering and recompute.** Any column that moves
+   is ill-posed. Do this for every family you port, before you start optimising anything — it is
+   cheap and it changes what the target even is.
+
+   **THE SCREEN MUST SHUFFLE BONDS, NOT ONLY ATOMS. An atom-only screen is too weak and this
+   repo shipped it for a while.** `Chem.RenumberAtoms` permutes atoms and **leaves the bond list
+   order alone**, and RDKit's ring perception reads the bond list — so an atom-only screen
+   under-samples the very axis the answer depends on. Demonstrated:
+   `O=C1c2cc(ccc2-n2nccn2)CCCCc2ccc3cc(ccc3c2)N2CCCN1CC2` is stable across **201** atom
+   renumberings and yields two different ring sets the moment bond order is shuffled too. Of the
+   32 molecules the RingCount repair changes, **every one** gives 2–4 distinct RDKit answers
+   under atom+bond shuffling and appears perfectly stable under atom shuffling alone.
+
+   A canonical-SMILES round trip is a **control that should show zero**, not a second probe: it
+   reproduces the canonical numbering, so it is not a perturbation. (It has its own use — it is
+   how RDKit re-perception shows up, and it moves aromaticity on 19 corpus molecules.)
+
+   Any determinism claim made against the atom-only screen is provisional and must be re-run.
+
+   When a column is ill-posed: pick the well-posed definition that the upstream code was evidently
+   reaching for, implement THAT, make it deterministic, and document the divergence loudly with
+   the specific molecules that discriminate the two. Report it to me rather than deciding alone.
+   Known cases, with the resolution already taken:
+
+   * **`InformationContent`** — Mordred kekulizes before building its atom-equivalence codes, so
+     the equivalence classes depend on which Kekulé structure is chosen; and its BFS tree mutates
+     a visited set while iterating over it, so they depend on atom numbering too. **~20% of
+     molecules had order-dependent IC.** Resolution: an aromatic bond keeps its own bond-type
+     symbol rather than being kekulized away, and the tree is layered by graph distance. Orders
+     1–5 therefore **differ from Mordred by design**; order 0 is unchanged.
+   * **`ExtendedTopochemicalAtom`** — the π contribution was gated on the *kekulized* bond order,
+     so an aromatic bond that happened to come out "single" contributed nothing. A pyrrole
+     nitrogen scored 0 while a pyridine nitrogen scored 2, and which one you got could flip with
+     atom numbering. Resolution: every aromatic atom contributes one aromatic π unit. Mordred's
+     own source has an `if bond.GetIsAromatic(): y = 2.0` branch that its `kekulize = True`
+     setting largely defeats — the intent was there, the wiring wasn't. (This family contributes
+     no surviving columns under the current dedupe, so it is recorded for the principle.)
+
+   **Consequence for the paper, stated here so nobody discovers it in review:** "exact against
+   RDKit and Mordred" is true for the well-posed columns and must carry a named exception for the
+   ill-posed ones. The right claim for those is *deterministic and documented*, which is strictly
+   stronger than what Mordred offers, and it should be presented that way rather than buried.
+
+   * **`RingCount` (25 of 100,000 molecules)** — `nARing`, `nG12Ring`, `n6Ring`, `n7Ring`,
+     `n6ARing`. The SSSR *basis* is stable; what flips is whether `symmetrizeSSSR` finds one
+     symmetry-equivalent extra ring of a size already present. `C1=CC2C3C(C=C1)C23` gives ring
+     sizes (3,3,7) on 33 of 60 numberings and (3,3,7,7) on the other 27. Brute force over every
+     simple cycle confirms the larger answer is the **relevant-cycle set** — the object
+     `symmetrizeSSSR` is reaching for and reaches only sometimes.
+
+     **My first prescribed repair for this was WRONG, and the record should say so.** I specified
+     "canonical atom ranks, rings compared by (size, sorted canonical-rank vector)". Implemented
+     exactly, it left **3 of 100,000 still moving and made those 3 worse than doing nothing** —
+     because canonical ranks fix the atom numbering and not the bond order, which is the axis
+     that actually decides. `Chem.CanonicalRankAtoms(breakTies=True)` is also not a graph
+     invariant on symmetric molecules (it varies by an automorphism on e.g. 1,4-disubstituted
+     cyclohexanes).
+
+     **The repair that works:** perceive rings on a **skeleton rebuilt from scratch** — *n*
+     carbons in canonical-rank order, bonds added in sorted `(rank_u, rank_v)` order. Ring
+     perception reads only the graph, so the skeleton asks exactly the right question and puts
+     bond order under canonical control too. 100,000 × 49 columns × 5 numberings: 22 molecules
+     move before, **0 after**; it changes RDKit's answer on 32 molecules, all 32 independently
+     confirmed unstable.
+
+1b. **Aromaticity perception, two repairs** — relevant to any port that does its own ring or
+   aromaticity reasoning rather than inheriting the `arom` flag from the boundary:
+
+   * A ring sulfur carrying an exocyclic double bond is a sulfoxide, which is pyramidal and
+     therefore cannot be aromatic.
+   * The rule "a bond in an all-aromatic ring is aromatic" must run **after** perception, not
+     during it: a fused system can contain ring bonds that belong to no tested subset.
+2. **A cycle is not its vertex set.** Fixed twice in this repo. In K4, three distinct 4-cycles
+   share one vertex set. Canonicalise by `path[1] < path.back()` for `depth >= 3`.
+3. **The oracle is pinned**, and asking for it wrongly fails *silently* — see `constraints.txt`.
+   Print the resolved versions from the process that produced the numbers. A verify log without
+   its RDKit version on it is not evidence.
+4. **Never `uv pip install` into `.venv`.** Always `uv pip install -e . -c constraints.txt`.
+5. **Exactness on 100,000 molecules** (`cpp/hard.smi`), reported per column. A tolerance is
+   allowed only with the max observed deviation and a floating-point reason.
+6. **Drift guards hash the spec, not the file.** `sha256(AtomTypes.py)` differs across RDKit
+   versions and the whole diff is a deleted `# $Id$` line; a file hash would cry wolf on a
+   copyright edit and mask a real change.
+7. **No column may be dropped.** All 865 are wanted.
+
+## Regenerating the census
+
+```bash
+uv run --isolated --python 3.11 --with "mordred==1.2.0" --with "rdkit==2025.9.2" \
+       --with "numpy==1.26.4" python -c "
+import json
+from mordred import Calculator, descriptors as mdesc
+full = Calculator(mdesc, ignore_3D=True)
+json.dump({str(x): type(x).__module__.split('.')[-1] for x in full.descriptors}, open('fam.json','w'))"
+```
+
+then `blocks.split(fam)` and count by family. Note mordred 1.2.0 needs **Python 3.11**
+(`distutils`, removed in 3.12) and **numpy 1.x**.
+
+---
+
+# HANDOFF — 2026-08-27 evening
+
+State at the pause. Everything below is committed; nothing important lives only in a scratch
+directory.
+
+## What is true right now
+
+    named by the package    (hume.ALL_COLUMNS)                861 of 864
+    PRODUCING A VALUE       (ALL_COLUMNS - PENDING_COLUMNS)   859 of 864
+    verified C++ NOT yet wired into the extension               0
+    not named at all                                            3
+
+THE LAST FIVE, and none is a porting gap of the ordinary kind. **ALL FIVE ARE NOW CLOSED — see
+the two 2026-08-28 handoffs at the bottom of this file. The block below is kept as the record of
+what was predicted, because the predictions were right about the mechanism every time and wrong
+about the price once and about the inventory once.**
+
+  qed                              named, NaN. Needs QED's 116 structural-alert SMARTS. The
+                                   cheapest correct route is to give frag_matcher.h's Matcher a
+                                   bound program table and generate a second program, keeping ONE
+                                   subgraph-isomorphism implementation; it needs four new leaf
+                                   opcodes (isotope, `~`, `@`, component-level `.`).
+                                   ROUTE RIGHT, INVENTORY WRONG: `~` and `@` were ALREADY
+                                   implemented in both the generator and the evaluator and the
+                                   alerts are simply the first spec to exercise them, and
+                                   component-level `.` needed nothing in the matcher at all.
+                                   Two opcodes were genuinely missing, and one of them is not on
+                                   this list: AtomIsotope, and AtomInRing (`!r`), which is a
+                                   BOOLEAN and not `[R]`'s AtomInNRings.
+  SPS                              named, NaN. Needs the NEW FindPotentialStereo, and it is NOT
+                                   in the pickle -- extract_pickles would have to run
+                                   FindPotentialStereo + FindPotentialStereoBonds per molecule
+                                   and ship two extra arrays.
+  NumAtomStereoCenters             unnamed. Needs the LEGACY _ChiralityPossible flag, which IS in
+  NumUnspecifiedAtomStereoCenters  the pickle in bits molpickle.h currently skips (0x8 of
+                                   pickleExplicitProperties; chiral tag at atom flag bit 2).
+                                   ~a field, not a subsystem. One real change: extract_pickles
+                                   calls AssignStereochemistry(cleanIt, force) BEFORE ToBinary,
+                                   which WIPES the flag on 906 of 2,000 molecules --
+                                   flagPossibleStereoCenters=True restores it.
+  AvgIpc                           unnamed. Blocked on the open Ipc question, see infocontent.h.
+
+THE LEGACY AND NEW STEREO PERCEPTIONS ARE NOT THE SAME THING. An earlier note in this file said
+one boundary addition would unblock all three stereo-flavoured columns. It will not: the legacy
+`_ChiralityPossible` atom set and the `FindPotentialStereo` atom set differ on 262 of 4,000
+corpus molecules (6.6%). Two additions, two perceptions.
+
+Both numbers come from `bench_e2e._survivors_covered`, run on the two different inputs; they
+differ by exactly `PENDING_COLUMNS` = (`qed`, `SPS`), which are named and NaN. Do not quote one
+as the other. (As of the 2026-08-28 handoffs `PENDING_COLUMNS` is empty and the two numbers are
+equal at 864. They are still two claims.)
+
+Autocorrelation IS now wired, and **all 419** of it: the tenth weight `Z` has been added, so the
+52 columns that were held back are in. See "Autocorrelation is complete" below for the evidence
+and the new artifact checksum.
+
+The 76 `rdkit_core` fragment columns ARE now wired (+76). See "2. DONE" below.
+
+`hume.featurize_all(smiles) -> (fp, X, ALL_COLUMNS)` works today: SMILES -> ECFP (2048, r=3,
+chirality) + 1,244 emitted columns, through ONE pickle parse, one boundary fill.
+The 840 is not the 1,244: `bench_e2e._survivors_covered` counts the members of the 865 and prints
+it next to the timing, so the two can never be read apart.
+
+## The three things to do next, in priority order
+
+**1. DONE — Autocorrelation is wired, all ten weights.** `src/hume_core/autocorr.h` holds the
+computation and `cpp/ac.cpp` now includes it rather than carrying a copy, so there is one copy of
+the arithmetic. Proof the header lift changed nothing: `./ac verify mols_h.txt` over 98,905
+molecules × 486 columns produced `values_ac.txt` with md5 `7f08884f8700c23fd41e2a5315870a2e`,
+**identical before and after**.
+
+  **THAT CHECKSUM IS NOW HISTORICAL.** The `Z` weight took the artifact to 540 columns; the
+  current one is **md5 `1fdb9ca4d92ce808cba2a3a466677fea`**, 98,905 × 540. The old md5 is not
+  dead evidence, though — it is how the change was proved harmless. Projecting the 540-column
+  file back onto its 486 non-`Z` columns (`awk`, drop every tenth field, same `%.12g` text)
+  reproduces `7f08884f8700c23fd41e2a5315870a2e` **byte for byte over the whole corpus**. Adding
+  the tenth weight moved no cell of the other nine, on 48 million cells, exactly.
+
+  Wiring checked against a *second, independent* H-graph construction in the harness.
+
+  Two findings worth keeping: the H-graph charges are **not** derivable from the heavy-atom
+  pickle (5,221 of 42,359 heavy atoms get a different `_GasteigerCharge` from `AddHs(m)` than
+  from `m`), so `extract_pickles` serialises a real second molecule rather than putting 419
+  columns permanently on a tolerance. And a "lean" AC pickle silently drops the charges:
+  `AtomProps|ComputedProps` without `PrivateProps` yields 277 bytes with no `_GasteigerCharge`
+  at all — it is private *and* computed.
+
+  **Remaining AC work: none.** `Z` is in — `cpp/ac_weights.h` now emits ten weights, `NW = 10`,
+  and `autocorr::N_COLS` is 540. All 419 Autocorrelation members of the 865 are covered.
+
+**2. DONE — the 76 fragment columns are wired.** `atom_i` is now **(n_atoms, 10)**; the tenth
+column is `tval`, SMARTS `v`.
+
+  **`tval` did NOT need a new serialised field, and that is the finding worth keeping.** The
+  pickle was already carrying it and `molpickle.h` was throwing it away: atom property-flag
+  **bit 5 is `getExplicitValence()`** (previously `r.skip(1)`) and **bit 6 is
+  `getImplicitValence()`**, and `getTotalValence()` is exactly their sum — 0 of 575,571 atoms
+  of `hard.smi` disagree, measured through RDKit's own accessors. So the fast path reads two
+  bytes it was already stepping over, and only `extract()` pays a Python call. Both paths are
+  compared field-by-field by `cpp/verify_molpickle.py`, whose `FIELDS` now carries
+  `atom total valence`: **EXACT on 2,866,100 + 2,868,290 atoms**, both corpora.
+
+  Cost of the wider boundary, A/B in one process on the same 2,000 molecules (the "before" arm
+  is the same module source with the two `tval` lines removed): `extract()` 130.3 → 130.7
+  µs/mol, i.e. **+0.4 µs/mol**. `extract_pickles()` is unchanged by construction — the bytes
+  were already in the blob.
+
+  `border` was NOT free, and the earlier note here was wrong: `esttyper::btypeFromBcode()`
+  returns the one-hot **bitmask** (SINGLE 1, DOUBLE 2, TRIPLE **4**, AROMATIC **8**), while
+  `fragmatch` compares against RDKit's `BondType` **integer** (TRIPLE **3**, AROMATIC **12**).
+  `bindings.cpp`'s `frag_border()` reuses `btypeFromBcode` for the type DECISION — the part that
+  knows an order bit beats the aromatic flag — and adds a four-entry renumbering on top. That is
+  a table, not a second converter. Anything else maps to 0, which is exact rather than
+  approximate here: the only bond-order values in all 1,474 nodes of `cpp/frag_program.h` are
+  1, 2, 3 and 12, so a dative bond (17 to RDKit, 0 here) is indistinguishable to every query,
+  negation included.
+
+  Verified THROUGH THE WIRING, not through `cpp/frag`: `cpp/verify_wiring.py` now grades the 76
+  against RDKit's own `Descriptors` in-process. **76/76 EXACT, bitwise, on 5,000 molecules**, and
+  every column is exercised (the thinnest is `fr_azide`, nonzero on 7). Every pre-existing family
+  is unchanged in the same run, and `featurize_all[:, :182]` is still bit-identical to
+  `featurize_blocks` — through both readers.
+
+  **It is not cheap: 119.5 ± 7.80 µs/mol for 76 columns**, the second-largest family after
+  `infocontent`. Nothing has been optimised; `matchCount()` still allocates a vector of match
+  vectors per pattern per molecule (74 patterns), which is the obvious first lever.
+
+**3. ~~`infocontent` IS THE PIPELINE~~ — FIXED, 280.8 → 62.4 µs/mol. Was 63% of all compute,
+2× the entire 182-column block, ~6× everything else wired combined, for 33 columns of the 865.
+Profile per order before optimising. Its `Ipc`/`AvgIpc`/`Log2Ipc` are deliberately NOT wired —
+open bug, see the header.
+
+## Open bugs and debts
+
+* **`Ipc` — the direction of this bug REVERSED, and it needs one more check before it is closed.**
+  The accuracy side now looks settled and in our favour: over all 100,000, of the 96,244
+  molecules whose largest coefficient needs ≤40 bits, 96,221 match RDKit to the last bit; in the
+  41–53 bit band only 638 of 1,271 match, and there **RDKit is the inaccurate one** (ours within
+  ~1e-15 of exact integer arithmetic, RDKit out by up to 1e-2). Coefficient width is not the
+  right predictor — RDKit's Faddeev *iterate matrix* crosses 2^53 well before the final
+  coefficients do.
+
+  **But the determinism evidence has a hole.** `cpp/ic_out0..5.txt` are six byte-identical
+  full-corpus outputs, which would settle it — except the matching `cpp/ic_in*.txt` dumps are no
+  longer on disk, so it cannot be confirmed those runs were fed *different numberings* rather
+  than the same input six times. Six identical outputs prove nothing without distinct inputs.
+  **Re-run the determinism table (dump the perturbed inputs, keep them, compare) before quoting
+  any of it.** `Ipc`/`AvgIpc`/`Log2Ipc` stay unwired until then.
+* **FIXED — the `gate()` predicate.** Rewritten O(#rings) from `RingInfo` alone: 25.7 → 10.2
+  ± 0.15 µs/mol, of which 4.7 is the `AtomRings()` call `rings_for` needs anyway, so the
+  predicate itself went 21.1 → 5.5. Identical on all 100,000 (0 disagreements with the old gate,
+  same 21.3% firing rate, hexaprismane still fires) and `gatecheck` still reports
+  `gated != unconditional on 0 / 100000`. It was deliberately NOT moved to C++: at 5.5 µs it is
+  no longer the lever — `canon_rings` on the gated 20% is 27.7 of the remaining 39.4.
+* **`bench/bench_e2e.py`'s `baseline.json` is a stale 100-molecule run.** Regenerate at the same size
+  as the hume arm. `report` correctly refuses a headline ratio while the arms disagree on a
+  shared step or the machine is contended — do not defeat that, it has already caught a bad
+  comparison.
+* **The end-to-end table needs a QUIET machine.** Everything measured so far says CONTENDED and
+  says so in the JSON.
+* ~~Remaining rdkit_core~~ **CLOSED.** `FpDensityMorgan1/2/3` landed with `rdkcore.h`;
+  `NumAtomStereoCenters` + `NumUnspecifiedAtomStereoCenters` landed on 2026-08-28 and did NOT
+  need `FindPotentialStereo` — they read the LEGACY `_ChiralityPossible` flag, which the pickle
+  was already carrying. `rdkit_core` is complete.
+
+## Two things that will waste your time if you forget them
+
+* **The pin is enforced** in `pyproject.toml` via `[tool.uv] constraint-dependencies`. A bare
+  `uv pip install -e .` no longer moves rdkit. Isolated runs need `--no-project` or the project
+  constraints block a deliberately different rdkit.
+* **A version banner is not evidence** — `cpp/verify_hume.py` carries a numeric canary for this,
+  checked at both ends of the run. A process can print `rdkit 2025.09.2` and compute 2026.3.5's
+  numbers out of unlinked-but-still-mapped dylibs.
+
+## Measured at the pause (CONTENDED — ordering only, not publishable)
+
+**STALE AS OF THE `Z` WEIGHT, and deliberately not re-measured here.** The `autocorr` line below
+is 486 columns; the block is now 540, and `cpp_all_columns` predates three families besides. No
+replacement number was taken because the box was at load ~129 on 12 cores when the `Z` work
+landed, and a µs/mol figure from that would look like a measurement without being one. Re-run the
+whole table on a quiet machine rather than patching one row of it.
+
+`bench/bench_e2e.py hume 2000 7`, CPU time, cold molecules, load1 10.92:
+
+    cpp_all_columns            646.3 ± 89.94    1015 emitted, 615 of the 865
+    extract_pickles_boundary   167.1 ±  0.99
+    smiles_parse                59.7 ±  0.61
+    ecfp_r3_2048                30.3 ±  0.98
+
+Per family, paired and differenced *within* each repetition:
+
+    infocontent   291.3 ± 13.23    42 cols     <- SUPERSEDED: now 62.4 (see the Ipc-gating note)
+    blocks_182    201.6 ±  4.97   182 cols
+    autocorr       22.5 ±  5.33   486 cols     <- cheapest per column by a wide margin
+    topocharge     14.8 ± 11.14    21 cols
+    pathcount      13.8 ±  5.95    11 cols
+    vsa            13.5 ±  3.98    66 cols
+    estate          2.6 ±  4.44   158 cols
+    ringcount       1.7 ±  4.70    49 cols
+
+**Hold these loosely.** The ±89.94 on `cpp_all_columns` is 14% — the box got busy mid-run. The
+same arm at load1 5.05 gave 635.3 ± 3.12, so the SD is the machine, not the code. AC's 22.5 µs is
+COMPUTE ONLY; its boundary cost is the +67 µs in `extract_pickles_boundary` (100.3 → 167.1), the
+H-added pickle.
+
+## The baseline arm, and why it is not done
+
+`results/e2e/baseline.json` is still a 100-molecule / 3-rep run. Not an invocation problem — at
+mordred's ~390 ms/mol it is roughly **an hour** at 2000×3. The docstring's command is also
+incomplete: `calc.pandas()` needs pandas, which mordred does not declare. Working invocation:
+
+```
+uv run --isolated --python 3.11 --with "mordred==1.2.0" --with "rdkit==2025.9.2" \
+       --with "numpy==1.26.4" --with "pandas<2.2" python bench/bench_e2e.py baseline 2000 3
+```
+
+## A `pgrep` self-match that has now stalled two agents
+
+`until ! pgrep -f "verify_something" ; do sleep 30; done` **can never exit**, because `pgrep -f`
+matches full command lines and the waiting shell's own command line contains the string it is
+grepping for. It sees itself, forever. This has now stalled two separate agents for 8+ minutes
+each with the work long finished.
+
+Match on a bracketed pattern that cannot match itself — `pgrep -f "[v]erify_something"` — or wait
+on a PID.
+
+## A git hazard that has now fired twice
+
+`4eec23a` ("intermediate commit and push") swept up an agent's mid-flight Autocorrelation work.
+It happened to catch a consistent state and was verified after the fact — but earlier in this
+session the same pattern captured a *slower* eigensolver that then had to be superseded. **Prefer
+staging named paths over `git add -A` while agents are running**, or check `ListAgents` first.
+
+## Non-finite values are CORRECT and expected
+
+`featurize_all` returns NaN in some columns — 144 of 1015 for ethanol. These are `AATS<k>*` at a
+lag longer than the molecule's diameter: 0/0. Confirmed against mordred, which returns an error
+object for exactly those and a real value for `AATS1c`. `cpp/ac_weights.h` states the contract:
+NaN where mordred returns NaN. Do not "fix" this, and do not let a downstream model see it
+without an explicit decision.
+
+## An audit finding about the 865 themselves
+
+**`ABCGG` is one of the 865, and the pinned oracle cannot compute it.** `mordred/ABCIndex.py`
+ends `return np.float(...)`; numpy removed `np.float` in 1.24, and mordred 1.2.0 requires numpy
+1.x. Under the pinned env (mordred 1.2.0 / numpy 1.26.4) **both `ABCIndex` and `ABCGG` raise
+`AttributeError` on every molecule** — verified directly, not inferred.
+
+Two consequences, and the second is the one that matters:
+
+1. Our port compares against the **restored** function (`np.float` re-aliased to builtin `float`,
+   which is all it ever was), so the 55-column bit-exact result stands. The shim is recorded in
+   `cpp/verify_chiwalk.py`, the same pattern as `verify_topo3.py`'s `np.product`.
+2. **`data/dedupe.json` cannot have been produced in the pinned environment.** A column that
+   raises on every molecule cannot have a correlation computed for it, yet `ABCGG` survived the
+   r > 0.99 dedupe. So the set of 865 was defined under some numpy < 1.24, and its provenance is
+   not the environment every exactness claim is pinned to.
+
+Nothing downstream is known to be wrong — but "the 865" is a load-bearing number for this project
+and the environment that produced it should be recorded and, ideally, the dedupe re-run under the
+pin. Until then, cite the 865 as inherited rather than as reproducible.
+
+## Two families whose names collide and are unrelated
+
+* `src/hume_core/topomisc.h` contains mordred's **`Constitutional`** family (`Sp`, `MZ`, `Mv`,
+  `Mp`, …), computed on the **hydrogen-added** molecule.
+* `src/hume_core/constit.h` is the **"small constitutional" census block** — `CarbonTypes`,
+  `AtomCount`, `BondCount`, `KappaShapeIndex` and friends.
+
+Zero column overlap, confirmed. The names read as a collision to anyone skimming.
+
+## Two traps that will bite the next person, both found by falling into them
+
+**1. `AssignStereochemistry(cleanIt=True, force=True)` CLEARS `_ChiralityPossible`** unless you
+also pass `flagPossibleStereoCenters=True`. `Descriptors.NumAtomStereoCenters` counts that flag,
+so without it the descriptor silently returns 0 — and an ill-posedness screen built on that call
+reported a *well-posed* column as unstable on 4,125 of 9,000 shuffles. Measured again on
+2026-08-28 on a different sample: the flag is wiped on **911 of 2,000** molecules.
+**`src/hume/_extract.py` now passes the flag on BOTH paths** — it has to, the two columns are a
+function of it — and pays 6.5 µs/mol for it. **`verify_chiwalk.py` and `verify_topo3.py` still
+omit it.** Neither computes a stereo column, so neither is wrong today; any future stereo work
+run through them will measure an artifact.
+
+**2. `hume.ALL_COLUMNS` contains four DUPLICATED names** — `MaxEStateIndex`, `MinEStateIndex`,
+`MaxAbsEStateIndex`, `MinAbsEStateIndex` — emitted once by the 182-column block and again by the
+VSA family, as *independent computations that differ in the last bit*. So
+`{n: i for i, n in enumerate(ALL_COLUMNS)}` silently resolves to the second copy, and a
+whole-matrix A/B against a stored dump "finds" thousands of moved molecules that never moved.
+`hume.DUPLICATE_COLUMNS` exposes them. Not silently deduplicated: dropping either copy shifts
+every index above it, which is a schema change and the owner's call.
+
+## And one about git, which has now cost a broken HEAD
+
+`git add -u` stages modifications and **not** untracked files. Committing a change that adds a
+new header with `git add -u` produces exactly what happened at `ddc2959`: `bindings.cpp` went in
+carrying `#include "rdkcore.h"` while the header stayed untracked, so HEAD did not compile.
+Stage named paths, and check `git status --short` for `??` before committing a change that
+introduces a file.
+
+## Cost is heavy-tailed, and that is the finding that matters
+
+**RETRACTED, and the retraction is the useful part.** This section began as "a prefix of the
+corpus is not a sample of it". A paired measurement — same process, same clock, three arms
+interleaved — killed it:
+
+    prefix [0:60]      mean 4669.4 ms   median 4.8 ms   max 36621.7 ms
+    random 60          mean 1148.8 ms   median 4.1 ms   max 35183.8 ms
+    prefix [60:120]    mean 4038.0 ms   median 6.0 ms   max 35741.5 ms
+
+All three **medians agree within 25%**. The means differ by 4x, in the *opposite* direction from
+the original claim. Prefix versus random had nothing to do with it.
+
+**THE MEAN IS ~1000x THE MEDIAN.** A handful of molecules cost ~35 SECONDS against a ~5 ms
+median, so any small sample is an outlier lottery and its *mean* estimates almost nothing. Sample
+size, not sample position, was the whole effect.
+
+### What this demands of every timing number in this project
+
+A mean over N molecules from a distribution with max/median ~7000x is not a stable estimator
+unless N is large enough to sample the tail representatively. `bench/bench_e2e.py` uses N = 2,000. Its
+SD across repetitions is small (mordred 30,030.7 +/- 196.83) — **but that SD measures repetition
+noise on a FIXED sample, not sampling error in the mean**, so it cannot detect this and must not
+be read as if it could.
+
+Before the end-to-end ratio is published: re-run at several N (2,000 / 10,000 / 25,000) and show
+the mean has stopped moving, or report a median-based figure alongside and say which is which.
+This is not hypothetical for HUME either — `bench/bench_e2e.py`'s own docstring already records that
+2.9% of molecules carry 46% of BCUT2D time.
+
+## Prefix sampling: measured anyway, and the answer is "fine, but not by design"
+
+Seven harnesses take a **prefix** of the corpus rather than a random sample —
+`bench_crippen.py`, `verification/verify_estate.py`, `verify_vsa.py`, `verify_constit.py`, `verify_ic.py`,
+`verify_topo3.py`. Only `bench/bench_e2e.py` and `cpp/verify_wiring.py` use `rng.choice`.
+
+That is a latent hazard, so it was measured rather than argued:
+
+    cpp/hard.smi     first 2,000    mean 28.75 heavy atoms, median 26.0
+                     random 2,000   mean 28.59 / 29.07,     median 26.0    <- NOT biased
+    cpp/mols_h.smi   first 200      mean 32.11,             median 28.0
+                     random 200     mean 29.61,             median 28.0    <- biased ~+8%
+
+**`hard.smi` is well mixed, and every subset SCREEN in this repo runs on `hard.smi`** — the
+InformationContent ill-posedness percentages, constit's screen, the topo3 screens. None of them
+is compromised. The full-corpus runs are unaffected by construction, since a prefix of 100,000
+from 100,000 is the whole file.
+
+But this holds by luck rather than by design: nothing enforces that `hard.smi` stays shuffled,
+and a future corpus built by concatenating sources would break every one of those seven
+harnesses silently. **Prefer `rng.choice` in new harnesses.**
+
+Two cautions worth carrying:
+* a prefix can be unrepresentative in ways a mean does not show. `mols_h.smi`'s prefix is ~8%
+  larger by mean atom count, which for an O(n²) block predicts ~17% more cost — yet the
+  measured cost difference was **14×**. The mean is not the mechanism; a small number of very
+  large molecules early in the file is the likely one. Cost lives in the tail.
+* an estimate taken from a prefix is a scheduling number and nothing more. It must not reach a
+  document, and no correctness claim in this repo rests on one.
+
+---
+
+# HANDOFF — 2026-08-28, the three stereo-dependent columns
+
+**859 → 862 producing a value.** `NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters` and
+`SPS` are wired. `qed` was the only `PENDING_COLUMNS` entry left at the time this was written;
+it is closed in the handoff below this one, which takes the count to 864 of 864.
+
+## The prediction was right about the mechanism and wrong about the price
+
+The 2026-08-27 handoff said the two counts were "~a field, not a subsystem" and that `SPS` needed
+a real boundary addition. Both true, and the split really is two perceptions — **not one**:
+
+| | reads | where it comes from | cost |
+|---|---|---|---|
+| `NumAtomStereoCenters`, `NumUnspecifiedAtomStereoCenters` | LEGACY `_ChiralityPossible` + chiral tag | already in the blob, two bits `molpickle.h` was skipping | **+6.4 µs/mol** |
+| `SPS` | NEW `FindPotentialStereo` + `FindPotentialStereoBonds` | not in the blob and not makeable to be; two extra arrays | **+56.0 µs/mol** |
+
+The 6.4 µs is not the reader — the reader costs nothing, exactly as `tval` and `bond type` did.
+It is `flagPossibleStereoCenters=True` on the `AssignStereochemistry` that `extract_pickles`
+already ran (5.0 → 11.5 µs/mol, measured directly and confirmed by the paired HEAD-vs-now A/B,
+`extract_pickles(stereo=False)` 166.4 → 172.8). Without the argument that call CLEARS the flag on
+**911 of 2,000** molecules and both columns silently return 0.
+
+The 56 µs is the whole price of ONE column and it lands on the hot path: `extract_pickles` 173.2
+→ 229.2 µs/mol, **7.3% of `featurize_all_from_mols`** (772.6 ± 3.47 µs/mol on a box at load 3.9 —
+ordering only, not publishable). It is a parameter, not a constant: `extract(..., stereo=False)`
+and `extract_pickles(..., stereo=False)` skip it, and `featurize_blocks` passes False because the
+182 blocks read neither array. **Length-0 means "not run" and yields NaN for `SPS`; a full-length
+array of zeros means "run, found nothing" and yields a number. `bindings.cpp` refuses any other
+length rather than reading past the end.**
+
+**`SPS` COST 4.6× WHAT IT SHOULD, AND THE CAUSE IS A BOOST.PYTHON ITERATOR.** `FindMolChiralCenters`
+called the way SpacialScore.py calls it is **243 µs/mol**; the perception inside it is 28. The
+other 180 is `for si in itms` over the returned `_vect...StereoInfo`, which costs **173 µs per
+call regardless of length** — 172.9 µs for an EMPTY vector, 175.4 for a one-element one, measured.
+Boost.Python's default iterator terminates by taking an out-of-range `__getitem__` and translating
+the C++ exception, and that unwind is the entire cost. `itms[k]` by index is 0.3 µs. Looping
+`range(len(itms))` gives the same items in the same order and 0 differing molecules of 2,000.
+**Anywhere in this repo that iterates an RDKit-returned `_vect*` is paying ~173 µs per call.**
+
+A cheaper route was tried and IS WRONG: `FindPotentialStereo(c, cleanIt=True, flagPossible=True)`
+sets `_ChiralityPossible` on the copy, so the answer could be read with an unbound `HasProp` map
+for 70 µs/mol total — but the flag lands on a SUBSET of the `Atom_Tetrahedral` entries and
+disagrees with `FindMolChiralCenters` on **121 of 2,000** molecules.
+`CC1Cc2ccccc2[N+]1=CC=C1N(C)c2ccccc2C1(C)C[SiH3]` has Atom_Tetrahedral at 1, 21 and 24 and gets
+the flag on 1 and 21 only.
+
+## Exactness
+
+Every claim below is from the pinned env with the numeric canary checked in-process
+(`rdkit 2025.09.2`, `BCUT2D_MRLOW = -0.07665884800196521`).
+
+* **`cpp/verify_molpickle.py`, both corpora, ALL EXACT** — 98,905 + 100,000 molecules,
+  2,866,100 + 2,868,290 atoms. Four new `FIELDS` rows: `atom chirality possible`,
+  `atom chiral tag`, `stereo_a (potential atom)`, `stereo_b (potential bond)`. The 182 block
+  columns are still bit-identical across the two readers.
+* **`cpp/verify_wiring.py 100000 rdkcore`** — through the shipped wiring, graded in-process
+  against RDKit's own `Descriptors` and `Chem.SpacialScore`, oracles OUTSIDE the code path:
+
+      NumAtomStereoCenters              99,966 / 99,966  EXACT   nonzero on 45,493
+      NumUnspecifiedAtomStereoCenters   99,966 / 99,966  EXACT   nonzero on 30,806
+      SPS                               99,966 / 99,966  EXACT   nonzero on 99,987
+
+  and **100,000 / 100,000 EXACT for all three against a molecule parsed FRESH from the SMILES
+  text**, which is the stricter oracle: `all_cols` runs `extract_pickles`, which mutates the
+  caller's molecules, and these three are a function of exactly what that mutation leaves behind.
+  The 34 excluded are the pre-existing repaired-ring-set population; none of the three moves on
+  them, which is the check that none of them reads the ring set.
+* **`cpp/verify_wiring.py 3000`** — WIRING EXACT, every pre-existing family unchanged, and the
+  NaN audit's always-NaN set is now exactly `['qed']`. (It is `[]` after the `qed` handoff below;
+  the audit asserts the set EXACTLY, in both directions.)
+
+## The screen: all three are WELL-POSED, and the shuffle that shows it is new
+
+`cpp/screen_stereo.py`, 10,000 molecules (45.3% carry a stereocentre), four axes, **99,998
+perturbations, 0 movements on all three columns.**
+
+**The repo could not have answered this before, and the reason is worth keeping.**
+`cpp/verify_ic.py:rebuilt` — the atom+bond shuffle `cpp/screen_constit.py` uses — copies each
+atom's chiral tag verbatim while permuting the bond order the tag is DEFINED AGAINST. It inverts
+roughly half of all stereocentres, so it cannot screen a stereo column; `screen_constit.py` works
+around that by skipping `SPS` whenever the rebuild lost stereo, i.e. `SPS` was only ever screened
+on the stereo-poor molecules. `screen_stereo.py` adds the missing repair: flip CW/CCW exactly when
+the induced permutation of the atom's own incident bonds is ODD, and carry the bond's STEREO ATOMS
+across (in a second pass — `SetStereoAtoms` asserts the reference bonds already exist, which under
+a shuffled insertion order they may not). **It fired on 4,334 of the 6,084 rebuilds that had a
+tetrahedral tag to reorder**, and **0 of 30,000 rebuilds failed the isomeric-canonical-SMILES
+check** — which is what makes "parity-preserving" a measurement rather than an argument.
+
+The second parity-preserving axis is a **random**-SMILES round trip
+(`MolToSmiles(canonical=False, doRandom=True)`), where the parity bookkeeping is RDKit's own. It
+is not the canonical round trip this file calls a control: a random root and random branch order
+give a different atom order AND a different bond list. 2 of 30,000 did not reproduce the molecule
+and were excluded and counted.
+
+    axis                             probed  excluded   NAtomStereo  NUnspecAtomStereo   SPS
+    atom only                         30000         0             0                  0     0
+    atom+bond parity-repaired         30000         0             0                  0     0
+    random-SMILES round trip          29998         2             0                  0     0
+    kekule round trip                 10000         0             0                  0     0
+
+## Nothing pre-existing moved
+
+Direct A/B of the extension: build HEAD, dump 2,000 molecules, rebuild, dump, compare bitwise.
+
+* **1,262 of the 1,263 HEAD columns are bit-identical**, and the one that moved is `SPS` — NaN on
+  2,000/2,000 before, finite on 2,000/2,000 now. The ECFP is identical.
+* The two new columns are APPENDED to `rdkcore`, the LAST family in the layout, so every
+  pre-existing column keeps its index. Asserted in the A/B before comparing, or it would have been
+  comparing shifted rows.
+* `featurize_all[:, :182]` == `featurize_blocks` == HEAD's `featurize_blocks`, for
+  `reader="pickle"` AND `reader="api"`, all bitwise.
+* `src/hume/_verify_crippen.py`: 582,017 / 582,017 atoms exact.
+* The C++ arm is unchanged by the wider `atom_i` (10 → 12 columns): interleaved HEAD/now, three
+  rounds each, **515.3 vs 513.6 µs/mol** — the arms straddle each other, so the cost is below the
+  noise.
+
+## What the next person should know
+
+* **The two perceptions must never be wired from one input.** `atom_i` columns 10-11 are LEGACY;
+  `stereo_a`/`stereo_b` are NEW. Measured again here: they disagree on 262 of 4,000 molecules.
+  `C1CC(C)C(C)C(C)C1` is the smallest example in the corpus — `NumAtomStereoCenters` 2, but the
+  new perception finds three potential centres and `SPS` scores accordingly.
+* **`_potential_stereo` works on `Chem.Mol(m)` copies and that is load-bearing.**
+  `FindPotentialStereoBonds` sets STEREOANY on bonds with no stereo (that is `bond_s`), and
+  `FindPotentialStereo` writes `_ChiralityPossible` — the NEW perception's answer under the LEGACY
+  perception's property name. Letting either touch the caller's molecule would corrupt one column
+  set with the other's answer.
+* It also sets `SetUseLegacyStereoPerception(False)` for the duration of the batch, hoisted out of
+  the per-molecule loop and restored in a `finally`. Leaving it False would change how every later
+  `MolFromSmiles` in the process perceives stereo.
+
+---
+
+# HANDOFF — 2026-08-28, `qed`: the last `PENDING_COLUMNS` entry
+
+**862 → 864 producing a value, and `PENDING_COLUMNS` is now empty.** Seven of QED's eight
+properties were already exact in `src/hume_core/constit.h`; the eighth, ALERTS, is the count of
+`rdkit.Chem.QED.StructuralAlertSmarts` that match, and that is the whole of what was missing.
+
+## One matcher, two programs — which is the point, not a tidiness preference
+
+`src/hume_core/frag_matcher.h` used to read `frag_prog`'s `NODES` / `AROOTS` / `QBONDS` /
+`PATTERNS` at namespace scope. It now takes a `frag_prog_types::Program` **bound reference**, and
+two programs go through the one evaluator:
+
+    cpp/frag_program.h        74 rdkit_core fragment patterns   len(GetSubstructMatches(uniquify))
+    cpp/qed_alert_program.h   116 QED structural alerts         HasSubstructMatch, a BOOLEAN
+
+Both are compiled by the same `cpp/gen_frag_program.py`, from the same SMARTS parser, and both are
+validated the same way. **`qedAlerts` is a count of PATTERNS, not of matches** — `QED.py` sums
+`HasSubstructMatch`, so an alert matching a molecule forty times contributes 1. `Matcher::hasMatch`
+stops at the first embedding, which also means RDKit's `maxMatches=1000` truncation trap cannot
+reach this number at all, unlike the fragment counts.
+
+The generated headers no longer declare their own record structs: `cpp/frag_prog_types.h`, also
+generated, holds the opcode enum and the layouts, so a `Node` means one thing in the whole repo.
+**Opcodes are append-only** — the number is baked into every generated header, and inserting one
+in the middle would silently reinterpret every node of an already-verified program.
+
+## The four missing opcodes were two, and one of them was not on the list
+
+The 2026-08-27 prediction named isotope, `~`, `@` and component-level `.`. Measured by running
+`validate` on the alert set rather than by reading the SMARTS:
+
+* **`~` (BondNull) and `@` (BondInRing) were already there**, in both the generator's `BONDPRIM`
+  table and the evaluator's `evalBond`. The alerts are simply the first spec to exercise them
+  (alerts 95, 96, 102 for `~`; 43 and 103 for `@`, one of them as `=!@`, a `BondAnd`).
+* **Component-level `.` needed nothing in the matcher.** `buildPlan()`'s outer loop already
+  restarts at the root of every connected component of the query graph, and distinctness across
+  components is what `used[]` already enforced. Only the parser needed it — it had been treating
+  `.` as an unknown atom symbol. Alerts 91 (`C(=O)O[C,H1].C(=O)O[C,H1].C(=O)O[C,H1]`) and 100
+  (`F.F.F.F`).
+* **AtomIsotope was genuinely new**, and is the only one that cost a boundary field. Alerts
+  112–115 are `[15N]`, `[13C]`, `[18O]`, `[34S]` and nothing else can answer them.
+* **AtomInRing was genuinely new and was NOT predicted.** `[C!r]` is `AtomAnd(AtomType 6,
+  AtomInRing 1 != val)` — a plain boolean, and a *different primitive* from `[R]`'s
+  `AtomInNRings`, whose `-1` is a sentinel. Alerts 67 and 88. `r<n>` is `AtomMinRingSize`, a third
+  primitive again; no spec here uses it and the generator raises rather than guessing.
+
+**A fifth thing the text does not say, and it changed 39 atom queries.** Only the SMARTS organic
+subset `{B,C,N,O,P,S,F,Cl,Br,I}` compiles to `AtomType`; every other bracketed symbol compiles to
+`AtomAtomicNum`, which says nothing about aromaticity. `[Si]` is `AtomAtomicNum 14` while `[si]` is
+`AtomType 1014` — the same quirk `cpp/estate_tables.h` records for `[SeD2H0]`. Alert **26** is a
+39-way `AtomOr` over metals and metalloids and is where this decides the answer: RDKit compiles
+**37 of the 39 to `AtomAtomicNum` and 2 to `AtomType`** — `B`, which is in the organic subset, and
+the lowercase aromatic `se`, which sits in the same list as the uppercase `Se` two entries away
+and means something different. `cmd_validate` now asserts
+that classification symbol by symbol against RDKit, and asserts `ZOF` against
+`Chem.GetPeriodicTable()`, because a typo there would be an element query for the wrong element
+that no per-pattern diff would catch.
+
+Two-letter element symbols are now matched **longest-first and before the single-letter
+primitives**: `[Ru]`, `[Ba]`, `[Ho]`, `[Nb]` and `[Hf]` would otherwise tokenise as `R`+`u`,
+`B`+`a`, `H`+`o`, `N`+`b`. The one genuine collision in the whole table is `H`, which is an H COUNT
+everywhere except RDKit's `hydrogen_atom` production — `[H]` is `AtomAtomicNum 1`, `[H,C]` is
+`AtomOr(AtomHCount 1, AtomType 6)`. Neither spec set uses the atom form, so the parser **refuses**
+it rather than carrying a rule nothing here validates.
+
+## The thirteenth `atom_i` column, and it was free on the shipped path
+
+`A_ISO` is `Atom.GetIsotope()`. It is carried and not derived: the `mass` column can say an atom
+IS labelled — that is exactly the test `constit.h`'s `exactMolWt` makes — but not labelled with
+*what*, and inverting RDKit's isotope-mass table backwards would put an injectivity argument where
+a value RDKit hands over does. Same shape of finding as `tval`, `bond type` and the legacy stereo
+pair before it: **`molpickle.h` had been decoding property-flag bit 8 into a local all along**,
+because `Atom::getMass()` needs it, and then dropping it. Measured, 2,000 molecules × 9
+repetitions, CPU time, load1 ≈ 2.5 on 12 cores:
+
+    extract_pickles   220.51 ± 1.99  ->  220.69 ± 2.12   us/mol   (+0.18, inside the noise)
+    extract           199.71 ± 2.53  ->  202.69 ± 1.54   us/mol   (+3.0, one call per atom)
+
+`cpp/verify_molpickle.py` grades it as its own field: **`atom isotope` EXACT on 2,866,100 +
+2,868,290 atoms**, both corpora, both boundary paths.
+
+## Exactness
+
+* **`qedAlerts`, the integer, graded on its own.** A wrong alert count would reach `qed` as a
+  small float difference — exactly the shape a rounding difference has — so the composite alone
+  cannot tell the two apart.
+  * `./cpp/frag alerts` over the full dump vs `sum(1 for a in QED.StructuralAlerts if
+    m.HasSubstructMatch(a))`: **100,000 / 100,000 EXACT**. 101 of the 116 alerts fire at least
+    once on `cpp/hard.smi`; the 15 that never fire are named in the harness output.
+  * `cpp/verify_wiring.py 100000 qed`, **through the shipped wiring**, against a molecule parsed
+    FRESH from the SMILES text: **100,000 / 100,000 EXACT**. The count the C++ used is recovered
+    by asking RDKit for `qed` under each candidate ALERTS value with the molecule's own other
+    seven properties. That is well posed only if the runner-up is far away, so the **smallest
+    recovery margin is measured and printed: 9.854e-06**, nine orders above the float noise below.
+* **`qed`, the composite: NOT bitwise, and the reason is stated rather than tolerated.**
+  100,000 molecules through the wiring, graded in-process against `rdkit.Chem.QED.qed`:
+
+      bitwise on 79,645 / 100,000     max relative deviation 1.886e-15     non-finite 0
+
+  `qed` is `exp(sum(w_i * log(ads_i)) / sum(w_i))` over eight desirability functions, each two
+  `exp`s, a division and a subtraction. libm's `exp`/`log` are not correctly rounded and are not
+  required to agree between CPython's calls and clang's. `constit.h` already splits every
+  `a + b*c` in that expression to stop clang contracting it into an FMA python did not use — that
+  is why 80% of molecules ARE bitwise rather than none. The harness asserts 1e-12, which is four
+  orders above the observed deviation and four below the smallest difference one alert makes.
+* **Nothing pre-existing moved.** A/B of the extension on the same 2,000 molecules, the "before"
+  arm being the same tree with exactly this change reverted (and the concurrent stereo work left
+  in BOTH arms so it cannot be mistaken for this one): **1,265 of 1,266 columns bit-for-bit
+  identical, and the ECFP bytes identical.** The one that differs is `qed`, NaN on 2,000/2,000
+  before and finite on 2,000/2,000 after.
+* **The `Matcher` refactor is inert.** `cpp/frag` built from git HEAD and from the refactored
+  header, on the same 100,000-molecule dump: **byte-identical output**, all 76 columns.
+* `featurize_all[:, :182]` vs `featurize_blocks`: 364,000 / 364,000 cells bitwise.
+  `featurize_blocks(reader="pickle")` vs `reader="api")`: 364,000 / 364,000 cells bitwise.
+* `src/hume/_verify_crippen.py`: 2,866,100 / 2,866,100 atoms exact.
+* `cpp/verify_wiring.py 3000`: **WIRING EXACT**, every family, and the NaN audit's always-NaN set
+  is now **empty** — which is a stronger assertion than the list it replaced, because the audit
+  compares the set EXACTLY in both directions.
+
+## The drift guard, and it fires
+
+`cpp/gen_frag_program.py check [frag|qed|all]`. `SPEC_SHA256` hashes the **(name, SMARTS) pairs**,
+not the file — house rule 6, and not hypothetical: the fragment spec really did move between rdkit
+2025.09.2 and 2026.03.5. Proven to fire, three ways, each restored afterwards:
+
+    corrupt one SMARTS value in the header's SPEC table  ->  "SMARTS DIFFERS for alert_112", exit 1
+    corrupt only the stored hash                         ->  "SPEC DRIFT", exit 1
+    corrupt one compiled NODE, spec and hash untouched   ->  "COMPILED NODES DIFFERS", exit 1
+
+**The third case is a gap `cpp/frag_tables.h`'s guard still has.** A spec hash answers "did RDKit's
+specification move?" and says nothing about whether the compiled program in the same file is the
+compilation of that spec — a hand-edited node would pass a spec hash forever. So `check` also
+recompiles the live spec and compares `NODES` / `AROOTS` / `QBONDS` / `PATTERNS` / `NAMED` element
+by element.
+
+`validate` is unchanged in kind and now covers both sets: **74 top-level patterns + 78 recursive
+sub-queries and 116 top-level alerts + 12 recursive sub-queries, 0 mismatches**, re-rendered in
+RDKit's own `DescribeQuery()` format and compared byte-for-byte per atom and per bond — structure,
+value and negation flag. Nothing is transcribed by eye.
+
+## Cost
+
+2,000 molecules × 9 repetitions, CPU time, paired and **differenced within each repetition** (the
+two arms are timed back to back in one process, so process drift cancels). Load1 2.5–2.8 on 12
+cores — quiet, but shared with another agent's build, so treat the last digit loosely.
+
+    constit's own cost (constit - its deps)    18.12 ± 3.80  ->  92.58 ± 2.61  us/mol
+    all_from_pickles, every family            571.12 ± 4.47  ->  650.69 ± 3.66  us/mol
+
+**The 116 alerts cost ~74.5 µs/mol**, which is 13% of the whole compute and second only to the 74
+fragment patterns (119.5) among the SMARTS work.
+
+> **THE COMMITTED END-TO-END NUMBER DOES NOT CONTAIN THIS COST, AND ITS COMMIT MESSAGE SAYS
+> "qed +6".** `results/e2e/hume.json` at `3477688` records `constit 20.41 µs/mol`, which is the
+> value with `in.qedAlerts = -1`. `bench/bench_e2e.py hume 2000 5` on a build that actually has the
+> wiring, using that harness's OWN dependency-arm differencing, gives **`constit` 88.38 ± 8.48**.
+> The two builds were alternating in this working tree while the A/B above was being taken, and
+> the benchmark caught the wrong one. So **900.2 µs/mol and 36.3× are ~70 µs/mol optimistic** and
+> the real figure is nearer 970 and 34×. Re-run `bench/bench_e2e.py hume 10000 …` on a quiet box before
+> either number is quoted again; do not patch the JSON by hand.
+
+ It is unoptimised: `hasMatch` re-scans the whole
+molecule for every alert's first query atom, and the 116 patterns are searched independently with
+no shared prefix or cheap-reject screen. An atom-composition bitmask per molecule, tested against
+each pattern's required elements before the search starts, is the obvious first lever — 39,226 of
+100,000 molecules match no alert at all.
+
+## Two things that will bite the next person
+
+* **`hume._core` now needs both program headers.** `bindings.cpp` includes `cpp/frag_program.h`
+  and `cpp/qed_alert_program.h` directly; `frag_matcher.h` includes only `cpp/frag_prog_types.h`.
+  Regenerating one program without the other leaves `frag_prog_types.h` describing whichever ran
+  last, so `cpp/gen_frag_program.py program` regenerates the types header and defaults to `all`.
+* **`AllWork` holds TWO matchers, not one rebound between programs.** Rebinding per molecule would
+  rebuild no plans (those are process-lifetime) but WOULD throw the recursive-query cache away
+  twice per molecule, which is the allocation `bind()` exists to avoid. They share one
+  `fragmatch::Mol`, filled once.
+
+---
+
+# HANDOFF — 2026-08-28, the two optional columns
+
+Owner decision, taken on the numbers below: **`qed` is no longer computed by default.**
+`AvgIpc` still is. Both are now per-column switches rather than edits.
+
+## The measurement that prompted it
+
+Sub-family timings, which did not exist before today. 10,000-molecule stride samples of the
+verification corpora (mean 28.6–28.7 heavy atoms), each arm alternated within every repetition:
+
+| cost centre | µs/mol | columns | µs/column | how measured |
+|---|---|---|---|---|
+| `qed`'s 116 alert SMARTS | 69.3 | 1 | **69.3** | scratch A/B, `countAll` vs `countMatching` on one `fragmatch::Mol` |
+| `AvgIpc` (the Ipc block) | 64.6 | 1 | **64.6** | `./cpp/infocontent ipcbench` — `compute` 105.5 vs `computeIC` 41.0 |
+| BCUT2D | 99.2 | 8 | 12.4 | `./cpp/hume bench` — 50% matrix assembly, 50% the four eigensolves |
+| 76 fragment columns | 111.1 | 76 | 1.46 | same scratch A/B |
+| resistance | 32.6 | 60 | 0.54 | `./cpp/hume bench` |
+| Autocorrelation | 25.7 | 540 | **0.048** | `bench/bench_e2e.py` per-family |
+
+Three descriptors are **37% of the 629.9 µs/mol of compute for 10 of the 864 columns.**
+
+Through the real entry point, 10,000 molecules of `cpp/hard.smi`, four arms alternated per
+repetition and differenced within it: **`qed` 81.9 ± 3.54 µs/mol, `AvgIpc` 76.9 ± 3.42, both
+158.2 ± 4.36.** The per-column figures above are larger than the isolated matcher measurement
+because they include the rest of `qedScore` and the cache effects of the second program; both
+numbers are right and they measure different boundaries.
+
+## What the switch is, and the property it stands on
+
+`all_from_pickles(..., optional=...)` and `featurize_all(..., optional=...)`. `None` is the
+default set (`AvgIpc` on, `qed` off); `()` is neither; `("qed", "AvgIpc")` is the full suite.
+
+**`optional` IS NOT `families`, and the two must not be confused.** `families` selects whole
+families, its off-columns are **zero**, and it is documented as a measurement hook that is
+unsafe in production. `optional` is per-column, its off-value is **NaN**, and it is meant to be
+used. NaN because that is already this file's word for "nobody computed this" — `SPS` is NaN
+when the potential-stereo arrays are absent, for the same stated reason.
+
+**The schema does not move.** `N_ALL_COLS`, every family offset and every name are identical
+whichever way it is set. Verified directly: under `None`, `()` and `("qed",)`, **all 1,264 other
+columns are bit-identical to the full-suite run** (NaN-aware comparison, 5 molecules × every
+column). That is the property that makes the switch safe to expose, and it is checked rather
+than argued.
+
+Neither side needed new code. `constit::qedScore()` has always returned NaN for
+`Inputs::qedAlerts < 0`, and `infoic::computeIC()` has always been `compute()` with the Ipc
+block skipped and the 42 IC columns bit-identical either way. The switches name two paths that
+already existed.
+
+**Two callers pass `("qed", "AvgIpc")` explicitly and must keep doing so.** `bench/bench_e2e.py`,
+because its claim is a like-for-like ratio against an arm computing all 864 names — taking the
+default would cut 82 µs off HUME's total and quietly compare 863 columns against 864, a better
+ratio obtained by computing less. And `cpp/verify_wiring.py`, because a grader that took the
+default would compare NaN against RDKit's `qed` and report a configuration as a failure.
+`verify_wiring.py` re-run after the change: **WIRING EXACT**, `qed` max dev 1.665e-16.
+
+## Why `qed` and not the others
+
+It is a drug-likeness **score**: a weighted geometric mean of eight properties this matrix
+already carries as columns in their own right (MolWt, MolLogP, TPSA, NumHDonors,
+NumRotatableBonds, aromatic ring count, plus the alert count). For an encoding it is a fixed
+nonlinear function of features the model already has, at 13% of the compute. It stays available
+because reproducing RDKit's `qed` is a legitimate thing to want; it stops being the default
+because paying for it silently is not.
+
+`AvgIpc` is not derivable that way — see below — so it stays on.
+
+## `AvgIpc`: what it is, and whether an approximation is available
+
+The Shannon entropy of the distribution of |coefficients of the characteristic polynomial of the
+adjacency matrix| (Bonchev–Trinajstić). A global topological-complexity index.
+
+**An approximate implementation already exists and it is RDKit's, and it is not "99% accurate" —
+above ~70 heavy atoms it is not a function of the molecule at all.** RDKit runs Le
+Verrier–Faddeev–Frame in floating point; the coefficients come out of a trace after catastrophic
+cancellation, so the answer depends on the atom numbering. Six random renumberings of one
+199-atom molecule give `AvgIpc` from 0.6905 to 1.5129 — a factor of 2.2. That is 2.9% of
+`cpp/hard.smi`, and it is exactly the ill-posedness `infocontent.h` was written to fix.
+
+**The exact algorithm is already near its floor.** O(n²·nb) with a single-64-bit-word fast path
+that 97.9% of molecules take. The remaining lever is constant-factor, not asymptotic: the inner
+`T[u] += M[v]` row addition is overflow-checked **per addition**, which is what prevents the
+compiler from vectorising it. Replacing the per-add check with an a-priori magnitude bound on
+the W = 1 path — max|entry| after a step is bounded by deg_max·B + |c| — would let it compile to
+a plain int64 vector add, plausibly 2–3×, with **no accuracy trade at all**. The cost is
+regenerating the determinism artifact (8 inputs × 100,000 molecules × 45 columns, md5
+`6b5ddecc…`). Not done; recorded as the next lever if the column is wanted cheaper.
+
+**If it is not wanted, turn it off rather than approximate it.** An approximation has a
+wrong-value failure mode; `optional=()` has a NaN that cannot be mistaken for a value.
+
+## The ridge proposal, tested: predicting `AvgIpc` and BCUT2D instead of computing them
+
+Held-out R², 25,000 molecules of `cpp/hard.smi`, ridge with λ tuned on a validation slice of
+train. Descriptor inputs go through clip → standardise → clip with all statistics from train
+(without it the scaffold arm extrapolates to R² ≈ −1e18, which is a bug report, not a finding).
+
+| input | split | AvgIpc | BCUT2D, worst → best |
+|---|---|---|---|
+| ECFP counts (2048) | **scaffold** | **−0.180** | **−0.292 → 0.488** (5 of 8 negative) |
+| other 855 descriptors | **scaffold** | 0.943 | −0.317 → 0.773 |
+| ECFP counts (2048) | random | 0.859 | 0.483 → 0.667 |
+| other 855 descriptors | random | 0.991 | 0.879 → 0.982 |
+
+**On unseen scaffolds, ECFP-ridge is worse than predicting the constant mean** for `AvgIpc` and
+for five of the eight BCUT2D columns. The random split says 0.86 and the scaffold split says
+−0.18 for the same target and the same model: the gap between those two rows is the entire
+result, and it is `PLAN.md`'s open risk #1 confirmed on the nose — these are global spectral and
+characteristic-polynomial invariants, and a bag of local environments does not determine them.
+
+**Caveat, stated because it is the obvious objection:** ridge is linear and is a floor, not a
+ceiling; an MLP was not tested. But `PLAN.md`'s own rule applies — a negative R² against a
+constant predictor is not a capacity gap, it is the input not carrying the information.
+
+So: **do not predict these.** The lever that works is the switch above, which costs nothing and
+has no failure mode.
+
+---
+
+# HANDOFF — 2026-08-28, parallel scaling across cores
+
+`bench_scaling.py`. 24,000 molecules of `cpp/hard.smi`, HUME defaults (`qed` off), processes not
+threads, arms rotated per repetition and speedup taken against the W = 1 arm OF THE SAME
+repetition. Wall clock, so contention counts against us rather than being hidden by
+`process_time`.
+
+|  W | µs/mol | mol/s | speedup | efficiency | imbalance |
+|---|---|---|---|---|---|
+|  1 | 932.9 ± 5.6 | 1,072 | 1.00× | 100% | 1.00× |
+|  2 | 471.6 ± 3.1 | 2,120 | 1.98× | 99% | 1.01× |
+|  3 | 318.4 ± 1.6 | 3,141 | 2.93× | 98% | 1.01× |
+|  4 | 247.1 ± 1.3 | 4,048 | 3.78× | 94% | 1.03× |
+|  6 | 172.8 ± 7.0 | 5,787 | 5.40× | 90% | 1.02× |
+|  8 | 148.1 ± 7.0 | 6,752 | 6.31× | 79% | 1.05× |
+| 10 | 134.6 ± 4.6 | 7,428 | 6.93× | 69% | 1.06× |
+| 12 | 133.3 ± 12.0 | 7,504 | 7.04× | 59% | 1.06× |
+
+**THE KNEE IS AT 8 AND THAT IS THE HARDWARE, NOT THE CODE.** This is an M4 Pro: 8 performance
+cores and 4 efficiency cores. Scaling is 94% efficient to 4 and 79% at 8; the four workers added
+between 8 and 12 buy 0.73× of speedup between them, so an E-core is worth about **0.18 of a
+P-core** on this workload. Do not read the 59% efficiency at W = 12 as a parallelism defect —
+the correct denominator is 8 P-cores plus 4 much slower ones, not 12 equal cores.
+
+**Load imbalance is not the limiter and this was checked rather than assumed.** Max worker time
+over mean worker time stays at 1.00–1.06× across every arm. That is what the round-robin shard
+assignment (`smis[i::w]`) is for: a contiguous split on a corpus whose cost distribution has
+median ~5 ms and max ~35 s can hand one worker twice the mean, and the wall clock then measures
+imbalance rather than scaling.
+
+**Two things this number is not.**
+* **The box was not quiet.** A foreign `scripts/audit_figure_consistency.py` held ~1 core for the
+  whole run and load1 ran 3.85 → 7.80. That inflates the W = 1 absolute (932.9 wall here against
+  the ~852 CPU-time figure implied by `bench/bench_e2e.py` minus the measured `qed` saving) and it
+  penalises the HIGH-W arms specifically, since those are the ones already competing for cores.
+  **The speedups are paired within a repetition and survive it; the absolutes are pessimistic.**
+* **Returning the results is excluded.** Workers return a checksum, not their (n, 1266) matrix.
+  Pickling 243 MB back through a pipe would make this a benchmark of multiprocessing's IPC. A
+  caller that does that pays for it separately, and the fix is sharded output, not a different
+  pool.
+
+**A prediction of mine that was wrong, recorded because it was stated before it was measured.**
+I expected "70–100 µs/mol on 12 cores". It is **133.3**. The error was assuming 12 equal cores;
+the P/E split is the whole of the difference.
+
+## What it means against the neural baselines
+
+Measured the same day, same corpus (`fp32`, length-sorted batching for the transformers):
+
+| | mol/s | hardware |
+|---|---|---|
+| **HUME, 12 cores** | **7,504** | whole CPU |
+| GIN 5×300 forward, batch 256 | 12,431 | GPU (+ 159 µs/mol single-thread RDKit featurisation) |
+| ChemBERTa-2 MLM (3M), batch 256 sorted | 5,443 | GPU |
+| MolFormer (44M), batch 256 sorted | 271 | GPU |
+| RDKit + Mordred, 1 core | 31 | 1 core |
+
+So on the whole machine HUME computes all 864 descriptors **faster than a small chemical language
+model embeds on the GPU**, and 28× faster than MolFormer. Per billion molecules: **1.5
+machine-days.**

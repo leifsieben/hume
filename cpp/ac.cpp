@@ -33,7 +33,7 @@
 // THE OUTPUT IS 540 COLUMNS, NOT 486, AND THAT IS A DELIBERATE BREAK. values_ac.txt at 486
 // columns had md5 7f08884f8700c23fd41e2a5315870a2e; the tenth weight `Z` interleaves 54 new
 // cells into every row, so that checksum no longer applies to anything. The replacement is in
-// PORT_STATUS.md next to the count it belongs to.
+// docs/notes/PORT_STATUS.md next to the count it belongs to.
 //
 // THE OLD CHECKSUM IS STILL LOAD-BEARING, though, and that is why regenerating was cheap rather
 // than costly. Project the 540-column file back onto its 486 non-`Z` columns -- same %.12g text,

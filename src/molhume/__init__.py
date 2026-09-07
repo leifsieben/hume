@@ -3,7 +3,7 @@
 MILESTONE 1 ONLY. This exposes `featurize_blocks`, which returns the 182 columns that have a C++
 implementation *and* an oracle: they are ALL EXACT against RDKit and against HUME's own Python
 modules on 98,905 molecules, and cpp/values_hume.txt is the file that says so. The other 683
-columns of the full descriptor set have no C++ at all yet, and the public `featurize()` of API.md
+columns of the full descriptor set have no C++ at all yet, and the public `featurize()` of docs/API.md
 is deliberately not here -- a bridge that carries 182 verified columns is worth more than one
 that carries 865 unverified ones.
 
@@ -311,7 +311,7 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     ALL TEN AUTOCORRELATION WEIGHTS ARE HERE NOW -- 540 columns, on the hydrogen-added molecule
     `extract_pickles` serialises alongside. The `Z` weight (bare atomic number) used to be the
     documented gap and closed the last 52 members of the 865 that Autocorrelation owed.
-    `bench_e2e.py` counts how many of the 865 these columns actually cover and prints it next to
+    `bench/bench_e2e.py` counts how many of the 865 these columns actually cover and prints it next to
     the timing, so the ratio and the coverage are never read apart -- ALL_COLUMNS is the larger
     number and always has been.
     """
@@ -503,7 +503,7 @@ def column_set(name: str, *, extra=()) -> tuple:
         622 columns. The reduced set, and what `featurize` emits unless told otherwise. A SET,
         not a ranking: a column was removed only for being the same physical quantity in
         different units, already carried by the ECFP that ships alongside, or an exact
-        arithmetic identity of columns that remain. See HUME_Minimal_definition.md.
+        arithmetic identity of columns that remain. See docs/selection/HUME_Minimal_definition.md.
     ``full_no_new``
         1,109 columns. Everything RDKit or Mordred already defines -- the full set minus the 160
         descriptors that are ours. This is the arm to use when the question is "what do the new
@@ -694,7 +694,7 @@ def minimal_columns(spec: str = "minimal-v2") -> tuple:
     flags, at detection AUROC 1.000), or it is an exact arithmetic identity of columns that
     remain. Nothing was removed on a variance ranking.
 
-    See HUME_Minimal_definition.md for the evidence behind each decision.
+    See docs/selection/HUME_Minimal_definition.md for the evidence behind each decision.
 
     Up to 0.6.0 this selected what was RETURNED and not what was computed. Since 0.7.0 it
     selects both: three families -- autocorrelation, ETA and pathcount -- have no column in the
@@ -710,7 +710,7 @@ def minimal_columns(spec: str = "minimal-v2") -> tuple:
             "combination, and neither a deeper tree nor an MLP recovered the loss when it was "
             "tested. Use minimal-v2, which is a set rather than a ranking and drops columns only "
             "for being the same quantity in different units, already present in the output, or "
-            "an exact identity. See HUME_Minimal_definition.md.")
+            "an exact identity. See docs/selection/HUME_Minimal_definition.md.")
     if spec != "minimal-v2":
         raise ValueError(
             f"spec={spec!r} is not a spec this build carries. The only one is 'minimal-v2'; a "

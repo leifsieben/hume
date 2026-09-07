@@ -19,6 +19,7 @@ import xgboost as xgb
 
 sys.path.insert(0, "/Users/lsieben/VSCode/ChemPFN")
 sys.path.insert(0, ".")
+sys.path.insert(0, "bench")
 from rdkit import Chem, RDLogger  # noqa: E402
 import molhume  # noqa: E402
 

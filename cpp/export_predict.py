@@ -27,7 +27,7 @@ from rdkit import Chem, RDLogger
 from rdkit.Chem import rdMolDescriptors, rdPartialCharges
 
 RDLogger.DisableLog("rdApp.*")
-# E/Z as +/-1, matching stereo.py's _E exactly (TRANS is E, CIS is Z).
+# E/Z as +/-1, matching verification/stereo.py's _E exactly (TRANS is E, CIS is Z).
 _EZ = {Chem.BondStereo.STEREOE: 1, Chem.BondStereo.STEREOTRANS: 1,
        Chem.BondStereo.STEREOZ: -1, Chem.BondStereo.STEREOCIS: -1}
 ROOT = Path(__file__).resolve().parents[1]
@@ -67,7 +67,7 @@ def main(n_want: int = 10_000, src: str | None = None) -> None:
             ok = False
         crip = rdMolDescriptors._CalcCrippenContribs(m)
         # CIP codes for the stereo block. MolFromSmiles assigns them already; the explicit call
-        # is the safety net stereo.py also carries, and is verified to change nothing here.
+        # is the safety net verification/stereo.py also carries, and is verified to change nothing here.
         Chem.AssignStereochemistry(m, cleanIt=True, force=True)
         cip = []
         for a in m.GetAtoms():

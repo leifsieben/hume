@@ -27,7 +27,7 @@
 // still counts DISTINCT atoms rather than trusting the stored length, because that, and not the
 // list length, is what `len(frozenset(...))` computes.
 //
-// THIS FILE DOES NO AROMATICITY OR RING PERCEPTION OF ITS OWN. Both PORT_STATUS.md 1b repairs
+// THIS FILE DOES NO AROMATICITY OR RING PERCEPTION OF ITS OWN. Both docs/notes/PORT_STATUS.md 1b repairs
 // (ring sulfur with an exocyclic double bond cannot be aromatic; "a bond in an all-aromatic ring
 // is aromatic" must run after perception) are therefore inapplicable here: the `arom` flag is
 // RDKit's `GetIsAromatic()` arriving from the boundary, and the ring list is RDKit's own

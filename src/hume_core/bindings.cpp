@@ -559,7 +559,7 @@ enum {
   OFF_TOPOMISC = OFF_CHI + chisub::N_COLS,
   // The "small constitutional" census block -- CarbonTypes, AtomCount, BondCount, KappaShapeIndex
   // and friends. Unrelated to topomisc's `Constitutional` above despite the names; zero column
-  // overlap, and PORT_STATUS.md records the collision.
+  // overlap, and docs/notes/PORT_STATUS.md records the collision.
   OFF_CONSTIT = OFF_TOPOMISC + topomisc::N_COLS,
   // ---- ALIASES, NOT COMPUTATION ----
   // One column: mordred's `SLogP`, whose implementation is literally
@@ -824,7 +824,7 @@ enum : unsigned { OPT_QED = 1u, OPT_AVGIPC = 2u };
 // this matrix already carries as columns in their own right (MolWt, MolLogP, TPSA, NumHDonors,
 // NumRotatableBonds, aromatic ring count) -- so for an encoding it is a nonlinear function of
 // features the model already has, at 11% of the compute. Owner's decision, 2026-08-28.
-// `AvgIpc` stays on: it is not derivable from anything else here. See PORT_STATUS.md.
+// `AvgIpc` stays on: it is not derivable from anything else here. See docs/notes/PORT_STATUS.md.
 inline constexpr unsigned OPT_DEFAULT = OPT_AVGIPC;
 
 //! Families that need the hydrogen-added blob parsed. Autocorrelation descriptors that graph

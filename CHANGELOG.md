@@ -12,7 +12,7 @@
 
 **`default` is the new default.** `featurize(smiles)` now returns 408 descriptors.
 
-### ⚠️ `minimal` NOW MEANS 256 COLUMNS. IT MEANT 622 IN 0.4.0–0.9.2.
+### `minimal` NOW MEANS 256 COLUMNS. IT MEANT 622 IN 0.4.0–0.9.2.
 
 That is the **fourth** time this short name has changed contents, and it is the last. Passing
 `columns="minimal"` warns once, naming the change and the replacements. The old set has **not**
@@ -32,7 +32,7 @@ classification tasks, and `default` otherwise.
 
 ### How they were chosen
 
-`HUME_N_PREREGISTRATION.md`, committed before any result existed. 81 selection panels (tox21,
+`docs/selection/HUME_N_PREREGISTRATION.md`, committed before any result existed. 81 selection panels (tox21,
 sider, toxcast, ADME); the 33 Figure C panels held out from the first line and read once.
 
 The rule chose **200**, and the held-out gate **rejected it** — its 95% CI on Figure C excludes
@@ -383,7 +383,7 @@ the loss.
 **What v2 is.** 550 columns, chosen only for being the same quantity in different units, already
 present in the output, or an exact arithmetic identity. Nothing removed on a variance ranking,
 which is what made v1 delete the rare tail. Full reasoning per decision in
-`HUME_Minimal_definition.md`; family provenance in `docs/DESCRIPTOR_MAP.md`.
+`docs/selection/HUME_Minimal_definition.md`; family provenance in `docs/DESCRIPTOR_MAP.md`.
 
 **What it costs**, benchmarked against the full 1,269 with the same untuned XGBoost head and the
 same 5-fold scaffold folds, on 29 of the 33 grid datasets:

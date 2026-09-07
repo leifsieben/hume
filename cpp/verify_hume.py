@@ -5,9 +5,9 @@
 TWO REFERENCES, and conflating them would hide errors in both:
 
   * chi (chi0n..chi4n, chi0v..chi4v) and both BalabanJ columns -> RDKIT is the reference.
-    These are ports of somebody else's descriptor and "our number" has no standing. chi.py
+    These are ports of somebody else's descriptor and "our number" has no standing. verification/chi.py
     itself is now a reimplementation of RDKit's convention, so comparing the C++ against
-    chi.py for those ten would only prove it agrees with a second copy of our own code --
+    verification/chi.py for those ten would only prove it agrees with a second copy of our own code --
     they are gated against RDKit directly, at the tighter tolerance.
   * cycles, resistance, conjugation, stereo -> OUR PYTHON MODULES are the reference. They are
     the definition of those blocks, and they are themselves already verified against RDKit /
@@ -24,10 +24,10 @@ ONE PAIR OF COLUMNS SHARES A NAME AND IS NOT THE SAME DESCRIPTOR: BalabanJ and
 BalabanJ_mordred -- same formula, weighted against unweighted distance matrix. Both verified.
 
 There used to be a second such pair. Chi2n..Chi4v were emitted twice, once gated on RDKit and
-once on chi.py, because chi.py stripped explicit hydrogen with RemoveHs(removeIsotopes=True)
+once on verification/chi.py, because verification/chi.py stripped explicit hydrogen with RemoveHs(removeIsotopes=True)
 and so normalised [2H]C(C)O onto plain ethanol -- a genuinely different descriptor that
 disagreed with RDKit on 468 of 468 explicit-H molecules, while its docstring claimed the
-opposite. chi.py now follows RDKit, the two became bit-identical on all 98,905 molecules
+opposite. verification/chi.py now follows RDKit, the two became bit-identical on all 98,905 molecules
 (checked before removal, not assumed), and the duplicates are retired.
 
 TOLERANCE DEPENDS ON THE REFERENCE, because the two references have different precision:
@@ -75,9 +75,9 @@ import chi, conjugation, cycles, resistance, stereo                  # noqa: E40
 # C_total / C_sssr and is blocked on the same value.
 _CYCLES_SKIP = ("C_sssr", "C_redundancy")
 
-# RDKit exposes Chi0n..Chi4n and Chi0v..Chi4v. Those ten chi.py columns are checked against it
+# RDKit exposes Chi0n..Chi4n and Chi0v..Chi4v. Those ten verification/chi.py columns are checked against it
 # at RDKit tolerance; the rest of the block (k = 5,6,7 and the path counts) has no external
-# counterpart and is checked against chi.py itself.
+# counterpart and is checked against verification/chi.py itself.
 _CHI_RDKIT = {f"chi{k}{s}": getattr(GD, f"Chi{k}{s}") for s in ("n", "v") for k in range(5)}
 
 
@@ -107,10 +107,10 @@ SPEC = [
     # what the position-matching hazard in the header warns about, and at 165 columns it stops
     # being a hazard and becomes a certainty. The C++ emits each block in exactly this order.
     #
-    # chi0n..chi4n and chi0v..chi4v are gated against RDKIT rather than against chi.py, at the
-    # tighter rtol 1e-9 -- RDKit defines those and chi.py is now a reimplementation of them, so
-    # comparing to chi.py would only prove the C++ agrees with a second copy of our own code.
-    # k = 5,6,7 have no RDKit counterpart and fall back to chi.py, as do the path* columns.
+    # chi0n..chi4n and chi0v..chi4v are gated against RDKIT rather than against verification/chi.py, at the
+    # tighter rtol 1e-9 -- RDKit defines those and verification/chi.py is now a reimplementation of them, so
+    # comparing to verification/chi.py would only prove the C++ agrees with a second copy of our own code.
+    # k = 5,6,7 have no RDKit counterpart and fall back to verification/chi.py, as do the path* columns.
     _chi_ref(nm) if mod is chi else (nm, "py", mod, nm)
     for mod in (chi, cycles, conjugation, stereo, resistance)
     for nm in mod.NAMES if not (mod is cycles and nm in _CYCLES_SKIP)

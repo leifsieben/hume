@@ -49,7 +49,7 @@ which carries the same pinned rdkit.
     "${RD[@]}" python cpp/verify_ic.py compare FILE N         # the report
 
 Every command prints the versions resolved in ITS OWN process; a log without them is not
-evidence (PORT_STATUS.md house rule 3).
+evidence (docs/notes/PORT_STATUS.md house rule 3).
 
 THE DUMP IS THE BOUNDARY, NOT A CONVENIENCE FORMAT.  Each molecule is written as exactly the
 columns bindings.cpp already receives -- per atom (Z, heavy degree, nH, formal charge, aromatic)
@@ -145,7 +145,7 @@ def gen_tables():
 //
 // rdkit {rdkit.__version__} | numpy {np.__version__} | spec sha256[:16] = {spec}
 //
-// The spec hash is over the three VECTORS, not over any RDKit file: PORT_STATUS.md house rule 6
+// The spec hash is over the three VECTORS, not over any RDKit file: docs/notes/PORT_STATUS.md house rule 6
 // -- a file hash cries wolf on a copyright edit and stays silent on a table that moved.
 #ifndef HUME_IC_TABLES_H
 #define HUME_IC_TABLES_H

@@ -57,10 +57,10 @@ SECONDS_PER_HOUR = 3600.0
 # Display names and colors. `arms.py` owns the paper's palette; anything it does not know about
 # gets a neutral gray rather than a new color invented here, so the plate cannot drift from the
 # other figures.
-# THE KEYS HERE ARE THE ARM NAMES bench_aws.py WRITES, and an arm missing from this dict is
+# THE KEYS HERE ARE THE ARM NAMES bench/bench_aws.py WRITES, and an arm missing from this dict is
 # silently invisible in every panel -- which is exactly what happened on the first render with
 # real data: `ecfp` produced three good points and drew nothing. Keep this in step with
-# bench_aws.py's ARMS, and note the ORDER is the plotting and bar order.
+# bench/bench_aws.py's ARMS, and note the ORDER is the plotting and bar order.
 # THE DESCRIPTOR COUNT IS READ FROM THE PACKAGE, NOT TYPED. It was hard-coded as 864 -- the
 # census figure from an earlier build -- and the block has since grown to 1,266, so the legend
 # had been understating HUME's width by a third on a plate whose whole argument is what that
@@ -123,7 +123,7 @@ ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
 #: baseline Figures A, B and C actually run; r=3 is the radius HUME carries INTERNALLY and the two
 #: were being used interchangeably. Both stay measured, and the legend says which is drawn.
 #: `hume_minimal` (622) and `hume_minimal256` (256) are measured and deliberately not drawn --
-#: see the note in collect_downstream.py. check_known() refuses an arm it does not know, so an
+#: see the note in bench/collect_downstream.py. check_known() refuses an arm it does not know, so an
 #: arm that is intentionally absent has to be declared rather than left to fall through it.
 COST_ONLY = {"ecfp", "minimol", "hume_minimal", "hume_minimal256"}
 
@@ -327,8 +327,8 @@ def main(paths):
     runs = load(paths) if paths else []
     check_known(runs)
     if not runs:
-        raise SystemExit("fig_d: no measurements in results/scale/. Run bench_aws.py on the "
-                         "instances and collect with collect_scale.py.")
+        raise SystemExit("fig_d: no measurements in results/scale/. Run bench/bench_aws.py on the "
+                         "instances and collect with bench/collect_scale.py.")
     for bud in ("cpu", "gpu"):
         dropped = [a for a in ORDER if by(runs, arm=a, budget=bud) and best(runs, a, bud) is None]
         if dropped:

@@ -121,7 +121,7 @@
 //
 // So the copy is CHECKED rather than trusted: `driftGuard()` runs `ringPass` over
 // `ringcount::COLS` and requires all 49 values to equal `ringcount::compute`'s, per molecule.
-// verify_counts.py calls it on all 20,000 (currently 0 disagreements, 980,000 cells).
+// verification/verify_counts.py calls it on all 20,000 (currently 0 disagreements, 980,000 cells).
 //
 // THE RIGHT FIX IS ONE LINE IN ringcount.h AND IT IS NOT MINE TO MAKE: replace the body of
 // `ringcount::compute` with `counts_ext::ringPass(m, S, ringcount::COLS, N_COLS, out)`. That
@@ -399,7 +399,7 @@ inline void compute(const constit::Mol &km, const ringcount::Mol &rm, const Inpu
 // ---------------------------------------------------------------------------------------------
 // DRIFT GUARD 1, per molecule: `ringPass` over ringcount's own 49 specs must reproduce
 // `ringcount::compute` cell for cell. This is what makes the duplicated fusion pass safe until
-// ringcount.h can be made to delegate to it. Called by verify_counts.py on every molecule; it is
+// ringcount.h can be made to delegate to it. Called by verification/verify_counts.py on every molecule; it is
 // NOT on the hot path and bindings.cpp should not call it.
 // ---------------------------------------------------------------------------------------------
 inline void driftGuard(const ringcount::Mol &m, ringcount::Scratch &S, const char *smiles) {

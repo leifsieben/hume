@@ -20,9 +20,9 @@ under ChemTFM_OLD's own interpreter (see the `PYTHONPATH=` line still visible in
 **evaluation** half of the pipeline — and per `PLAN.md` downstream RMSE is the scoreboard, so
 the scoreboard could not be computed in this repo's own environment at all.
 
-Call sites: `block_run.py`, `build_targets.py`, `cheap_vs_all.py`, `complementarity.py`,
-`downstream.py`, `estate_ablation.py`, `eval_surrogate.py`, `family_ablation.py`,
-`noise_threshold.py`, `pick_model.py`.
+Call sites: `research/block_run.py`, `research/build_targets.py`, `cheap_vs_all.py`, `research/complementarity.py`,
+`research/downstream.py`, `research/estate_ablation.py`, `research/eval_surrogate.py`, `family_ablation.py`,
+`research/noise_threshold.py`, `pick_model.py`.
 
 ### What the ten scripts actually use
 
@@ -30,8 +30,8 @@ Call sites: `block_run.py`, `build_targets.py`, `cheap_vs_all.py`, `complementar
 chemtfm.bench.metrics                 (as M — only M.rmse is called)
 chemtfm.bench.datasets.REGRESSION
 chemtfm.bench.splits.scaffold_folds, .train_test
-chemtfm.models.xgb.XGBModel, ._DEFAULT_PARAMS   (_DEFAULT_PARAMS: estate_ablation.py only)
-chemtfm.feat.descriptors.descriptors  (as rdkit96 — build_targets.py only)
+chemtfm.models.xgb.XGBModel, ._DEFAULT_PARAMS   (_DEFAULT_PARAMS: research/estate_ablation.py only)
+chemtfm.feat.descriptors.descriptors  (as rdkit96 — research/build_targets.py only)
 ```
 
 ### Transitive closure that was vendored
@@ -90,7 +90,7 @@ Each of the ten call sites gained exactly one line next to its existing `chemtfm
 import _vendor  # noqa: F401  — puts vendor/chemtfm on sys.path
 ```
 
-`_vendor.py` lives at the repo root and does the `sys.path` insert once per interpreter.
+`research/_vendor.py` lives at the repo root and does the `sys.path` insert once per interpreter.
 Rejected alternatives: repeating an inline `sys.path.insert` at each site (the chemtfm imports
 sit inside per-fold helpers, so an unguarded insert would grow `sys.path` on every call), and a
 `.pth` file in `.venv/site-packages` (invisible, and lost whenever the venv is rebuilt).

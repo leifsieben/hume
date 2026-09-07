@@ -2,7 +2,7 @@
 
     .venv/bin/python tools/h300/round2.py STAGE OUT.json     STAGE in {utility, ladder}
 
-Follows HUME_N_PREREGISTRATION.md, which was committed before this ran. Nothing here reads the
+Follows docs/selection/HUME_N_PREREGISTRATION.md, which was committed before this ran. Nothing here reads the
 33 held-out Figure C panels -- not their labels, and not their molecules for the unsupervised
 statistics either.
 """

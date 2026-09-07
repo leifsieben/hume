@@ -206,7 +206,7 @@ def main() -> None:
     import mordred
 
     n_want = int(sys.argv[1]) if len(sys.argv) > 1 else 0
-    # THE NUMERIC CANARY, checked in the interpreter that computes the reference. PORT_STATUS.md:
+    # THE NUMERIC CANARY, checked in the interpreter that computes the reference. docs/notes/PORT_STATUS.md:
     # a process can print the right RDKit version and execute another one's arithmetic out of
     # unlinked-but-still-mapped dylibs. A version banner is not evidence; this number is.
     canary = Descriptors.BCUT2D_MRLOW(Chem.MolFromSmiles(CANARY_SMI))

@@ -9,7 +9,7 @@
 //     S<t> = sum of the E-state index over those atoms        <- typer + the existing index
 //
 // so 29 of the 50 need nothing from this file's neighbours. The family sat in PREDICT because
-// nobody had ported this, not because it is expensive: see blocks.py's classify().
+// nobody had ported this, not because it is expensive: see verification/blocks.py's classify().
 //
 // WHERE THE RULES COME FROM. mordred/EState.py has no typer -- `EStateCache.calculate` is
 // `return EState.TypeAtoms(self.mol), EState.EStateIndices(self.mol)`. So the specification is

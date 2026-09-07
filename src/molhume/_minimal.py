@@ -1,6 +1,6 @@
 """HUME_minimal: the frozen reduced column set.
 
-GENERATED -- regenerate with tools/gen_minimal.py. See HUME_Minimal_definition.md for how every
+GENERATED -- regenerate with tools/gen_minimal.py. See docs/selection/HUME_Minimal_definition.md for how every
 column earned or lost its place, and docs/DESCRIPTOR_MAP.md for what the families measure.
 
 spec "minimal-v2"
@@ -689,7 +689,7 @@ MINIMAL_V2_COLUMNS = (
 )
 
 #: default-v1 -- 408 columns. Free against HUME_full on 33 held-out panels (+0.30%,
-#: 95% CI [-1.13,+0.80], p=0.711; -0.07% on classification). See HUME_N_PREREGISTRATION.md.
+#: 95% CI [-1.13,+0.80], p=0.711; -0.07% on classification). See docs/selection/HUME_N_PREREGISTRATION.md.
 DEFAULT_V1_COLUMNS = (
     'AXp-0d',
     'AXp-0dv',

@@ -2,7 +2,7 @@
 //
 // rdkit 2025.09.2 | numpy 2.4.6 | spec sha256[:16] = b6709757430f3b5b
 //
-// The spec hash is over the three VECTORS, not over any RDKit file: PORT_STATUS.md house rule 6
+// The spec hash is over the three VECTORS, not over any RDKit file: docs/notes/PORT_STATUS.md house rule 6
 // -- a file hash cries wolf on a copyright edit and stays silent on a table that moved.
 #ifndef HUME_IC_TABLES_H
 #define HUME_IC_TABLES_H
