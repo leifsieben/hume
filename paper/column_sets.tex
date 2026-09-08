@@ -1,0 +1,30 @@
+% The four shipped column sets. Numbers are measured, not asserted:
+%   columns   -- molhume.column_set(name)
+%   cost      -- results/scale/c7i.4xlarge_cpu.json, N = 1e6, 16 vCPU
+%   delta     -- results/figures/SI_figA/results.json, 33 held-out tasks vs the full set
+\begin{table}[h]
+\centering
+\begin{tabular}{llrrr}
+\toprule
+name & spec & columns & \si{\micro\second}/mol & $\Delta$ error vs \textsc{full} \\
+\midrule
+\textsc{full}        & ---          & 1{,}269 & 144.5 & --- \\
+\textbf{\textsc{default}} & \texttt{default-v2} & \textbf{622} & \textbf{122.0} & $\mathbf{-1.17\%}$ \\
+\textsc{small}       & \texttt{small-v1}   & 408 & 116.7 & $+0.30\%$ \\
+\textsc{minimal}     & \texttt{minimal-v3} & 256 & 122.4 & $+1.47\%$ \\
+\textsc{full\_no\_new} & ---        & 1{,}109 & 135.5 & --- \\
+\bottomrule
+\end{tabular}
+\caption{The four column sets, with the ablation arm \textsc{full\_no\_new} (every descriptor
+RDKit or Mordred already defines, i.e.\ \textsc{full} without the 160 introduced here).
+Featurization cost is measured end to end on one \texttt{c7i.4xlarge} at $N = 10^{6}$;
+$\Delta$ error is the median change against \textsc{full} over 33 scaffold-split tasks that took
+no part in selecting any of the sets, so lower is better and a negative value beats the full set.
+\textsc{default} is the default because it is the safest: it is the only set that improves on
+computing all 1{,}269 (95\% CI $[-1.71, -0.30]$, $p = 0.001$). \textsc{small} is free
+($p = 0.711$) and the cheapest to compute. \textsc{minimal} is a deliberate trade, costing
+$+2.49\%$ on the classification panel, and note it is \emph{not} faster than \textsc{small}:
+featurization is gated per descriptor family and 256 columns touch every family that 408 do, so
+its benefit is fewer columns downstream rather than less work.}
+\label{tab:column-sets}
+\end{table}
