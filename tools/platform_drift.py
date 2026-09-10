@@ -35,7 +35,22 @@ with np.load(ROOT / "tests/data/fixture_expected.npz") as z:
     ref_rdkit = str(z["rdkit_version"])
     ref_plat = str(z["platform"]) if "platform" in z else "(not recorded)"
 
-got = molhume.featurize(smis, standardize="none", fingerprint=False)
+# columns="full" EXPLICITLY. The fixture stores all 1,269, and this call used to rely on the
+# default -- which was the full set when the fixture was written and has been a reduced set since
+# 0.7.0. The mismatch surfaced as a numpy broadcast error from the middle of the drift arithmetic
+# ("operands could not be broadcast together with shapes (200,622) (200,1269)"), which says
+# nothing about the cause; CI carried it red for four days. A drift check wants every emitted
+# column anyway, so naming the set is both the fix and the correct intent.
+got = molhume.featurize(smis, standardize="none", fingerprint=False, columns="full")
+live = list(molhume.feature_names(fingerprint=False, columns="full"))
+if live != names:
+    extra, missing = set(live) - set(names), set(names) - set(live)
+    raise SystemExit(
+        f"the fixture records {len(names)} columns and this build emits {len(live)}; they are not "
+        f"the same set, so a cell-by-cell comparison would be meaningless.\n"
+        f"  only in this build: {sorted(extra)[:8]}\n"
+        f"  only in the fixture: {sorted(missing)[:8]}\n"
+        f"Regenerate with tools/gen_fixture.py if the emitted set changed on purpose.")
 
 print(f"  this machine : {platform.system()} {platform.machine()}, python "
       f"{sys.version.split()[0]}, rdkit {Chem.rdBase.rdkitVersion}")

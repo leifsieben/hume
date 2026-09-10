@@ -49,8 +49,11 @@ picked = [Chem.MolToSmiles(Chem.MolFromSmiles(s)) for s in picked]
 # fingerprint=False on purpose: the fixture records DESCRIPTORS. The ECFP bits are
 # reproducible from rdkit in one line and would add 2,048 columns of stored zeros
 # and ones to a file that is already 1.2 MB.
-X = molhume.featurize(picked, standardize="none", fingerprint=False)
+# BOTH must name the same set. `names` always asked for "full" while `X` took the default, so
+# once the default became a reduced set this wrote a 622-column matrix labelled with 1,269 names.
+X = molhume.featurize(picked, standardize="none", fingerprint=False, columns="full")
 names = molhume.feature_names(fingerprint=False, columns="full")
+assert X.shape[1] == len(names), (X.shape, len(names))
 assert names == molhume.ALL_COLUMNS, "fixture must cover every emitted column"
 
 with open("tests/data/fixture_smiles.txt", "w") as fh:
