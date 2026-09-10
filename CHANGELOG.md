@@ -23,6 +23,9 @@ PyPI serves as the project description.
 
 `docs/API.md` described `columns` as taking three named answers; it takes five.
 
+The maintainer contact in the package metadata is now the institutional address
+(`leif.sieben@chem.ox.ac.uk`), matching the paper.
+
 Verified against the built package rather than by reading: every `columns=` example in the README
 returns the count its comment claims, and every `results/` path cited across README, METHODS.md
 and docs/ exists.

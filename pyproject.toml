@@ -21,7 +21,7 @@ readme = "README.md"
 # several of these columns reproduce. See the acknowledgments in README.md.
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]
-authors = [{ name = "Leif Sieben", email = "sieben.leif@gmail.com" }]
+authors = [{ name = "Leif Sieben", email = "leif.sieben@chem.ox.ac.uk" }]
 keywords = ["cheminformatics", "molecular descriptors", "rdkit", "mordred", "qsar"]
 classifiers = [
     "Development Status :: 4 - Beta",
