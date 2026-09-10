@@ -50,13 +50,14 @@ Measured once on 33 held-out tasks that took no part in choosing them, against t
 | `minimal` | 256 | +1.47% | **+2.49%** |
 
 `default` is free. `minimal` is a stated trade — use it when the budget is worth roughly 2.5% on
-classification. `minimal-v2` is *better* than the full set on this panel.
+classification. `default` is *better* than the full set on this panel.
 
 **`minimal` means 256 columns from 0.10.0 and meant 622 before it.** Short names are pointers;
-`default-v1`, `minimal-v3` and `minimal-v2` are contracts. Pin one, or read
-`results/hume_default_408.txt`.
+`default-v2`, `small-v1` and `minimal-v3` are contracts, as are the pre-1.0.0 `minimal-v2`
+(= `default-v2`) and `default-v1` (= `small-v1`). Pin one, or read the column lists in
+`results/hume_default_622.txt`, `results/hume_small_408.txt` and `results/hume_minimal_256.txt`.
 
-`column_set(name)` returns the names in any of the three sets. `ALL_COLUMNS` lists every name a
+`column_set(name)` returns the names in any of the five sets. `ALL_COLUMNS` lists every name a
 manual selection can use.
 
 **The selection decides what is computed, not only what is returned.** A descriptor family none
@@ -67,7 +68,7 @@ as well as smaller. On 1,200 molecules of `cpp/hard.smi`, one thread, against 91
 
 | selection | us/mol | |
 | --- | ---: | --- |
-| `"minimal"` (622) | 762 | 17% faster |
+| `"default"` (622) | 762 | 17% faster |
 | `"full_no_new"` (1,109) | 908 | within noise |
 | `"full"` (1,269) | 900 | within noise |
 | `["TPSA", "ExactMolWt", "SLogP"]` | 288 | 69% faster |
@@ -89,9 +90,11 @@ lo, hi = molhume.FAMILY_OFFSETS["ringcount"]
 ring_counts = X[:, lo:hi]                     # 47 columns, n5Ring .. nG12FAHRing
 ```
 
-A set is what you request; a family is what gets computed. That is why `minimal` is cheaper —
-it needs none of `autocorr`, `eta` or `pathcount` — and `full_no_new` is not, since its 1,109
-columns touch all nineteen.
+A set is what you request; a family is what gets computed. That is why the three reduced sets are
+cheaper — `default`, `small` and `minimal` all need none of `autocorr`, `eta` or `pathcount` — and
+`full_no_new` is not, since its 1,109 columns touch all nineteen. It also means `minimal` is not
+cheaper than `small`: 256 columns touch every family 408 does, so dropping columns inside a family
+saves no work. Fewer columns downstream, not less compute.
 
 ### qed
 
@@ -203,14 +206,19 @@ and large molecules sit at opposite ends of both scales does not count. Columns 
 more than half the time, or that take one value for 99.9% of molecules, are dropped as unusable.
 1,269 survive.
 
-## The minimal set
+## The default set
 
-`minimal-v2` is a 622-column subset, and the default since 0.7.0:
+`default` is a 622-column subset and has been what `featurize` returns since 0.7.0 -- under the
+name `minimal` until 0.9.2, and as `default` from 1.0.0. Its frozen names are `default-v2` and,
+from before the rename, `minimal-v2`; both return these same 622 columns.
 
 ```python
 X = molhume.featurize(smiles)                     # the same call
-X = molhume.featurize(smiles, columns="minimal")
+X = molhume.featurize(smiles, columns="default")  # or "default-v2" / "minimal-v2" to pin it
 ```
+
+**`columns="minimal"` is a different set.** It returns 256 columns from 1.0.0, not these 622, and
+warns once when you ask for it.
 
 It is a set, not a ranking. Every column was removed for one of three reasons, none of them a
 variance threshold:

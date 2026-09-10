@@ -1,25 +1,23 @@
 % The five named column sets. Numbers from mol-hume 1.0.0; held-out deltas from the 33
 % scaffold-split panels that took no part in the selection; cost measured on c7i.4xlarge (16 vCPU)
-% at N = 10^6. Requires \usepackage{booktabs}.
+% at N = 10^6, end to end including the 2,048-bit fingerprint. Requires \usepackage{booktabs}.
 \begin{table}[t]
 \centering
-\caption{The five named descriptor sets in \textsc{hume}. Provenance counts how many columns
-reproduce a definition from RDKit or Mordred and how many are new here. The held-out column is
-the median change in error against \textsc{hume}\_full across 33 scaffold-split datasets that
-played no part in choosing the sets; negative is better. Cost is end-to-end featurisation
-including the 2{,}048-bit fingerprint.}
+\caption{The five \textsc{hume} implementations, showing the number of descriptors emitted and
+their provenance. The held-out column is the median change in error against \textsc{hume}\_full
+across 33 scaffold-split datasets; negative indicates better performance.}
 \label{tab:column-sets}
-\begin{tabular}{llrrrrrr}
+\begin{tabular}{lrrrrrr}
 \toprule
- & & & \multicolumn{3}{c}{provenance} & held-out & cost \\
-\cmidrule(lr){4-6}
-set & spec & cols & RDKit & Mordred & new & vs.\ full & ($\mu$s/mol) \\
+ & & \multicolumn{3}{c}{provenance} & held-out & cost \\
+\cmidrule(lr){3-5}
+set & cols & RDKit & Mordred & new & vs.\ full & ($\mu$s/mol) \\
 \midrule
-\texttt{full}        & ---          & 1{,}269 & 193 & 916 & 160 & ---              & 144.5 \\
-\texttt{full\_no\_new} & ---        & 1{,}109 & 193 & 916 &   0 & ---              & 135.5 \\
-\texttt{default}     & default-v2   &     622 & 188 & 292 & 142 & $-1.17\%$        & 122.0 \\
-\texttt{small}       & small-v1     &     408 & 104 & 202 & 102 & $+0.30\%$        & 116.7 \\
-\texttt{minimal}     & minimal-v3   &     256 &  75 & 144 &  37 & $+1.47\%$        & 122.4 \\
+\texttt{full}          & 1{,}269 & 193 & 916 & 160 & ---       & 144.5 \\
+\texttt{full\_no\_new} & 1{,}109 & 193 & 916 &   0 & ---       & 135.5 \\
+\texttt{default}       &     622 & 188 & 292 & 142 & $-1.17\%$ & 122.0 \\
+\texttt{small}         &     408 & 104 & 202 & 102 & $+0.30\%$ & 116.7 \\
+\texttt{minimal}       &     256 &  75 & 144 &  37 & $+1.47\%$ & 122.4 \\
 \bottomrule
 \end{tabular}
 \end{table}

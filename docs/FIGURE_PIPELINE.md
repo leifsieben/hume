@@ -221,7 +221,16 @@ boundary skip it (it is a no-op there) and cost one fit instead of five.
 ## Figure C — performance against inference cost
 
 Same grid supplies the performance axis; the cost axis comes from Figure D.
-Arms: ChemBERTa, CheMeleon, MiniMol, ECFP, ECFP+RDKit, ECFP+Mordred, ECFP+both, HUME.
+Arms: ChemBERTa, CheMeleon, MiniMol, ECFP, ECFP+RDKit, ECFP+Mordred, ECFP+both, HUME_full,
+HUME_no_new (1,109 -- everything RDKit or Mordred already defines, i.e. the 160 that are ours
+removed) and HUME_default (622). SI figure A shows the same anchor against all four shipped
+widths on a categorical axis instead of a cost axis.
+
+**The marker is the MEDIAN over datasets and the whisker a percentile-bootstrap 95% CI for it**,
+not a mean with an SEM. Every claim in the text is a median with a Wilcoxon test, and a panel is
+4 to 13 datasets whose deltas one hard endpoint can visibly skew -- an SEM bar beside a median
+claim invites a t-test that was never run. SI figure A additionally draws each dataset as a point
+behind its arm.
 
 ---
 
@@ -263,7 +272,9 @@ arithmetic per molecule.
 - [ ] **Third box: the 12 base×add CONCATENATIONS** — 3 bases × 4 adds. Not currently scheduled;
       without them Panel 2 stays empty. Featurisation is cached per arm, so this is concatenation
       plus 12 × 28 × 5 fits, not a re-featurisation
-- [ ] Write the aggregator: per-fold records → the `results.json` contract (mean/sem/n_folds)
+- [ ] Write the aggregator: per-fold records → the `results.json` contract
+      (`median`/`ci_lo`/`ci_hi`/`n_datasets`/`deltas`, plus `mean`/`sem`/`n_folds` kept so the
+      older CSVs stay comparable)
 
 **Figure C**
 - [ ] **Three missing cost measurements**: `minimol`, `ecfp_rdkit_desc`, `ecfp_mordred_desc`.
