@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.0.1 — 2026-09-10
+
+**Documentation only. No code changed; the extension module is byte-identical to 1.0.0.**
+
+The 1.0.0 rename left the README describing the old naming in four places, and the README is what
+PyPI serves as the project description.
+
+* **A code example that returned the wrong set.** The section headed "The minimal set" described
+  the 622-column set and then showed `featurize(smiles, columns="minimal")`. From 1.0.0 that call
+  returns 256 columns and warns. Anyone following the README got a set they had not asked for. The
+  section is now "The default set", names `default-v2` and `minimal-v2` as the ways to pin it, and
+  says plainly that `columns="minimal"` is a different, 256-column set.
+* **A timing row under the wrong name.** The family-gating table credited `minimal` with 762
+  us/mol against 918 ungated. That measurement is of the 622-column set, which is `default`.
+* **A path that no longer exists.** `results/hume_default_408.txt` was renamed at 1.0.0; the file
+  is `results/hume_small_408.txt`. All three column lists are now named.
+* **A gating claim that was too narrow.** The README credited `minimal` alone with needing none of
+  `autocorr`, `eta` or `pathcount`. All three reduced sets skip exactly those three families —
+  which is also why `minimal` is not cheaper to compute than `small`, since 256 columns touch
+  every family 408 does.
+
+`docs/API.md` described `columns` as taking three named answers; it takes five.
+
+Verified against the built package rather than by reading: every `columns=` example in the README
+returns the count its comment claims, and every `results/` path cited across README, METHODS.md
+and docs/ exists.
+
+Verified against RDKit 2025.9.2, unchanged from 1.0.0. The dependency range is untouched.
+
 ## 1.0.0 — 2026-09-07
 
 **The short names stop moving.** That is what the version number is for.
