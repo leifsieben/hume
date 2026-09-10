@@ -23,10 +23,11 @@ whose units differ by two orders of magnitude is arithmetic on incommensurables.
 """
 from __future__ import annotations
 
-import argparse, json, os, sys, time
+import argparse, importlib.metadata, json, os, sys, time
 import json
 import numpy as np
 from pathlib import Path
+from sklearn.metrics import roc_auc_score, accuracy_score
 
 CHEMPFN = os.environ.get("CHEMPFN_SRC", "/Users/lsieben/VSCode/ChemPFN")
 sys.path.insert(0, CHEMPFN)
@@ -129,26 +130,25 @@ def f_mordred_desc(smis):
         return np.load(out_f)
 
 
-#: The 185 columns wired after the deduplication -- counts_ext, estate_ext, eta, spectral and
-#: misc_ext, minus the 43 the cost triage dropped. `hume_no_new` masks exactly these, so the pair
-#: (hume_no_new, hume_all_desc) isolates what they are worth downstream.
-_NEW_COLS = None
+def _hume_block(smis, columns="full"):
+    """ECFP + a NAMED HUME column set, masked by name through the package's own definition.
 
+    `columns` is whatever molhume.column_set accepts: 'full' (1,269), 'full_no_new' (1,109),
+    'default'/'default-v2' (622), 'small'/'small-v1' (408), 'minimal'/'minimal-v3' (256).
 
-def _hume_block(smis, drop_new: bool, minimal: bool = False):
-    """ECFP + HUME's descriptors. `drop_new` masks the 185 post-dedup columns.
+    IT TAKES A SET NAME RATHER THAN TWO BOOLEANS, and the `full_no_new` arm is the reason. It
+    used to mask results/dedupe2/new_columns.json -- the 185 columns WIRED LATE in development,
+    mostly Mordred standards like AETA_* and BCUT* -- and call the result 1,109 columns of
+    "everything RDKit or Mordred already defines". It was 1,084 columns of something else. The
+    shipped `full_no_new` drops the 160 that are OURS, verified against both libraries' own
+    descriptor lists: none of the 160 is defined by RDKit or Mordred, and nothing kept is absent
+    from both. Reading the set from the package means the plotted arm and the installable set
+    cannot drift apart again.
 
-    `minimal` restricts to the HUME_minimal spec instead -- the 800-column reduced set derived
-    label-free by pivoted QR, see docs/selection/MINIMAL_SPEC_v1_withdrawn.md. It is applied by NAME rather than by
-    index so it cannot silently drift if the emitted layout ever changes, which is the failure
-    FAMILY_OFFSETS already shipped once.
-
-    `optional=` NO LONGER ASKS FOR qed. The column was dropped in the cost triage because it
-    shipped 100% NaN -- its 116 structural alerts are OPT_QED and off by default -- so requesting
-    it now buys 69.3 us/mol of alert matching for a column that is not emitted. AvgIpc is still
-    requested: it is emitted, and it is not reconstructible (GBM R2 0.889 from the cheap basis).
+    `optional=` DOES NOT ASK FOR qed. It is opt-in and not in any named set, so requesting it
+    would buy 69.3 us/mol of alert matching for a column no arm emits. AvgIpc is requested: it is
+    emitted, and it is not reconstructible (GBM R2 0.889 from the cheap basis).
     """
-    global _NEW_COLS
     import molhume as hume
     from rdkit import Chem
     mols, keep = [], []
@@ -157,26 +157,20 @@ def _hume_block(smis, drop_new: bool, minimal: bool = False):
         if m is not None:
             mols.append(m); keep.append(i)
     fp, X, cols = hume.featurize_all_from_mols(mols, optional=("AvgIpc",))
-    if minimal:
-        want = set(hume.minimal_columns())
-        mask = np.array([c in want for c in cols], dtype=bool)
-        if mask.sum() != len(want):
-            raise RuntimeError(
-                f"hume_minimal: the spec names {len(want)} columns but only {mask.sum()} of them "
-                f"are in this build's {len(cols)}-column output. The spec is frozen against "
-                "mol-hume 0.1.1; a build whose emitted set has changed needs the spec "
-                "re-derived, not silently truncated -- see docs/selection/MINIMAL_SPEC_v1_withdrawn.md section 10.")
-        X = X[:, mask]
-    if drop_new:
-        if _NEW_COLS is None:
-            _NEW_COLS = set(json.loads(
-                Path("results/dedupe2/new_columns.json").read_text()))
-        mask = np.array([c not in _NEW_COLS for c in cols], dtype=bool)
-        if mask.sum() == len(cols):
-            raise RuntimeError(
-                "hume_no_new: results/dedupe2/new_columns.json masked 0 of "
-                f"{len(cols)} columns; the ablation would be identical to hume_all_desc")
-        X = X[:, mask]
+    # MASK EVEN FOR 'full'. The low-level call always emits the `qed` slot, so it returns 1,270
+    # columns where the shipped full set is 1,269; unmasked, the `hume` arm carried an extra
+    # all-NaN column that no other arm had and that no column list accounts for. Harmless to
+    # XGBoost, but it made the arm's width disagree with every place the width is written down.
+    want = set(hume.column_set(columns))
+    mask = np.array([c in want for c in cols], dtype=bool)
+    if mask.sum() != len(want):
+        raise RuntimeError(
+            f"hume columns={columns!r}: the set names {len(want)} columns but only "
+            f"{mask.sum()} of them are in this build's {len(cols)}-column output. A build "
+            f"whose emitted set has changed needs the arm re-derived, not silently "
+            f"truncated -- mol-hume "
+            f"{importlib.metadata.version('mol-hume')}.")
+    X = X[:, mask]
     out = np.full((len(smis), X.shape[1] + fp.shape[1]), np.nan, np.float32)
     out[keep] = np.hstack([X, fp]).astype(np.float32)
     return out
@@ -184,24 +178,27 @@ def _hume_block(smis, drop_new: bool, minimal: bool = False):
 
 def f_hume(smis):
     """ECFP + every descriptor HUME computes, including our own. One arm, no variants."""
-    return _hume_block(smis, drop_new=False)
+    return _hume_block(smis, "full")
 
 
 def f_hume_no_new(smis):
-    """HUME WITHOUT the 185 columns wired after the deduplication."""
-    return _hume_block(smis, drop_new=True)
+    """HUME WITHOUT the 160 columns that are ours -- everything RDKit or Mordred already has."""
+    return _hume_block(smis, "full_no_new")
 
 
-def f_hume_minimal(smis):
-    """ECFP + the 800-column HUME_minimal spec, instead of all 1,269.
+def f_hume_622(smis):
+    """HUME_default: the 622-column set, the safest of the reduced ones."""
+    return _hume_block(smis, "default-v2")
 
-    THE BENCHMARK IS A TEST OF THE SPEC, NOT AN INPUT TO IT. The 800 columns were chosen
-    label-free from the descriptor matrix alone -- no target, no assay, none of these datasets --
-    precisely so that this arm is an independent check. If it loses materially to `hume`, the
-    linear-recoverability proxy in docs/selection/MINIMAL_SPEC_v1_withdrawn.md is wrong and that document is what
-    should change.
-    """
-    return _hume_block(smis, drop_new=False, minimal=True)
+
+def f_hume_408(smis):
+    """HUME_small: 408 columns, free against the full set and the cheapest to compute."""
+    return _hume_block(smis, "small-v1")
+
+
+def f_hume_256(smis):
+    """HUME_minimal: 256 columns, about 2.5% worse on classification than the full set."""
+    return _hume_block(smis, "minimal-v3")
 
 
 #: Per-dataset memo for feature BLOCKS. Cleared at the top of every dataset, so it never holds
@@ -319,7 +316,16 @@ FP_BLOCK = {
     "minimol": None, "chemeleon": None, "molformer": None,
     "ecfp_rdkit_desc": ("head", 2048), "ecfp_mordred_desc": ("head", 2048),
     "ecfp_all_desc": ("head", 2048), "hume": ("tail", 2048),
-    "hume_minimal": ("tail", 2048),
+    # EVERY hume variant, not just two of them. `hume_no_new` was missing from this table, and a
+    # missing key reads as "no fingerprint/descriptor split" -- so `fp_weights` returned None, the
+    # arm skipped the w search entirely, and it was scored at XGBoost's uniform default against an
+    # anchor that had tuned its way to w=100 on 74 of 165 folds. The parameter was not disabled by
+    # a decision; it was disabled by a dict that had not been updated when the arms were added.
+    "hume_no_new": ("tail", 2048), "hume_all_desc": ("tail", 2048),
+    "hume_minimal": ("tail", 2048), "hume_default": ("tail", 2048),
+    "hume_small": ("tail", 2048), "hume_622": ("tail", 2048),
+    "hume_408": ("tail", 2048), "hume_256": ("tail", 2048),
+    "hume_minimal256": ("tail", 2048),
 }
 
 #: The `w` grid from docs/API.md section 7. w=1 is XGBoost's uniform default and is dominated on BOTH
@@ -341,6 +347,98 @@ PROTO = 2
 W_INNER_K = 3
 MIN_INNER_VAL = 200
 W_UNTUNED = 10.0
+
+
+def make_head(task, seed, fw=None):
+    """Untuned XGBoost, per METHODS -- with the one documented exception.
+
+    Everything about the head is left at a fixed default so a difference between arms is a
+    difference between REPRESENTATIONS. The exception is `feature_weights`, which docs/API.md
+    section 7 recommends tuning: it sets how strongly column sampling favours fingerprint bits
+    over descriptors, and the best value differs between potency and physicochemical endpoints.
+
+    `colsample_bynode=0.3` IS PART OF THE MECHANISM, NOT A TUNING CHOICE. feature_weights is
+    inert unless some colsample_by* < 1, so at XGBoost's default of 1.0 the whole parameter does
+    nothing and would have been silently ignored. Per-node rather than per-tree because weights
+    apply at each sampling event, which gives the reweighting far more chances to act.
+
+    THIS LIVES AT MODULE LEVEL so that a reanalysis scoring cached feature matrices runs the
+    identical head rather than a lookalike. It did not, once: a local re-score of the HUME arms
+    reimplemented the estimator without `feature_weights`, so those arms were compared against an
+    anchor that had tuned it. Same numbers, different head, and nothing in the records said so.
+    """
+    import xgboost as xgb
+    cls = xgb.XGBClassifier if task in ("binary", "multiclass") else xgb.XGBRegressor
+    kw = dict(n_estimators=300, max_depth=6, random_state=seed, n_jobs=-1, verbosity=0,
+              colsample_bynode=0.3, tree_method="hist")
+    if fw is not None:
+        kw["feature_weights"] = fw
+    return cls(**kw)
+
+
+def score_pred(task, yte, p):
+    """The metric each task family is reported in: auroc, accuracy, or RMSE."""
+    if task == "binary":
+        return roc_auc_score(yte, p)
+    if task == "multiclass":
+        return accuracy_score(yte, np.rint(p).astype(int))
+    return float(np.sqrt(np.mean((yte - p) ** 2)))
+
+
+def predict_head(m, task, X):
+    return m.predict_proba(X)[:, 1] if task == "binary" else m.predict(X)
+
+
+def tune_w(arm, task, X, y, tr, seed=0):
+    """-> the `feature_weights` multiplier for this arm, chosen on TRAINING FOLDS ONLY.
+
+    docs/API.md: "Tuning it on the test fold leaks, and the effect is large enough to leak
+    meaningfully." Arms with no fingerprint/descriptor boundary have nothing to weight and skip
+    the search, which is why they cost one fit instead of thirteen.
+
+    K-FOLD INNER CV, NOT ONE 80/20 SPLIT. The single inner split was fitting noise at every
+    dataset size: the number of distinct w values chosen across the five outer folds was 3 or 4
+    for the tuned arms on almost every dataset, including ames at n=7,278, where a tuner finding
+    real signal would pick the same value each time.
+
+    THE COST OF THAT FELL ON ONE SIDE OF THE COMPARISON. `feature_weights` is a no-op for an arm
+    with no fingerprint/descriptor boundary, so every dense embedding skipped the loop and paid no
+    variance for it while every descriptor-carrying arm did -- a systematic bias in favour of the
+    dense arms across the whole grid, not a property of any representation. Averaging over K inner
+    folds cuts that variance by ~K, and below a usable inner-validation size we do not guess at
+    all: docs/API.md section 7's documented default is used instead.
+    """
+    if FP_BLOCK.get(arm) in (None, "all"):
+        return 1.0
+    lower_better = task == "regression"
+    idx = np.asarray(tr)
+    if len(idx) // W_INNER_K < MIN_INNER_VAL:
+        return W_UNTUNED
+    best_w, best_s = W_UNTUNED, None
+    for w in W_GRID:
+        ss = []
+        for j in range(W_INNER_K):
+            iva = idx[j::W_INNER_K]
+            itr = np.concatenate([idx[q::W_INNER_K] for q in range(W_INNER_K) if q != j])
+            if len(iva) < 20 or (task in ("binary", "multiclass") and len(np.unique(y[itr])) < 2):
+                continue
+            mi = make_head(task, seed, fp_weights(arm, X.shape[1], w))
+            mi.fit(X[itr], y[itr])
+            ss.append(score_pred(task, y[iva], predict_head(mi, task, X[iva])))
+        if not ss:
+            continue
+        si = float(np.mean(ss))
+        if best_s is None or (si < best_s if lower_better else si > best_s):
+            best_w, best_s = w, si
+    return best_w
+
+
+def fit_fold(arm, task, X, y, tr, te, seed=0):
+    """-> (metric on the held-out fold, the w that was used). One outer fold, one arm."""
+    best_w = tune_w(arm, task, X, y, tr, seed=seed)
+    m = make_head(task, seed, fp_weights(arm, X.shape[1], best_w))
+    m.fit(X[tr], y[tr])
+    return score_pred(task, y[te], predict_head(m, task, X[te])), float(best_w)
 
 
 def fp_weights(arm, n_cols, w):
@@ -372,9 +470,14 @@ ARMS = {
     "ecfp_all_desc":   _cat(B_ECFP, B_RDKIT, B_MORD),
     "desc":            _cat(B_RDKIT, B_MORD),
     "hume":            f_hume,
-    "hume_minimal":    f_hume_minimal,
     "hume_all_desc":   f_hume,          # same block; named for the ablation pair
     "hume_no_new":     f_hume_no_new,
+    # The three shipped reduced sets, keyed by WIDTH. A short name moved once already
+    # (`minimal` meant 622 through 0.9.2 and 256 from 1.0.0), so a record keyed by one would be
+    # ambiguous the moment it is read back -- see ARM_RENAME.
+    "hume_622":        f_hume_622,
+    "hume_408":        f_hume_408,
+    "hume_256":        f_hume_256,
     "chemberta_mtr":   B_LEARNED["chemberta_mtr"],
     "chemberta_mlm":   B_LEARNED["chemberta_mlm"],
     "minimol":         B_LEARNED["minimol"],
@@ -536,41 +639,9 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
     _quiet()
     from chempfn.data.lake import spec, lake_root, _csv_files
     from chempfn.eval.splits import scaffold_folds, train_test
-    from sklearn.metrics import roc_auc_score, accuracy_score
-    import xgboost as xgb
-
-    def make(task, fw=None):
-        """Untuned XGBoost, per METHODS -- with the one documented exception.
-
-        Everything about the head is left at a fixed default so a difference between arms is a
-        difference between REPRESENTATIONS. The exception is `feature_weights`, which docs/API.md
-        section 7 recommends tuning: it sets how strongly column sampling favours fingerprint
-        bits over descriptors, and the best value differs between potency and physicochemical
-        endpoints.
-
-        `colsample_bynode=0.3` IS PART OF THE MECHANISM, NOT A TUNING CHOICE. feature_weights is
-        inert unless some colsample_by* < 1, so at XGBoost's default of 1.0 the whole parameter
-        does nothing and would have been silently ignored. Per-node rather than per-tree because
-        weights apply at each sampling event, which gives the reweighting far more chances to
-        act.
-        """
-        cls = xgb.XGBClassifier if task in ("binary", "multiclass") else xgb.XGBRegressor
-        kw = dict(n_estimators=300, max_depth=6, random_state=seed, n_jobs=-1, verbosity=0,
-                  colsample_bynode=0.3, tree_method="hist")
-        if fw is not None:
-            kw["feature_weights"] = fw
-        return cls(**kw)
-
-    def score(task, yte, p):
-        if task == "binary":
-            return roc_auc_score(yte, p)
-        if task == "multiclass":
-            return accuracy_score(yte, np.rint(p).astype(int))
-        return float(np.sqrt(np.mean((yte - p) ** 2)))
-
-    def predict(m, task, X):
-        return m.predict_proba(X)[:, 1] if task == "binary" else m.predict(X)
-
+    # The head lives at module level (`fit_fold`), so a reanalysis scoring cached matrices runs
+    # the identical estimator. It used to be defined here, which is how a local re-score of the
+    # HUME arms came to use a lookalike that never passed `feature_weights`.
     records, t0 = [], time.time()
     for ds in datasets:
         sp = (_LocalSpec(ds, LOCAL_DATASETS[ds]["task"]) if ds in LOCAL_DATASETS
@@ -628,58 +699,9 @@ def run(arm_names, datasets, out_path, folds_k=5, seed=0):
                 if task == "regression" and float(np.std(y[tr])) == 0.0:
                     continue
                 try:
-                    # TUNE w ON TRAINING FOLDS ONLY. docs/API.md: "Tuning it on the test fold leaks,
-                    # and the effect is large enough to leak meaningfully." An inner 80/20 of the
-                    # outer training set picks w; the final model is refit on the whole training
-                    # set with the winner. Arms with no fingerprint/descriptor split skip this.
-                    lower_better = task == "regression"
-                    if FP_BLOCK.get(a) in (None, "all"):
-                        best_w = 1.0
-                    else:
-                        # K-FOLD INNER CV, NOT ONE 80/20 SPLIT.
-                        #
-                        # The single inner split was fitting noise, and it was doing so at every
-                        # dataset size. Counted over the first grid: the number of DISTINCT w
-                        # values chosen across the five outer folds was 3 or 4 for the tuned arms
-                        # on almost every dataset -- including ames at n=7,278 and pb_ames at
-                        # n=9,139 -- where a tuner finding real signal would pick the same value
-                        # each time.
-                        #
-                        # THE COST OF THAT FELL ON ONE SIDE OF THE COMPARISON. `feature_weights`
-                        # is a no-op for an arm with no fingerprint/descriptor boundary, so every
-                        # dense embedding (CheMeleon, MiniMol, ChemBERTa, MoLFormer) skipped the
-                        # loop entirely and paid no variance for it, while every descriptor-
-                        # carrying arm did. That is a systematic bias in favour of the dense arms
-                        # across the whole grid, not a property of any representation.
-                        #
-                        # Averaging over K inner folds cuts that variance by ~K, and below a
-                        # usable inner-validation size we do not guess at all: docs/API.md section 7's
-                        # documented default is used instead.
-                        idx = np.asarray(tr)
-                        if len(idx) // W_INNER_K < MIN_INNER_VAL:
-                            best_w = W_UNTUNED
-                        else:
-                            best_w, best_s = W_UNTUNED, None
-                            for w in W_GRID:
-                                ss = []
-                                for j in range(W_INNER_K):
-                                    iva = idx[j::W_INNER_K]
-                                    itr = np.concatenate([idx[q::W_INNER_K]
-                                                          for q in range(W_INNER_K) if q != j])
-                                    if len(iva) < 20 or (task in ("binary", "multiclass")
-                                                         and len(np.unique(y[itr])) < 2):
-                                        continue
-                                    mi = make(task, fp_weights(a, X.shape[1], w))
-                                    mi.fit(X[itr], y[itr])
-                                    ss.append(score(task, y[iva], predict(mi, task, X[iva])))
-                                if not ss:
-                                    continue
-                                si = float(np.mean(ss))
-                                if best_s is None or (si < best_s if lower_better else si > best_s):
-                                    best_w, best_s = w, si
-                    m = make(task, fp_weights(a, X.shape[1], best_w))
-                    m.fit(X[tr], y[tr])
-                    v = score(task, y[te], predict(m, task, X[te]))
+                    # TUNE w ON TRAINING FOLDS ONLY, via the shared head. docs/API.md: "Tuning it
+                    # on the test fold leaks, and the effect is large enough to leak meaningfully."
+                    v, best_w = fit_fold(a, task, X, y, tr, te, seed=seed)
                 except Exception as e:
                     print(f"  {ds}/{a}/fold{i}: {type(e).__name__}: {e}", flush=True)
                     continue

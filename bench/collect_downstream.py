@@ -188,7 +188,7 @@ def fetch():
 
 
 def aggregate(recs):
-    """-> {(task, arm): (mean_ratio, sem, n_folds)} plus the per-dataset table."""
+    """-> {(task, arm): (mean, sem, n_folds, median, ci_lo, ci_hi, deltas)} + the table."""
     fold = defaultdict(list)                       # (dataset, arm) -> [value]
     metric = {}
     for r in recs:
@@ -248,11 +248,50 @@ def aggregate(recs):
                               "anchor": ref, "ratio": v - ref, "metric": metric[d]})
             if not ratios:
                 continue
+            nf = sum(len(fold[(d, arm)]) for d in dss if (d, arm) in fold)
+            lo, hi = _boot_ci(ratios)
             out[(tkey, arm)] = (float(np.mean(ratios)),
                                 float(np.std(ratios, ddof=1) / np.sqrt(len(ratios)))
                                 if len(ratios) > 1 else 0.0,
-                                sum(len(fold[(d, arm)]) for d in dss if (d, arm) in fold))
+                                nf, float(np.median(ratios)), lo, hi,
+                                [float(r) for r in ratios])
     return out, table, metric
+
+
+def _boot_ci(vals, n_boot=20000, alpha=0.05, seed=0):
+    """Percentile bootstrap CI for the MEDIAN of the per-dataset deltas.
+
+    The claims in the paper are median-and-Wilcoxon; a mean +/- SEM whisker beside them invites
+    the reader to do a t-test that was never run. Resampling is over DATASETS, which is the unit
+    the panel generalizes over -- folds within a dataset are not independent draws from it.
+
+    A single dataset has no spread to resample, so its interval is the point itself; that is
+    honest (one dataset, no evidence about between-dataset variation) rather than zero-width by
+    accident.
+    """
+    v = np.asarray(vals, dtype=float)
+    if v.size == 0:
+        raise ValueError("bootstrap CI over an empty set of per-dataset deltas")
+    if v.size == 1:
+        return float(v[0]), float(v[0])
+    rng = np.random.default_rng(seed)
+    draws = np.median(rng.choice(v, size=(n_boot, v.size), replace=True), axis=1)
+    return (float(np.quantile(draws, alpha / 2)), float(np.quantile(draws, 1 - alpha / 2)))
+
+
+def _cell(agg, tkey, arm):
+    """One figure record: the mean kept for continuity, the median and its CI for the plot.
+
+    THE FIGURES DRAW THE MEDIAN. Every claim in the paper is a median with a Wilcoxon test, and a
+    mean +/- SEM whisker beside it invites the reader to run a t-test that was never performed --
+    on 4 to 13 datasets whose deltas are visibly skewed by one or two hard endpoints. The mean and
+    SEM are still written out so the older CSVs remain comparable, but nothing is drawn from them.
+    """
+    mean, sem, nf, med, lo, hi, deltas = agg[(tkey, arm)]
+    return {"task": tkey, "arm": arm, "head": "xgboost",
+            "mean": mean, "sem": sem, "n_folds": nf,
+            "median": med, "ci_lo": lo, "ci_hi": hi,
+            "n_datasets": len(deltas), "deltas": deltas}
 
 
 def task_specs(metric, recs=None):
@@ -356,11 +395,13 @@ def main():
                 if cell is None:
                     continue
                 brecs.append({"task": t["key"], "base": base, "add": add,
-                              "mean": cell[0], "sem": cell[1], "n_folds": cell[2]})
+                              "mean": cell[0], "sem": cell[1], "n_folds": cell[2],
+                              "median": cell[3], "ci_lo": cell[4], "ci_hi": cell[5]})
     OUT_B.parent.mkdir(parents=True, exist_ok=True)
     OUT_B.write_text(json.dumps(
         {"meta": {"source": "bench/bench_downstream.py on c7i.4xlarge", "n_records": len(recs),
-                  "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same "
+                  "unit": "per-dataset (arm error - ecfp_all_desc error); `median` with a "
+                          "percentile-bootstrap 95% CI over datasets is what the figures draw. "
                           "dataset; regression error = rmse / sd(y), classification = 1 - auroc. "
                           "Anchor is 0 by construction; lower is better."},
          "tasks": specs, "bases": FIGB_BASES, "anchor": FIGB_ANCHOR, "adds": FIGB_ADDS,
@@ -370,14 +411,13 @@ def main():
     # ---- figure C ----------------------------------------------------------------------
     cost = costs()
     arms = [a for a in FIGC_ARMS if a in cost and any((t["key"], a) in agg for t in specs)]
-    crecs = [{"task": t["key"], "arm": a, "head": "xgboost",
-              "mean": agg[(t["key"], a)][0], "sem": agg[(t["key"], a)][1],
-              "n_folds": agg[(t["key"], a)][2]}
+    crecs = [_cell(agg, t["key"], a)
              for t in specs for a in arms if (t["key"], a) in agg]
     OUT_C.parent.mkdir(parents=True, exist_ok=True)
     OUT_C.write_text(json.dumps(
         {"meta": {"source": "bench/bench_downstream.py + results/scale", "n_records": len(recs),
-                  "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same "
+                  "unit": "per-dataset (arm error - ecfp_all_desc error); `median` with a "
+                          "percentile-bootstrap 95% CI over datasets is what the figures draw. "
                           "dataset; regression error = rmse / sd(y), classification = 1 - auroc. "
                           "Anchor is 0 by construction; lower is better."},
          "tasks": specs, "arms": arms, "cost": cost, "records": crecs}, indent=1))
@@ -385,9 +425,7 @@ def main():
 
     # ---- SI figure A: the HUME widths on their own --------------------------------------
     si_arms = [a for a in SI_A_ARMS if a in cost and any((t["key"], a) in agg for t in specs)]
-    si_recs = [{"task": t["key"], "arm": a, "head": "xgboost",
-                "mean": agg[(t["key"], a)][0], "sem": agg[(t["key"], a)][1],
-                "n_folds": agg[(t["key"], a)][2]}
+    si_recs = [_cell(agg, t["key"], a)
                for t in specs for a in si_arms if (t["key"], a) in agg]
     missing = [a for a in SI_A_ARMS if a not in si_arms]
     if missing:
@@ -397,7 +435,8 @@ def main():
     OUT_SI_A.write_text(json.dumps(
         {"meta": {"source": "bench/bench_downstream.py + results/scale",
                   "n_records": len(recs),
-                  "unit": "mean over datasets of (arm error - ecfp_all_desc error) on the same "
+                  "unit": "per-dataset (arm error - ecfp_all_desc error); `median` with a "
+                          "percentile-bootstrap 95% CI over datasets is what the figures draw. "
                           "dataset; regression error = rmse / sd(y), classification = 1 - auroc. "
                           "Anchor is 0 by construction; lower is better."},
          "tasks": specs, "arms": si_arms, "cost": cost, "records": si_recs}, indent=1))
