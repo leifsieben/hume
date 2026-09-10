@@ -48,7 +48,8 @@ DATA CONTRACT -- results/figures/figC/results.json:
      "arms":  [<arm key>, ...],
      "cost":  {<arm>: {"us_per_mol": float, "measured_on": str, "breakdown": {...}}},
      "records": [{"task": ..., "arm": ..., "head": str,
-                  "mean": float, "sem": float, "n_folds": int}, ...]}
+                  "median": float, "ci_lo": float, "ci_hi": float,
+                  "mean": float, "sem": float, "n_folds": int, "n_datasets": int}, ...]}
 
 Arm keys must exist in figures/arms.py; an unregistered key draws in default gray on purpose,
 so a new arm is visibly unstyled rather than silently missing.
@@ -182,14 +183,26 @@ def main() -> None:
         ax = fig.add_subplot(gs[t_i // ncol, t_i % ncol])
         lo_better = bool(t.get("lower_is_better", True))
 
-        xs, ys, es, ks = [], [], [], []
+        # THE MARKER IS THE MEDIAN OVER DATASETS, the whisker a percentile-bootstrap 95% CI for
+        # it. It was the mean with an SEM whisker, which was a mismatch with the text: every
+        # claim in the paper is a median with a Wilcoxon test, and a panel is 4 to 13 datasets
+        # whose deltas one hard endpoint can visibly skew. An SEM bar beside a median claim
+        # invites a t-test that was never run. The interval is asymmetric because the underlying
+        # distribution is.
+        xs, ys, los, his, ks = [], [], [], [], []
         for a in arm_keys:
             r = rec.get((t["key"], a))
             if r is None:
                 continue
+            if "median" not in r:
+                raise SystemExit(
+                    f"figure C: record for {t['key']}/{a} has no `median`. It was written by a "
+                    f"collector that only emitted mean and sem; re-run bench/collect_downstream.py "
+                    f"rather than plotting a mean under a median's caption.")
             xs.append(float(d["cost"][a]["us_per_mol"]))
-            ys.append(float(r["mean"]))
-            es.append(float(r.get("sem", 0.0)))
+            ys.append(float(r["median"]))
+            los.append(float(r["ci_lo"]))
+            his.append(float(r["ci_hi"]))
             ks.append(a)
             if r.get("head", DEFAULT_HEAD) != DEFAULT_HEAD:
                 odd_heads.add((a, r["head"]))
@@ -228,11 +241,11 @@ def main() -> None:
         # has to be large before this fires: a cut axis is a claim that one point is of a
         # different order, and applying it to a merely-largest point would be a lie about the
         # data.
-        tops = sorted(((y + e, i) for i, (y, e) in enumerate(zip(ys, es))), reverse=True)
+        tops = sorted(((h, i) for i, h in enumerate(his)), reverse=True)
         cut_i, cut_top = None, None
         if len(tops) >= 2 and tops[1][0] > 0 and tops[0][0] > TOP_GAP * tops[1][0]:
             cut_i = tops[0][1]
-            lo = min(y - e for y, e in zip(ys, es))
+            lo = min(los)
             span = tops[1][0] - lo
             # THE CUT AND THE TOP OF THE AXIS ARE NOT THE SAME PLACE (Leif). Drawing the
             # out-of-range marker AT the axis top pinned it against the frame with its value
@@ -243,7 +256,7 @@ def main() -> None:
             cut_top = tops[1][0] + 0.18 * span
             ax.set_ylim(lo - 0.18 * span, cut_top + CUT_HEADROOM * span)
 
-        for j, (x, y, e, a) in enumerate(zip(xs, ys, es, ks)):
+        for j, (x, y, ylo, yhi, a) in enumerate(zip(xs, ys, los, his, ks)):
             if j == cut_i:
                 # ON the cut, not above it: a marker drawn outside the axes would be clipped
                 # away and the arm would vanish from the panel entirely.
@@ -268,9 +281,11 @@ def main() -> None:
             # crossing it.
             #
             # `ecfp_all_desc` IS DIFFERENT AND ITS MISSING BAR IS CORRECT: it is the anchor
-            # every other arm is subtracted from, so its value is 0.000 and its sem is 0.000 by
-            # construction, not by rounding. There is genuinely nothing to draw.
-            ax.errorbar(x, y, yerr=e, fmt="o", ms=STYLE["marker_size"], color=face,
+            # every other arm is subtracted from, so its delta is 0.000 on every dataset and
+            # the interval is a point, by construction rather than by rounding. There is
+            # genuinely nothing to draw.
+            yerr = np.array([[y - ylo], [yhi - y]])
+            ax.errorbar(x, y, yerr=yerr, fmt="o", ms=STYLE["marker_size"], color=face,
                         ecolor=STYLE["ink"], elinewidth=STYLE["lw_thin"],
                         capsize=STYLE["cap_size"], zorder=5,
                         # AN INK CIRCLE ON EVERY MARKER (Leif 2026-08-29). It was
@@ -367,11 +382,14 @@ def main() -> None:
     build.mkdir(parents=True, exist_ok=True)
     with open(build / f"{STEM}.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["task", "arm", "delta_error_vs_anchor", "sem", "n_folds",
+        w.writerow(["task", "arm", "median_delta_vs_anchor", "ci_lo", "ci_hi",
+                    "n_datasets", "mean_delta", "sem", "n_folds",
                     "us_per_mol", "cost_measured_on", "is_anchor"])
         for r in sorted(d["records"], key=lambda r: (r["task"], r["arm"])):
             c = d["cost"].get(r["arm"], {})
-            w.writerow([r["task"], r["arm"], f"{r['mean']:.6f}", f"{r['sem']:.6f}",
+            w.writerow([r["task"], r["arm"], f"{r['median']:.6f}", f"{r['ci_lo']:.6f}",
+                        f"{r['ci_hi']:.6f}", r.get("n_datasets", ""),
+                        f"{r['mean']:.6f}", f"{r['sem']:.6f}",
                         r.get("n_folds", ""), f"{c.get('us_per_mol', float('nan')):.2f}",
                         c.get("measured_on", ""), int(r["arm"] == "ecfp_all_desc")])
     print(f"  wrote  figures/build/{STEM}.csv")

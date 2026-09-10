@@ -13,6 +13,11 @@ and sees the four distances directly.
 
 The anchor is unchanged from Figure C -- ECFP + all descriptors, which is 0 by construction --
 so the two plates are on the same y-scale and can be read together.
+
+The marker is the MEDIAN over datasets and the whisker a percentile-bootstrap 95% CI for it,
+matching the median-and-Wilcoxon statistics every claim in the text is made with. Behind each
+arm sit its individual datasets, so a wide interval can be read for what it is -- usually one
+hard endpoint rather than an unstable representation.
 """
 from __future__ import annotations
 
@@ -32,7 +37,8 @@ RESULTS = ROOT / "results" / "figures" / "SI_figA" / "results.json"
 
 #: Widest to narrowest, with the anchor first. Fixed here rather than taken from the file so the
 #: panels cannot silently reorder when an arm is added.
-ORDER = ["ecfp_all_desc", "hume", "hume_622", "hume_408", "hume_256"]
+ANCHOR = "ecfp_all_desc"
+ORDER = [ANCHOR, "hume", "hume_622", "hume_408", "hume_256"]
 NCOL = {"hume": 1269, "hume_622": 622, "hume_408": 408, "hume_256": 256}
 
 
@@ -61,17 +67,31 @@ def main() -> None:
     fig, axes = plt.subplots(nrow, ncol, figsize=(6.69, 2.5), sharey=False)
     axes = np.atleast_1d(axes).ravel()
     x = np.arange(len(arms))
+    rng = np.random.default_rng(0)
     for ax, t in zip(axes, tasks):
-        ys, es = [], []
-        for a in arms:
-            r = recs.get((t["key"], a))
-            ys.append(np.nan if r is None else r["mean"])
-            es.append(0.0 if r is None else r["sem"])
         ax.axhline(0.0, color=STYLE["ink"], lw=0.8, ls=(0, (2, 2)), zorder=1)
-        ax.errorbar(x, ys, yerr=es, fmt="none", ecolor=STYLE["ink"], elinewidth=0.9,
-                    capsize=2.5, zorder=2)
+        ys, los, his = [], [], []
+        for j, a in enumerate(arms):
+            r = recs.get((t["key"], a))
+            if r is None:
+                ys.append(np.nan); los.append(np.nan); his.append(np.nan); continue
+            ys.append(r["median"]); los.append(r["ci_lo"]); his.append(r["ci_hi"])
+            # EVERY DATASET, BEHIND THE SUMMARY. A panel is 4 to 13 datasets, which is few enough
+            # that showing them costs nothing and hides nothing: a bar that looks wide because one
+            # endpoint is hard is then visibly one endpoint, not a representation that is unstable.
+            # The anchor's points are all exactly 0 by construction, so they are not drawn -- a
+            # stack of dots on the zero line would read as data.
+            d = np.asarray(r.get("deltas", []), dtype=float)
+            if a != ANCHOR and d.size:
+                jitter = rng.uniform(-0.16, 0.16, d.size)
+                ax.scatter(np.full(d.size, j) + jitter, d, s=7, c=A.color(a), alpha=0.35,
+                           linewidths=0, zorder=2)
+        ys, los, his = np.array(ys), np.array(los), np.array(his)
+        err = np.vstack([ys - los, his - ys])
+        ax.errorbar(x, ys, yerr=err, fmt="none", ecolor=STYLE["ink"], elinewidth=0.9,
+                    capsize=2.5, zorder=3)
         ax.scatter(x, ys, s=46, c=[A.color(a) for a in arms], edgecolor=STYLE["ink"],
-                   linewidth=0.6, zorder=3)
+                   linewidth=0.6, zorder=4)
         ax.set_xticks(x)
         ax.set_xticklabels([A.short_label(a) for a in arms], rotation=45, ha="right",
                            fontsize=FS["tick"])
@@ -89,15 +109,17 @@ def main() -> None:
     import csv
     with open(build / "SI_fig_a.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["task", "arm", "label", "n_columns", "delta_error_vs_anchor", "sem",
-                    "n_folds"])
+        w.writerow(["task", "arm", "label", "n_columns", "median_delta_vs_anchor",
+                    "ci_lo", "ci_hi", "n_datasets", "mean_delta", "sem", "n_folds"])
         for t in tasks:
             for a in arms:
                 r = recs.get((t["key"], a))
                 if r is None:
                     continue
                 w.writerow([t["key"], a, A.short_label(a), NCOL.get(a, ""),
-                            f"{r['mean']:.6f}", f"{r['sem']:.6f}", r.get("n_folds", "")])
+                            f"{r['median']:.6f}", f"{r['ci_lo']:.6f}", f"{r['ci_hi']:.6f}",
+                            r.get("n_datasets", ""), f"{r['mean']:.6f}", f"{r['sem']:.6f}",
+                            r.get("n_folds", "")])
     print("  wrote  figures/build/SI_fig_a.csv")
 
 
