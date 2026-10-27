@@ -365,11 +365,48 @@ def ch2_homolog(m):
     return e.GetMol()
 
 
+def protonate_neutral(m):
+    """NEUTRAL BASE AGAINST ITS CONJUGATE ACID. The chemically relevant protonation question.
+
+    This is the pair `protonate` deliberately avoided, and the reason it was avoided is specific
+    to the OLD metric rather than to the chemistry. Under the XGBoost AUC axis every one of the
+    twelve arms scored 1.000 here and so did the character-level control, because `+` is a literal
+    character in SMILES: the panel saturated, and a panel where everybody saturates cannot rank
+    anything. Moving the proton between two basic nitrogens fixed that by making both members
+    cations of the same formula.
+
+    Under a DIRECTION/DISTANCE axis saturation is no longer the failure mode -- cosine responses
+    spread out instead of pinning at a ceiling -- so the more relevant question becomes askable
+    again. Protonation state governs binding; "is this molecule charged at physiological pH" is a
+    question a representation should answer, and `protonate` only ever asked the narrower "where
+    is the charge".
+
+    THE CONFOUND IS NOT FIXED BY THE METRIC CHANGE, only made legible. A model that reads the
+    string still responds to the `+`, so a high score here cannot be attributed to chemistry on
+    its own. The null edits are what separate the two, and they must stay in the panel.
+
+    Expect a near-binary readout rather than a ranking: protonation is a maximally consistent
+    edit, always +1 on a nitrogen, so every arm that encodes formal charge should sit near the
+    ceiling and every arm that does not near the floor.
+    """
+    hits = [h[0] for h in m.GetSubstructMatches(_AMINE)]
+    if not hits:
+        return None
+    base = Chem.Mol(m)
+    acid = Chem.Mol(m)
+    at = acid.GetAtomWithIdx(hits[0])
+    at.SetNumExplicitHs(at.GetNumExplicitHs() + 1)
+    at.SetFormalCharge(1)
+    at.SetNoImplicit(True)
+    return base, acid
+
+
 EDITS = {"stereo_flip": stereo_flip, "ez_flip": ez_flip, "halogen_swap": halogen_swap,
          "saturate": saturate,
          "h_to_methyl": h_to_methyl, "n_methylation": n_methylation, "isotope_13c": isotope_13c,
          "scaffold_hop": scaffold_hop, "ring_contract": ring_contract,
-         "protonate": protonate, "regioisomer": regioisomer,
+         "protonate": protonate, "protonate_neutral": protonate_neutral,
+         "regioisomer": regioisomer,
          "ch2_homolog": ch2_homolog}
 
 
