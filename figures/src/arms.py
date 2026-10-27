@@ -148,7 +148,11 @@ SHADES = {
 # hatch   -> bar hatch, or None. Reserved for "predicted rather than computed" (see module head).
 #
 # LABEL RULES, because these strings sit next to each other on a page:
-#   * "ECFP" not "ECFP4+stereo" -- chirality is on for BOTH fingerprints, so the suffix would
+#   * "ECFP4" and "ECFP8", spelled out (Leif 2026-10-27). The plate contrasts two RADII and the
+#     reader should not have to remember that ECFP_n names a DIAMETER: ECFP4 is radius 2, ECFP8
+#     is radius 4. "Morgan r=4" was unambiguous but sat in a different naming system from the
+#     baseline beside it, and from 1.1.0 radius 4 is what HUME itself carries.
+#   * chirality is on for BOTH fingerprints, so an "+stereo" suffix would
 #     mark a property they share.
 #   * "Morgan r=3" not "R3FP". CLIMB calls it R3FP; this paper contrasts the two RADII directly
 #     and in that context the radius has to be visible in the label, which "R3FP" hides.
@@ -163,12 +167,12 @@ SHADES = {
 # reads a CSV or a results file has to know this happened.
 ARMS = {
     # ---- classical featurizations (amber) ---------------------------------------------------
-    "ecfp": dict(label="ECFP", family="anchor", color=SHADES["anchor"][0]),
+    "ecfp": dict(label="ECFP4", family="anchor", color=SHADES["anchor"][0]),
     "r3cfp": dict(label="Morgan r=3", family="anchor", color=SHADES["anchor"][1]),
     # r=4 extends the radius series. It sits between r=2 and r=3 in the amber family rather than
     # taking a new color: the three are one variable, and Figure A puts them adjacent in every
     # panel, so they must read as a series and not as three unrelated arms.
-    "r4cfp": dict(label="Morgan r=4", family="anchor", color=SHADES["anchor"][5]),
+    "r4cfp": dict(label="ECFP8", family="anchor", color=SHADES["anchor"][5]),
     "ecfp_all_desc": dict(label="ECFP + all desc", family="anchor",
                           color=SHADES["anchor"][2]),
     "ecfp_rdkit_desc": dict(label="ECFP + RDKit", family="anchor", color=SHADES["anchor"][3]),
@@ -356,7 +360,7 @@ def label(key: str) -> str:
 #: fully-qualified name for anywhere the distinction is load-bearing -- Figure A draws BOTH
 #: ChemBERTa-2 checkpoints and must not call them the same thing.
 SHORT_LABEL = {
-    "ecfp": "ECFP", "r3cfp": "Morgan r=3", "r4cfp": "Morgan r=4",
+    "ecfp": "ECFP4", "r3cfp": "Morgan r=3", "r4cfp": "ECFP8",
     # "descriptors" WAS AMBIGUOUS AND THE AMBIGUITY MATTERED (Leif 2026-09-02, asking whether it
     # meant the union). This arm is RDKit's full `Descriptors._descList` (217) concatenated with
     # Mordred's full 2D `Calculator` (1,613) -- 1,830 columns, overlap between the two libraries

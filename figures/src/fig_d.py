@@ -112,8 +112,12 @@ ARMKEY = {"ecfp_r2": "ecfp", "hume": "hume", "chemprop": "chemprop",
 # Bar order, matching arms.py's ARM_ORDER: cheapest classical first, then HUME, then graph, then
 # string. Every figure in the set puts the same arms in the same order; two orders read as two
 # different comparisons.
+# HUME_no_new IS NOT ON THIS PLATE (Leif 2026-10-27). It is an ablation -- what HUME costs
+# without the 160 descriptors that are ours -- and Figure D is about what the SHIPPED
+# configurations cost to run. Its measurement stays in results/scale/ and on Figure C, where the
+# ablation is the point; here it only crowded the axis between two sets a reader can install.
 ORDER = ["ecfp_r2", "rdkit_desc", "descriptastorus", "mordred_desc", "mordred",
-         "hume_622", "hume_no_new", "hume",
+         "hume_622", "hume",
          "chemeleon", "chemprop", "chemberta"]
 
 #: MEASURED BUT NOT DRAWN HERE. These exist for Figure C's cost axis, which plots more arms than
