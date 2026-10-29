@@ -196,3 +196,6 @@ results/reanalysis/features/
 .screen0_instances
 dist/
 screen/BUNDLE_PROVENANCE.json
+.screen1_instances
+.screen2_instances
+.screen_sns_topic

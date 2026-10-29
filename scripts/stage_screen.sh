@@ -41,10 +41,18 @@ PY
 # noise through the middle of every boot log.
 COPYFILE_DISABLE=1 tar czf dist/screenbundle.tar.gz \
   screen/split.py screen/provenance.py screen/extract_smiles.py \
+  screen/arms.py screen/collect_trainval.py screen/train.py screen/score_test.py \
   screen/BUNDLE_PROVENANCE.json \
   data/lsd_ampc/scores_manifest.json data/lsd_ampc/score_summary.json \
   data/lsd_ampc/split_spec.json data/lsd_ampc/split_spec.sha256 \
-  data/lsd_ampc/scores
+  data/lsd_ampc/scores \
+  -C bench bench_downstream.py
+# bench_downstream.py RIDES ALONG, and it must. The dsbundle in S3 was staged 2026-10-27 and its
+# copy predates the `fp_radius` parameter the screen's HUME arms pass explicitly; a box that
+# extracted only the dsbundle died in preflight with "unexpected keyword argument 'fp_radius'".
+# The boot script extracts the dsbundle FIRST and this bundle second, so this copy lands on top.
+# Verified safe to overwrite: the last commit touching that file predates the dsbundle, so the
+# repo's version is the dsbundle's plus that one patch -- not a different lineage.
 SHA=$(shasum -a 256 dist/screenbundle.tar.gz | cut -d' ' -f1)
 echo "dist/screenbundle.tar.gz  $(du -h dist/screenbundle.tar.gz | cut -f1)  sha256 $SHA"
 echo "  commit $(git rev-parse --short HEAD)$(git status --porcelain | grep -q . && echo ' (tree dirty -- recorded in the bundle)')"

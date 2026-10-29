@@ -130,7 +130,7 @@ def f_mordred_desc(smis):
         return np.load(out_f)
 
 
-def _hume_block(smis, columns="full"):
+def _hume_block(smis, columns="full", fp_radius=None):
     """ECFP + a NAMED HUME column set, masked by name through the package's own definition.
 
     `columns` is whatever molhume.column_set accepts: 'full' (1,269), 'full_no_new' (1,109),
@@ -156,7 +156,13 @@ def _hume_block(smis, columns="full"):
         m = Chem.MolFromSmiles(s)
         if m is not None:
             mols.append(m); keep.append(i)
-    fp, X, cols = hume.featurize_all_from_mols(mols, optional=("AvgIpc",))
+    # fp_radius=None means "whatever the installed package defaults to", which is what every
+    # figure in this repo was measured with. The LSD screen passes it EXPLICITLY instead, because
+    # it runs HUME at two radii in one comparison and a run whose radius came from a package
+    # default is a run whose radius is not in its own record. Do not change the default here: the
+    # Figure C/D arms are keyed to it.
+    kw = {} if fp_radius is None else {"fp_radius": int(fp_radius)}
+    fp, X, cols = hume.featurize_all_from_mols(mols, optional=("AvgIpc",), **kw)
     # MASK EVEN FOR 'full'. The low-level call always emits the `qed` slot, so it returns 1,270
     # columns where the shipped full set is 1,269; unmasked, the `hume` arm carried an extra
     # all-NaN column that no other arm had and that no column list accounts for. Harmless to
