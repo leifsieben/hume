@@ -41,14 +41,18 @@ def pessimistic_top_mask(pred: np.ndarray, k: int) -> np.ndarray:
         return np.zeros(pred.shape, dtype=bool)
     order = np.argsort(-pred, kind="stable")
     s = pred[order]
-    # rank of the LAST member of each tied block, 1-based
+    # Rank of the LAST member of each tied block, 1-based. Computed from the block BOUNDARIES
+    # rather than with np.maximum.at: that ufunc.at form is an unbuffered scatter and takes
+    # minutes on 100,000,000 elements, which is the size this actually runs at.
     new_block = np.empty(s.size, dtype=bool)
     new_block[0] = True
     np.not_equal(s[1:], s[:-1], out=new_block[1:])
+    starts = np.flatnonzero(new_block)
+    ends = np.empty(starts.size, dtype=np.int64)       # 1-based end of each block
+    ends[:-1] = starts[1:]
+    ends[-1] = s.size
     block_id = np.cumsum(new_block) - 1
-    block_end = np.zeros(block_id[-1] + 1, dtype=np.int64)
-    np.maximum.at(block_end, block_id, np.arange(1, s.size + 1))
-    worst_rank = block_end[block_id]
+    worst_rank = ends[block_id]
     mask = np.zeros(pred.shape, dtype=bool)
     mask[order[worst_rank <= k]] = True
     return mask
@@ -104,6 +108,20 @@ def log_auc(y_true: np.ndarray, pred: np.ndarray, frac: float = 1e-4,
     n = y_true.size
     k = int(np.floor(frac * n))
     true_top = pessimistic_top_mask(-y_true, k)
+    if not true_top.any():
+        # Happens when the labels are tied so heavily that the single best-scoring block is
+        # already larger than k, so no block fits and the pessimistic rule admits nobody. On the
+        # full test set, scores spread over ~8,000 distinct 0.01 steps and a block near the cut
+        # holds ~100 molecules against k=10,000, so this does not arise -- but on a narrow slice
+        # (one shard of a score-grouped release covers a band only ~11 kcal/mol wide) it does,
+        # and the metric is genuinely undefined rather than zero.
+        vals, cnts = np.unique(y_true, return_counts=True)
+        raise RuntimeError(
+            f"the true top {frac:.2%} of {n:,} molecules is EMPTY under pessimistic tie-breaking: "
+            f"k={k:,} but the best-scoring tie block alone holds {int(cnts[0]):,} molecules "
+            f"(score {vals[0]:.2f}), and only {len(vals):,} distinct scores occur in total. "
+            f"The metric is undefined here, not zero. This is a property of the slice, not of "
+            f"the model -- evaluate over the whole test set, or use a larger frac.")
     area, curve = _log_area(true_top, pred, k, lo, hi)
     xs = np.array([c[0] for c in curve])
     lx = np.log10(xs)
@@ -121,6 +139,23 @@ def ideal_log_area(y_true: np.ndarray, frac: float = 1e-4,
     """The perfect-ranker area for this test set. Compute once, pass to every log_auc call."""
     k = int(np.floor(frac * y_true.size))
     return _log_area(pessimistic_top_mask(-y_true, k), y_true, k, lo, hi)[0]
+
+
+def tie_report(y_true: np.ndarray, frac: float = 1e-4) -> dict:
+    """How tied are the labels around the top-`frac` cut? Reported, not assumed.
+
+    The labels are DOCK scores quantized to 0.01, so ties are the norm rather than the
+    exception, and they decide how much of the headline metric is even attainable.
+    """
+    n = y_true.size
+    k = int(np.floor(frac * n))
+    order = np.argsort(y_true, kind="stable")
+    cut = float(y_true[order[min(k, n) - 1]])
+    at_cut = int((y_true == cut).sum())
+    sel = int(pessimistic_top_mask(-y_true, k).sum())
+    return {"k_nominal": k, "k_pessimistic": sel, "cut_score": cut,
+            "molecules_at_cut_score": at_cut,
+            "distinct_scores": int(np.unique(y_true).size)}
 
 
 def evaluate(y_true: np.ndarray, pred: np.ndarray, keep: np.ndarray | None = None,
