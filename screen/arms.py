@@ -99,6 +99,63 @@ def parse_mask(smis: list[str]) -> np.ndarray:
     return out
 
 
+def column_name(arm: str, j: int) -> str:
+    """-> a human name for column `j` of `arm`, for error messages that say WHICH column.
+
+    Only `ecfp_rdkit_desc` has named columns: its tail is RDKit's descriptor list in order, so a
+    column index can be resolved to the descriptor that produced it. The learned embeddings have
+    no names and say so rather than inventing one.
+    """
+    if arm != "ecfp_rdkit_desc":
+        return f"column {j}"
+    if j < 2048:
+        return f"ECFP4 bit {j}"
+    from rdkit.Chem import Descriptors
+    names = [n for n, _f in Descriptors._descList]
+    k = j - 2048
+    return f"RDKit descriptor {names[k]!r}" if k < len(names) else f"column {j} (past the block)"
+
+
+def sanitize(arm: str, X: np.ndarray) -> np.ndarray:
+    """Map every +-inf to NaN, in place, and say which column produced it.
+
+    WHY THIS EXISTS, measured 2026-10-29: `ecfp_rdkit_desc` trained for 98.6 minutes and then
+    died in XGBoost's QuantileDMatrix with "Input data contains `inf` or a value too large,
+    while `missing` is not set to `inf`". The cause is not RDKit returning inf -- it is the
+    float32 cast in `f_rdkit_desc`, which stores a Python float into a float32 array. RDKit's
+    `Ipc` is an information-content index that grows exponentially with molecular size (8.9e6 at
+    the maximum over 20,000 real training molecules here, while every other descriptor sits in
+    the hundreds), so a rare large or heavily branched molecule exceeds float32's 3.40e38 and
+    lands as inf.
+
+    NaN IS THE RIGHT TARGET, not a clamp to the float32 maximum. XGBoost reads NaN as missing and
+    learns a default direction for it at every split, which is the honest encoding of "this
+    descriptor overflowed and its value is not representable". Clamping would instead assert that
+    the molecule sits exactly at the largest finite float, a number no descriptor ever means.
+
+    THIS LIVES IN `featurize`, WHICH IS WHY IT IS CORRECT. train.py and score_test.py both reach
+    the featurizers only through that one function, so the matrix a model is trained on and the
+    matrix it later predicts from get the identical treatment. A sanitizer bolted onto the
+    training path alone would have trained on NaN and scored on inf, and the 100M scoring run
+    would have been the thing that discovered it.
+
+    Applied to EVERY arm, not just the one that overflowed. It is a no-op where there is nothing
+    to fix -- the five other arms trained without raising -- and a uniform rule means no arm gets
+    a numerical treatment the others did not.
+    """
+    bad = np.isinf(X)
+    if not bad.any():
+        return X
+    n = int(bad.sum())
+    cols = np.flatnonzero(bad.any(axis=0))
+    named = ", ".join(column_name(arm, int(j)) for j in cols[:4])
+    more = f" (+{cols.size - 4} more)" if cols.size > 4 else ""
+    print(f"    sanitize {arm}: {n:,} inf values in {cols.size} column(s) -> NaN; {named}{more}",
+          file=sys.stderr, flush=True)
+    X[bad] = np.nan
+    return X
+
+
 def featurize(arm: str, smis: list[str]) -> np.ndarray:
     """-> (len(smis), n_cols) float32. Rows RDKit cannot parse come back all-NaN.
 
@@ -106,19 +163,23 @@ def featurize(arm: str, smis: list[str]) -> np.ndarray:
     stay index-aligned with each other and with the frozen split without any arm having to know
     what another failed on. Which rows are failures comes from `parse_mask`, NOT from looking for
     NaN in the result -- see that function for why the NaN rule is wrong.
+
+    Every arm's block passes through `sanitize` on the way out; see it for why inf becomes NaN
+    and why doing it here rather than in the callers is the whole point.
     """
     import bench_downstream as BD           # /opt/ds on a box, bench/ locally
     if arm not in SPEC:
         raise KeyError(f"unknown arm {arm!r}; the screen has {ALL_ARMS}")
     if arm in ("hume_r4", "hume_r2"):
-        return BD._hume_block(smis, "full", fp_radius=SPEC[arm]["radius"])
+        return sanitize(arm, BD._hume_block(smis, "full", fp_radius=SPEC[arm]["radius"]))
     if arm == "ecfp_rdkit_desc":
         # Fingerprint FIRST, then the 217 RDKit descriptors -- the ("head", 2048) convention.
-        return np.hstack([BD.f_ecfp(smis, radius=2), BD.f_rdkit_desc(smis)]).astype(np.float32)
+        X = np.hstack([BD.f_ecfp(smis, radius=2), BD.f_rdkit_desc(smis)]).astype(np.float32)
+        return sanitize(arm, X)
     if arm == "minimol":
-        return BD.f_minimol(smis).astype(np.float32)
+        return sanitize(arm, BD.f_minimol(smis).astype(np.float32))
     import embed_pairs as EP
-    return np.asarray(EP.ARMS[arm](smis), dtype=np.float32)
+    return sanitize(arm, np.asarray(EP.ARMS[arm](smis), dtype=np.float32))
 
 
 def feature_weights(arm: str, n_cols: int) -> np.ndarray | None:

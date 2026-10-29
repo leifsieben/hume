@@ -99,7 +99,10 @@ def collect(expected_fp_radius: int | None = None) -> dict:
         "git_commit": sha,
         # Set when the commit came from the bundle rather than a live checkout, so a reader can
         # tell "this is the code that was staged" from "this is the code that is checked out".
-        "git_commit_from_bundle": staged,
+        # The TIME the bundle was staged, not a commit -- it was called git_commit_from_bundle
+        # and read as a commit field holding a timestamp. The commit itself is in git_commit
+        # above, which takes the bundle's value when there is no live checkout.
+        "bundle_staged_at": staged,
         "git_dirty": bool(dirty),
         "git_dirty_files": sorted(l.split(maxsplit=1)[-1] for l in dirty.splitlines()) if dirty else [],
         # The installed dist version is recorded but is NOT the authority -- see the module note.

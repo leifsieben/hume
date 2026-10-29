@@ -118,8 +118,17 @@ if [ "$ARM" = "minimol" ]; then
   uv pip install -q --no-config --python $M "torch==2.13.0" "torchvision==0.28.0" \
     --index-url https://download.pytorch.org/whl/cpu || die "minimol torch"
   uv pip install -q --no-config --python $M "numpy==2.2.6" "scipy==1.13.1" || die "minimol numpy"
+  # datamol IS PINNED, and the pin is the whole fix. Resolved fresh on 2026-10-29 this took
+  # datamol 0.13.0, which added a `nglview>=3.1` requirement that 0.12.5 does not have; nglview
+  # 4.0.1 then failed to build under --no-build-isolation because it needs jupyter_packaging at
+  # build time and does not declare it. The error named nglview and jupyter_packaging, neither of
+  # which this screen uses for anything -- nglview is a Jupyter 3D molecule viewer reached only
+  # through datamol, four levels below minimol. 0.12.5 is the version the working .venv-minimol
+  # has (which carries no nglview at all), so pinning it restores the resolution that worked in
+  # September rather than patching a Jupyter viewer we never import. Confirmed against PyPI
+  # metadata: 0.12.5 has no nglview requirement, 0.13.0 does.
   uv pip install -q --no-config --python $M --no-build-isolation minimol \
-    "scipy==1.13.1" "numpy==2.2.6" "torch==2.13.0" || die "minimol"
+    "datamol==0.12.5" "scipy==1.13.1" "numpy==2.2.6" "torch==2.13.0" || die "minimol"
   $M -c "
 import numpy as np, torch
 from minimol import Minimol
@@ -207,14 +216,26 @@ import xgboost as xgb
 d = json.load(open("/opt/ds/out/models/${ARM}_train.json"))
 reps = d["replicates"]
 assert len(reps) == 5, f"{len(reps)} replicates recorded, expected 5"
+rounds = []
 for r in reps:
     m = xgb.XGBRegressor(); m.load_model(f"/opt/ds/out/models/{r['model']}")
-    assert m.n_estimators > 0
+    # TREES BUILT, read off the booster -- NOT m.n_estimators, which is None after load_model in
+    # xgboost 3.4.1 and killed chemberta_mtr's completion check with a TypeError AFTER all five
+    # of its models had trained and uploaded. n_estimators was the wrong question anyway: it is
+    # the configured cap, so it could only ever have echoed the request back. num_boosted_rounds
+    # is the work actually achieved.
+    nbr = m.get_booster().num_boosted_rounds()
+    assert nbr > 0, f"replicate {r['replicate']}: model loaded but holds 0 trees"
+    assert nbr >= r["best_iteration"] + 1, (
+        f"replicate {r['replicate']}: {nbr} trees in the saved model but best_iteration "
+        f"{r['best_iteration']} -- the file does not contain the iteration it claims to.")
+    rounds.append(nbr)
     assert r["n_train"] > 900_000, f"replicate {r['replicate']} trained on only {r['n_train']} molecules"
 json.dump({"instance_id": "$IID", "phase": "train", "arm": "$ARM", "complete": True,
            "models": [r["model"] for r in reps],
            "val_rmse": [r["val_rmse"] for r in reps],
            "best_iteration": [r["best_iteration"] for r in reps],
+           "trees_in_file": rounds,
            "provenance": d["provenance"]}, open("/tmp/DONE.json", "w"), indent=1)
 print("complete: 5 models, val rmse", [round(r["val_rmse"], 4) for r in reps])
 PY
