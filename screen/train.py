@@ -81,10 +81,53 @@ def main() -> int:
         f"radius {expect}  feature_weights w={A.W_FIXED}")
 
     a.out.mkdir(parents=True, exist_ok=True)
+    s3 = a.s3.rstrip("/") if a.s3 else ""
+
+    # RESUME, SO A SPOT RECLAIM COSTS ONE REPLICATE AND NOT AN ARM. There is no checkpoint
+    # inside a single fit, but there are five independent fits, and the finished ones are already
+    # durable in S3. Without this a box reclaimed on replicate 4 restarts at replicate 0 -- up to
+    # eleven hours of work for the slowest arm, on a box nobody is watching.
+    #
+    # THE GUARD IS THE POINT, not the skip. Reusing a model file because it EXISTS is how a
+    # half-finished run blocks its own re-run and how two code versions end up inside one arm
+    # with nothing in the record saying so. A replicate is reused only when its sidecar agrees
+    # with this run on both the commit that built it and the tree cap it was built under;
+    # anything else retrains and says why.
+    if s3:
+        os.system(f"aws s3 sync {s3}/ {a.out} --exclude '*' "
+                  f"--include '{a.arm}_rep*' --only-show-errors")
+
+    def resume(r: int) -> dict | None:
+        mf, jf = a.out / f"{a.arm}_rep{r}.ubj", a.out / f"{a.arm}_rep{r}.meta.json"
+        if not (mf.exists() and jf.exists()):
+            return None
+        try:
+            d = json.loads(jf.read_text())
+        except Exception as e:
+            say(f"  replicate {r}: sidecar unreadable ({e}) -- retraining.")
+            return None
+        was, now = str(d.get("git_commit")), str(prov.get("git_commit"))
+        if was != now:
+            say(f"  replicate {r}: on disk from commit {was[:7]}, this run is {now[:7]} -- "
+                f"retraining rather than mixing code versions inside one arm.")
+            return None
+        if int(d.get("n_estimators", -1)) != int(A.N_TREES):
+            say(f"  replicate {r}: on disk capped at {d.get('n_estimators')} trees, this run "
+                f"caps at {A.N_TREES} -- retraining.")
+            return None
+        return d["record"]
+
     recs = []
     with np.load(a.trainval) as z:
         for r in range(a.replicates):
             say(f"\n--- replicate {r} ---")
+            got = resume(r)
+            if got is not None:
+                recs.append(got)
+                say(f"  RESUMED from S3: already trained at commit "
+                    f"{str(prov.get('git_commit'))[:7]} with a {A.N_TREES}-tree cap, "
+                    f"val rmse {got['val_rmse']:.4f}, best_iteration {got['best_iteration']}.")
+                continue
             tr_smis, tr_y = load_blob(z, f"train_{r}")
             va_smis, va_y = load_blob(z, f"val_{r}")
             say(f"  train {len(tr_smis):,}  val {len(va_smis):,}")
@@ -112,26 +155,35 @@ def main() -> int:
 
             f = a.out / f"{a.arm}_rep{r}.ubj"
             m.save_model(str(f))
-            recs.append(dict(arm=a.arm, replicate=r, n_train=int(tr_y.size),
+            rec = dict(arm=a.arm, replicate=r, n_train=int(tr_y.size),
                              n_val=int(va_y.size), n_cols=int(Xtr.shape[1]),
                              best_iteration=best_it, n_estimators=int(m.n_estimators),
                              val_rmse=float(hist[best_it]),
                              val_rmse_final=float(hist[-1]),
                              early_stopped=bool(best_it < m.n_estimators - 1),
                              w_fixed=float(A.W_FIXED), fit_minutes=round(fit_min, 2),
-                             y_train_sd=float(tr_y.std()), model=f.name))
+                       y_train_sd=float(tr_y.std()), model=f.name)
+            recs.append(rec)
+            # The sidecar carries what `resume` has to agree with before it will reuse this file.
+            mf = a.out / f"{a.arm}_rep{r}.meta.json"
+            mf.write_text(json.dumps({"git_commit": prov.get("git_commit"),
+                                      "n_estimators": int(m.n_estimators),
+                                      "record": rec}, indent=1))
             del Xtr, Xva
-            if a.s3:
-                if os.system(f"aws s3 cp {f} {a.s3.rstrip('/')}/{f.name} --only-show-errors"):
+            if s3:
+                if os.system(f"aws s3 cp {f} {s3}/{f.name} --only-show-errors"):
                     raise RuntimeError(f"replicate {r}: model trained but the S3 upload failed. "
                                        f"The box is the only copy; failing now.")
+                # After the model, never before: a sidecar without its model would invite a
+                # resume of a file that is not there.
+                os.system(f"aws s3 cp {mf} {s3}/{mf.name} --only-show-errors")
 
     rep = a.out / f"{a.arm}_train.json"
     rep.write_text(json.dumps({"arm": a.arm, "provenance": prov,
                                "head": "bench_downstream.make_head + early_stopping_rounds=5",
                                "w_fixed": A.W_FIXED, "replicates": recs}, indent=1))
-    if a.s3:
-        os.system(f"aws s3 cp {rep} {a.s3.rstrip('/')}/{rep.name} --only-show-errors")
+    if s3:
+        os.system(f"aws s3 cp {rep} {s3}/{rep.name} --only-show-errors")
     say(f"\n{len(recs)} models -> {a.out}")
     say(f"val rmse by replicate: " +
         "  ".join(f"r{d['replicate']}={d['val_rmse']:.4f}" for d in recs))
