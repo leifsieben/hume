@@ -50,17 +50,12 @@ def featurize_into(arm: str, smis: list[str], label: str) -> tuple[np.ndarray, n
     X = np.empty((n, n_cols), dtype=np.float32)
     ok = np.empty(n, dtype=bool)
     t0 = time.perf_counter()
-    for lo in range(0, n, CHUNK):
-        hi = min(lo + CHUNK, n)
-        part = smis[lo:hi]
-        X[lo:hi] = A.featurize(arm, part)
-        ok[lo:hi] = A.parse_mask(part)
-        if lo and lo % (CHUNK * 8) == 0:
-            el = time.perf_counter() - t0
-            say(f"    {label} {hi:>9,}/{n:,}  {el/60:5.1f} min  "
-                f"{(n-hi)*el/hi/60:5.1f} min left  {el/hi*1e6:6.1f} us/mol")
+    # ACROSS EVERY CORE. Serial, this was one vCPU of sixteen -- see the parallel section of
+    # arms.py for the measurements and for why the output is bit-identical to the serial path.
+    A.featurize_many(arm, smis, X, label=label, log=say)
+    A.parse_mask_many(arm, smis, ok)
     say(f"    {label} done {n:,} x {n_cols}  {(time.perf_counter()-t0)/60:.1f} min  "
-        f"unparseable {int((~ok).sum()):,}")
+        f"unparseable {int((~ok).sum()):,}  {A.n_workers(arm)} workers")
     return X, ok
 
 

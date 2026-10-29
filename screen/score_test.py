@@ -75,11 +75,18 @@ def score_shard(arm: str, models: list, src: Path, dest: Path, force: bool) -> d
     t0 = time.perf_counter()
     pred = np.empty((n, len(models)), dtype=np.float32)
     ok = np.empty(n, dtype=bool)
-    for lo in range(0, n, CHUNK):
-        hi = min(lo + CHUNK, n)
+    # THE BLOCK IS SIZED BY THE POOL, not by a fixed constant: one block is one full round of
+    # every worker, so no core sits idle waiting for the next block to start. CHUNK is the floor.
+    block = max(CHUNK, A.n_workers(arm) * A.slab_size(arm))
+    n_cols = None
+    for lo in range(0, n, block):
+        hi = min(lo + block, n)
         part = smis[lo:hi]
-        X = A.featurize(arm, part)
-        ok[lo:hi] = A.parse_mask(part)
+        if n_cols is None:
+            n_cols = A.featurize(arm, part[:1]).shape[1]
+        X = np.empty((hi - lo, n_cols), dtype=np.float32)
+        A.featurize_many(arm, part, X)
+        A.parse_mask_many(arm, part, ok[lo:hi])
         for j, m in enumerate(models):
             pred[lo:hi, j] = m.predict(X)
         del X

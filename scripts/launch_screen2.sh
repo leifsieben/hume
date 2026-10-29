@@ -29,8 +29,30 @@ TARGET_H="${TARGET_H:-5}"
 TYPES="${TYPES:-c7i.4xlarge c6i.4xlarge m7i.4xlarge m6i.4xlarge}"
 DRY="${DRY:-}"
 
-# arm:us_per_mol -- measured, N=1M, c7i.4xlarge. hume_r2 is hume_r4 less the cheaper fingerprint.
-RATES="hume_r4:144.5 hume_r2:141.4 ecfp_rdkit_desc:464.1 chemberta_mtr:340.4 chemeleon:2892.5 minimol:1544.7"
+# arm:us_per_mol -- PROJECTED PARALLEL RATE, built from two measurements rather than one.
+#
+# The previous table read these straight out of results/scale/c7i.4xlarge_cpu.json, which was
+# WRONG BY 1.6x TO 12.8x: bench/bench_aws.py runs every arm in a sixteen-worker pool, so those
+# are aggregate throughputs, and the production path featurized in one process. Phase 1's own
+# logs give the serial truth, and the laptop gives the speedup the parallel path recovers:
+#
+#   arm               old table   phase 1 serial   parallel speedup   this table
+#   hume_r4               144.5            582      2.23x measured         261
+#   hume_r2               144.5            492      2.23x (as r4)          221
+#   ecfp_rdkit_desc       464.1           5956      8.29x measured         718
+#   chemberta_mtr         340.4            534      4.53x measured         118
+#   chemeleon            2892.5           5304      UNMEASURED            5304
+#   minimol              1544.7         not run     UNMEASURED            1545
+#
+# CHEMELEON IS DELIBERATELY NOT DISCOUNTED. chemprop is not installed on the laptop, so its
+# speedup was never measured, and it is the single largest line in the budget. Carrying its
+# serial rate means the plan is safe if it does not parallelize and simply finishes early if it
+# does -- the opposite choice would under-provision the biggest arm on an assumption.
+# minimol has no production rate at all (it never got past dependency install), so it keeps the
+# four-worker benchmark figure, which is the configuration it will actually run in.
+#
+# Speedups measured on 12 cores; the boxes have 16, so these are conservative.
+RATES="hume_r4:261 hume_r2:221 ecfp_rdkit_desc:718 chemberta_mtr:118 chemeleon:5304 minimol:1545"
 ARMS="${ARMS:?set ARMS to a space-separated list, or \"all\"}"
 [ "$ARMS" = "all" ] && ARMS="hume_r4 hume_r2 ecfp_rdkit_desc chemberta_mtr chemeleon minimol"
 

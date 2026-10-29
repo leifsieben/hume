@@ -121,17 +121,28 @@ def sanitize(arm: str, X: np.ndarray) -> np.ndarray:
 
     WHY THIS EXISTS, measured 2026-10-29: `ecfp_rdkit_desc` trained for 98.6 minutes and then
     died in XGBoost's QuantileDMatrix with "Input data contains `inf` or a value too large,
-    while `missing` is not set to `inf`". The cause is not RDKit returning inf -- it is the
-    float32 cast in `f_rdkit_desc`, which stores a Python float into a float32 array. RDKit's
-    `Ipc` is an information-content index that grows exponentially with molecular size (8.9e6 at
-    the maximum over 20,000 real training molecules here, while every other descriptor sits in
-    the hundreds), so a rare large or heavily branched molecule exceeds float32's 3.40e38 and
-    lands as inf.
+    while `missing` is not set to `inf`".
+
+    THE CULPRIT IS `MaxPartialCharge` AND `MaxAbsPartialCharge`, and this sanitizer is what
+    identified them -- it names the column, which is the only reason the cause is known rather
+    than guessed. RDKit returns inf from them directly; nothing overflows a cast. Both read
+    Gasteiger partial charges, and charge assignment has no parameters for the phosphorus in
+    `C(=O)[PH](C)(C)O`, so it yields inf for some such molecules and NaN for others. Over 36,706
+    real training molecules: 2 inf and 6 NaN, every one carrying that motif. 0.0055% is about 54
+    molecules in a 1,000,000-row training set, which is ample to kill QuantileDMatrix.
+
+    (The first guess here was `Ipc` overflowing float32 -- an information-content index that does
+    grow exponentially with molecular size, reaching 8.9e6 where every other descriptor sits in
+    the hundreds. Plausible, and wrong: it never came close to 3.40e38 on this library. The
+    column-naming above is what settled it.)
 
     NaN IS THE RIGHT TARGET, not a clamp to the float32 maximum. XGBoost reads NaN as missing and
     learns a default direction for it at every split, which is the honest encoding of "this
-    descriptor overflowed and its value is not representable". Clamping would instead assert that
-    the molecule sits exactly at the largest finite float, a number no descriptor ever means.
+    descriptor could not be computed for this molecule". It also makes the two failure modes of
+    one broken calculation agree: Gasteiger already returns NaN for six molecules where it
+    returns inf for two, and there is no reason those should reach the model differently.
+    Clamping would instead assert that the molecule sits exactly at the largest finite float, a
+    number no descriptor ever means.
 
     THIS LIVES IN `featurize`, WHICH IS WHY IT IS CORRECT. train.py and score_test.py both reach
     the featurizers only through that one function, so the matrix a model is trained on and the
@@ -215,3 +226,134 @@ def make_head(arm: str, n_cols: int, seed: int):
     m = BD.make_head("regression", seed, feature_weights(arm, n_cols))
     m.set_params(early_stopping_rounds=5, eval_metric="rmse")
     return m
+
+
+# ---------------------------------------------------------------------------------------------
+# PARALLEL FEATURIZATION
+#
+# WHY, measured 2026-10-29 on the phase 1 fleet: every arm featurizes in ONE process while the
+# box has sixteen vCPUs. `f_rdkit_desc` and `f_ecfp` measure cpu/wall 0.96 -- one core of
+# sixteen -- and the HUME block 2.92. The cost table in scripts/launch_screen2.sh came from
+# bench/bench_aws.py, which runs each arm in a sixteen-worker ProcessPoolExecutor, so its
+# numbers are AGGREGATE THROUGHPUTS and the serial production path cannot reach them:
+#
+#   arm               planning table   phase 1 actual   ratio
+#   hume_r4                    144.5            582     4.0x
+#   hume_r2                    144.5            492     3.4x
+#   chemberta_mtr              340.4            534     1.6x
+#   chemeleon                 2892.5           5304     1.8x
+#   ecfp_rdkit_desc            464.0           5956    12.8x
+#
+# The ratios differ because each library threads differently, and ECFP+RDKit -- the one pure
+# Python loop -- loses the most. Left serial, phase 2 is ~529 box-hours instead of ~154.
+#
+# EVERY WORKER IS SINGLE-THREADED, and that is a choice, not an oversight. Mixing process
+# parallelism with each library's own threads oversubscribes the box and can make a threaded arm
+# slower than serial. The initializer pins OMP/MKL/OpenBLAS/rayon to one thread BEFORE the arm's
+# featurizer is imported -- which works only because every featurizer here imports lazily inside
+# `featurize`, so the environment is already set when torch and molhume first read it.
+#
+# OUTPUT IS BIT-IDENTICAL TO SERIAL. A molecule's features depend on that molecule alone, slabs
+# are contiguous and written back at their own indices, and results are consumed in submission
+# order. That is what makes this safe to apply to arms whose models were already trained by the
+# serial path: the matrix does not change, only how long it takes to build.
+# ---------------------------------------------------------------------------------------------
+
+#: Workers per arm. Default is every vCPU; the cap exists where an arm genuinely cannot use them.
+#: minimol is 4 after bench_aws.py's MAX_WORKERS -- above that it dies with BrokenProcessPool,
+#: an error that names no memory and reads like an unrelated crash.
+WORKERS_CAP = {"minimol": 4}
+
+#: Molecules per task. Sized to AMORTIZE EACH ARM'S PER-CALL SETUP, which differs by orders of
+#: magnitude: `_chemprop_embed` rebuilds the CheMeleon model on every call, `f_minimol` spawns a
+#: whole separate interpreter that reloads its weights, while `f_ecfp`/`f_rdkit_desc` have no
+#: setup at all and want small slabs for even load balancing. Slabs too small for a model-loading
+#: arm would spend the parallelism on reloading weights.
+SLAB = {"ecfp_rdkit_desc": 2_000, "hume_r4": 5_000, "hume_r2": 5_000,
+        "chemberta_mtr": 25_000, "chemeleon": 25_000, "minimol": 25_000}
+
+_POOL: dict = {}
+
+
+def n_workers(arm: str) -> int:
+    """-> workers for `arm`. SCREEN_WORKERS overrides, so a bad guess needs no code change."""
+    import os
+    env = os.environ.get("SCREEN_WORKERS", "")
+    if env:
+        return max(1, int(env))
+    return max(1, min(os.cpu_count() or 1, WORKERS_CAP.get(arm, 1 << 30)))
+
+
+def slab_size(arm: str) -> int:
+    """-> molecules per task for `arm`. SCREEN_SLAB overrides."""
+    import os
+    env = os.environ.get("SCREEN_SLAB", "")
+    return max(1, int(env)) if env else SLAB.get(arm, 5_000)
+
+
+def _worker_init() -> None:
+    """Pin the worker to one thread, before any featurizer library is imported."""
+    import os
+    for v in ("OMP_NUM_THREADS", "MKL_NUM_THREADS", "OPENBLAS_NUM_THREADS",
+              "RAYON_NUM_THREADS", "NUMEXPR_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
+        os.environ[v] = "1"
+    os.environ["TOKENIZERS_PARALLELISM"] = "false"
+    quiet_rdkit()
+
+
+def _worker_featurize(arm: str, smis: list[str]) -> np.ndarray:
+    return featurize(arm, smis)
+
+
+def _worker_parse_mask(smis: list[str]) -> np.ndarray:
+    return parse_mask(smis)
+
+
+def _pool(arm: str, nw: int):
+    """-> a CACHED pool for (arm, nw). Cached because every worker pays the import cost of its
+    arm's featurizer stack once; a pool per call would pay it per call."""
+    import atexit
+    from concurrent.futures import ProcessPoolExecutor
+    import multiprocessing as mp
+    key = (arm, nw)
+    if key not in _POOL:
+        ex = ProcessPoolExecutor(max_workers=nw, initializer=_worker_init,
+                                 mp_context=mp.get_context("spawn"))
+        _POOL[key] = ex
+        atexit.register(lambda: ex.shutdown(wait=False, cancel_futures=True))
+    return _POOL[key]
+
+
+def _parallel_into(fn, arm: str, smis: list[str], out: np.ndarray, label: str, log) -> np.ndarray:
+    """Run `fn(arm-or-nothing, slab)` over contiguous slabs into `out`, in order."""
+    import time
+    n = len(smis)
+    nw, slab = n_workers(arm), slab_size(arm)
+    if nw <= 1 or n <= slab:
+        out[...] = fn(smis) if fn is _worker_parse_mask else fn(arm, smis)
+        return out
+    ex = _pool(arm, nw)
+    bounds = [(i, min(i + slab, n)) for i in range(0, n, slab)]
+    t0 = time.perf_counter()
+    for g in range(0, len(bounds), nw):
+        group = bounds[g:g + nw]
+        futs = [ex.submit(fn, smis[lo:hi]) if fn is _worker_parse_mask
+                else ex.submit(fn, arm, smis[lo:hi]) for lo, hi in group]
+        for (lo, hi), f in zip(group, futs):
+            out[lo:hi] = f.result()
+        done = group[-1][1]
+        if label and (g // nw) % 4 == 0:
+            el = time.perf_counter() - t0
+            log(f"    {label} {done:>9,}/{n:,}  {el/60:5.1f} min  "
+                f"{(n-done)*el/done/60:5.1f} min left  {el/done*1e6:6.1f} us/mol  {nw}w")
+    return out
+
+
+def featurize_many(arm: str, smis: list[str], out: np.ndarray, label: str = "", log=print):
+    """Featurize `smis` into preallocated `out` using every core. Identical to serial output."""
+    return _parallel_into(_worker_featurize, arm, smis, out, label, log)
+
+
+def parse_mask_many(arm: str, smis: list[str], out: np.ndarray, label: str = "", log=print):
+    """`parse_mask` across workers. Serial it is another single-core RDKit pass over every row."""
+    return _parallel_into(_worker_parse_mask, arm, smis, out, label, log)
