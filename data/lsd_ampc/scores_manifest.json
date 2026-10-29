@@ -1,0 +1,2469 @@
+{
+ "repo": "datasets/IrwinLab/LSD_AmpC_Liu_2025/docking_results",
+ "n_shards": 246,
+ "scale": 100,
+ "rows": 1568863695,
+ "complete": true,
+ "shards": [
+  {
+   "shard": 0,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2779,
+   "max": -1682,
+   "sorted": true,
+   "secs": 36.28317349997815
+  },
+  {
+   "shard": 1,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4260,
+   "max": -1659,
+   "sorted": false,
+   "secs": 34.91253533307463
+  },
+  {
+   "shard": 2,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6223,
+   "max": -4232,
+   "sorted": false,
+   "secs": 37.45138024992775
+  },
+  {
+   "shard": 3,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6140,
+   "max": -2152,
+   "sorted": true,
+   "secs": 36.73459050001111
+  },
+  {
+   "shard": 4,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2544,
+   "max": -2135,
+   "sorted": false,
+   "secs": 35.71691950003151
+  },
+  {
+   "shard": 5,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3612,
+   "max": -2533,
+   "sorted": false,
+   "secs": 36.819849416962825
+  },
+  {
+   "shard": 6,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3607,
+   "max": -2155,
+   "sorted": true,
+   "secs": 35.57553720800206
+  },
+  {
+   "shard": 7,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2787,
+   "max": -2154,
+   "sorted": false,
+   "secs": 36.78990062500816
+  },
+  {
+   "shard": 8,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2786,
+   "max": -1644,
+   "sorted": true,
+   "secs": 36.15307729190681
+  },
+  {
+   "shard": 9,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4290,
+   "max": -1627,
+   "sorted": false,
+   "secs": 37.43826399999671
+  },
+  {
+   "shard": 10,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6124,
+   "max": -3059,
+   "sorted": false,
+   "secs": 35.62002658296842
+  },
+  {
+   "shard": 11,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3595,
+   "max": -3053,
+   "sorted": false,
+   "secs": 36.701430374989286
+  },
+  {
+   "shard": 12,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3593,
+   "max": -2506,
+   "sorted": true,
+   "secs": 43.234591000014916
+  },
+  {
+   "shard": 13,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2506,
+   "max": -2192,
+   "sorted": true,
+   "secs": 41.179337749956176
+  },
+  {
+   "shard": 14,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3621,
+   "max": -1589,
+   "sorted": false,
+   "secs": 40.29806162498426
+  },
+  {
+   "shard": 15,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2779,
+   "max": -1560,
+   "sorted": false,
+   "secs": 45.887561832903884
+  },
+  {
+   "shard": 16,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2776,
+   "max": -1669,
+   "sorted": true,
+   "secs": 42.271116749965586
+  },
+  {
+   "shard": 17,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4260,
+   "max": -1659,
+   "sorted": false,
+   "secs": 42.974296708009206
+  },
+  {
+   "shard": 18,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6223,
+   "max": -3585,
+   "sorted": false,
+   "secs": 43.70880266698077
+  },
+  {
+   "shard": 19,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3585,
+   "max": -2144,
+   "sorted": true,
+   "secs": 42.407314499956556
+  },
+  {
+   "shard": 20,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2544,
+   "max": -2135,
+   "sorted": false,
+   "secs": 43.64377949992195
+  },
+  {
+   "shard": 21,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3612,
+   "max": -2171,
+   "sorted": false,
+   "secs": 42.98137625004165
+  },
+  {
+   "shard": 22,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2533,
+   "max": -2154,
+   "sorted": false,
+   "secs": 44.84572466695681
+  },
+  {
+   "shard": 23,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2787,
+   "max": -2523,
+   "sorted": false,
+   "secs": 43.02261554100551
+  },
+  {
+   "shard": 24,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2782,
+   "max": -1630,
+   "sorted": true,
+   "secs": 41.47419129102491
+  },
+  {
+   "shard": 25,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6124,
+   "max": -1627,
+   "sorted": false,
+   "secs": 44.35852262494154
+  },
+  {
+   "shard": 26,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6108,
+   "max": -3056,
+   "sorted": true,
+   "secs": 44.84746820793953
+  },
+  {
+   "shard": 27,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3595,
+   "max": -3053,
+   "sorted": false,
+   "secs": 47.61693545791786
+  },
+  {
+   "shard": 28,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3589,
+   "max": -2502,
+   "sorted": true,
+   "secs": 45.12334941700101
+  },
+  {
+   "shard": 29,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3621,
+   "max": -2190,
+   "sorted": false,
+   "secs": 46.48483600001782
+  },
+  {
+   "shard": 30,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3619,
+   "max": -1576,
+   "sorted": true,
+   "secs": 45.13927074999083
+  },
+  {
+   "shard": 31,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2802,
+   "max": -1560,
+   "sorted": false,
+   "secs": 43.01514200004749
+  },
+  {
+   "shard": 32,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6333,
+   "max": -2795,
+   "sorted": false,
+   "secs": 46.01872137503233
+  },
+  {
+   "shard": 33,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4230,
+   "max": -3044,
+   "sorted": true,
+   "secs": 46.41560416703578
+  },
+  {
+   "shard": 34,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3044,
+   "max": -1606,
+   "sorted": true,
+   "secs": 44.79791679198388
+  },
+  {
+   "shard": 35,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2795,
+   "max": -1594,
+   "sorted": false,
+   "secs": 43.99506887490861
+  },
+  {
+   "shard": 36,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6462,
+   "max": -2787,
+   "sorted": false,
+   "secs": 44.673340583918616
+  },
+  {
+   "shard": 37,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4201,
+   "max": -3600,
+   "sorted": true,
+   "secs": 43.33509329101071
+  },
+  {
+   "shard": 38,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3600,
+   "max": -3048,
+   "sorted": true,
+   "secs": 41.67639716598205
+  },
+  {
+   "shard": 39,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3048,
+   "max": -2189,
+   "sorted": true,
+   "secs": 45.528508208924904
+  },
+  {
+   "shard": 40,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3630,
+   "max": -2172,
+   "sorted": false,
+   "secs": 43.62650312506594
+  },
+  {
+   "shard": 41,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3627,
+   "max": -2124,
+   "sorted": true,
+   "secs": 46.08689266606234
+  },
+  {
+   "shard": 42,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2469,
+   "max": -2116,
+   "sorted": false,
+   "secs": 43.20993299991824
+  },
+  {
+   "shard": 43,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3079,
+   "max": -2457,
+   "sorted": false,
+   "secs": 40.811119791003875
+  },
+  {
+   "shard": 44,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2831,
+   "max": -1709,
+   "sorted": true,
+   "secs": 43.324900083011016
+  },
+  {
+   "shard": 45,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3020,
+   "max": -1690,
+   "sorted": false,
+   "secs": 44.07903808297124
+  },
+  {
+   "shard": 46,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3579,
+   "max": -3013,
+   "sorted": false,
+   "secs": 44.015890792012215
+  },
+  {
+   "shard": 47,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -14430,
+   "max": -3571,
+   "sorted": false,
+   "secs": 46.70664708397817
+  },
+  {
+   "shard": 48,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -7309,
+   "max": -2821,
+   "sorted": true,
+   "secs": 45.56691699998919
+  },
+  {
+   "shard": 49,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2821,
+   "max": -1728,
+   "sorted": true,
+   "secs": 43.21979200001806
+  },
+  {
+   "shard": 50,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3571,
+   "max": -1721,
+   "sorted": false,
+   "secs": 43.88452100008726
+  },
+  {
+   "shard": 51,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4323,
+   "max": -3562,
+   "sorted": false,
+   "secs": 46.094268874963745
+  },
+  {
+   "shard": 52,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4312,
+   "max": -2104,
+   "sorted": true,
+   "secs": 41.98546716605779
+  },
+  {
+   "shard": 53,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2480,
+   "max": -2096,
+   "sorted": false,
+   "secs": 41.44080533401575
+  },
+  {
+   "shard": 54,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3235,
+   "max": -2469,
+   "sorted": false,
+   "secs": 43.96727370901499
+  },
+  {
+   "shard": 55,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3071,
+   "max": -1796,
+   "sorted": true,
+   "secs": 45.786837541963905
+  },
+  {
+   "shard": 56,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2810,
+   "max": -1780,
+   "sorted": false,
+   "secs": 45.11320737504866
+  },
+  {
+   "shard": 57,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3554,
+   "max": -2802,
+   "sorted": false,
+   "secs": 43.23503145808354
+  },
+  {
+   "shard": 58,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6867,
+   "max": -3033,
+   "sorted": false,
+   "secs": 41.9050008750055
+  },
+  {
+   "shard": 59,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6792,
+   "max": -4376,
+   "sorted": true,
+   "secs": 43.65642420796212
+  },
+  {
+   "shard": 60,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4376,
+   "max": -2493,
+   "sorted": true,
+   "secs": 35.18332549999468
+  },
+  {
+   "shard": 61,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3248,
+   "max": -2055,
+   "sorted": false,
+   "secs": 31.984133624937385
+  },
+  {
+   "shard": 62,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3248,
+   "max": -2487,
+   "sorted": true,
+   "secs": 42.54434779193252
+  },
+  {
+   "shard": 63,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2487,
+   "max": -2083,
+   "sorted": true,
+   "secs": 44.19093691604212
+  },
+  {
+   "shard": 64,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3066,
+   "max": -2076,
+   "sorted": false,
+   "secs": 43.089883083011955
+  },
+  {
+   "shard": 65,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3242,
+   "max": -1775,
+   "sorted": false,
+   "secs": 42.42535758402664
+  },
+  {
+   "shard": 66,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2817,
+   "max": -1751,
+   "sorted": false,
+   "secs": 42.29210354201496
+  },
+  {
+   "shard": 67,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3562,
+   "max": -2810,
+   "sorted": false,
+   "secs": 43.463191041955724
+  },
+  {
+   "shard": 68,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6625,
+   "max": -3026,
+   "sorted": false,
+   "secs": 43.15254191600252
+  },
+  {
+   "shard": 69,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6623,
+   "max": -3129,
+   "sorted": true,
+   "secs": 45.39877708291169
+  },
+  {
+   "shard": 70,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3281,
+   "max": -3124,
+   "sorted": false,
+   "secs": 42.01120087504387
+  },
+  {
+   "shard": 71,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3656,
+   "max": -3275,
+   "sorted": false,
+   "secs": 43.997934666927904
+  },
+  {
+   "shard": 72,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5944,
+   "max": -3647,
+   "sorted": false,
+   "secs": 45.85686545900535
+  },
+  {
+   "shard": 73,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4133,
+   "max": -3512,
+   "sorted": true,
+   "secs": 42.688873958890326
+  },
+  {
+   "shard": 74,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3512,
+   "max": -2961,
+   "sorted": true,
+   "secs": 43.38025420799386
+  },
+  {
+   "shard": 75,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2961,
+   "max": -1917,
+   "sorted": true,
+   "secs": 45.79059241700452
+  },
+  {
+   "shard": 76,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -6032,
+   "max": -1915,
+   "sorted": false,
+   "secs": 45.735156209091656
+  },
+  {
+   "shard": 77,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4110,
+   "max": -3504,
+   "sorted": true,
+   "secs": 43.05855916591827
+  },
+  {
+   "shard": 78,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3504,
+   "max": -2968,
+   "sorted": true,
+   "secs": 45.319108625059016
+  },
+  {
+   "shard": 79,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2968,
+   "max": -1940,
+   "sorted": false,
+   "secs": 44.87395425001159
+  },
+  {
+   "shard": 80,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3124,
+   "max": -2876,
+   "sorted": false,
+   "secs": 45.48430183297023
+  },
+  {
+   "shard": 81,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3288,
+   "max": -3118,
+   "sorted": false,
+   "secs": 43.751221582992
+  },
+  {
+   "shard": 82,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3665,
+   "max": -3281,
+   "sorted": false,
+   "secs": 45.01661387493368
+  },
+  {
+   "shard": 83,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5860,
+   "max": -3656,
+   "sorted": false,
+   "secs": 40.90589966706466
+  },
+  {
+   "shard": 84,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5848,
+   "max": -2983,
+   "sorted": true,
+   "secs": 42.98200150008779
+  },
+  {
+   "shard": 85,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3492,
+   "max": -2979,
+   "sorted": false,
+   "secs": 41.96104441699572
+  },
+  {
+   "shard": 86,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3487,
+   "max": -2862,
+   "sorted": true,
+   "secs": 43.28079608408734
+  },
+  {
+   "shard": 87,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3302,
+   "max": -2861,
+   "sorted": false,
+   "secs": 43.05167970911134
+  },
+  {
+   "shard": 88,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3647,
+   "max": -3105,
+   "sorted": false,
+   "secs": 44.315651166951284
+  },
+  {
+   "shard": 89,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3643,
+   "max": -3290,
+   "sorted": true,
+   "secs": 44.338055000058375
+  },
+  {
+   "shard": 90,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3638,
+   "max": -3111,
+   "sorted": false,
+   "secs": 46.31244933302514
+  },
+  {
+   "shard": 91,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4181,
+   "max": -3630,
+   "sorted": false,
+   "secs": 43.92009116697591
+  },
+  {
+   "shard": 92,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5776,
+   "max": -4158,
+   "sorted": false,
+   "secs": 47.59992383304052
+  },
+  {
+   "shard": 93,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5723,
+   "max": -2973,
+   "sorted": true,
+   "secs": 42.77808125002775
+  },
+  {
+   "shard": 94,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3500,
+   "max": -2874,
+   "sorted": false,
+   "secs": 41.565642582951114
+  },
+  {
+   "shard": 95,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2874,
+   "max": -1977,
+   "sorted": true,
+   "secs": 44.76203762507066
+  },
+  {
+   "shard": 96,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3523,
+   "max": -1964,
+   "sorted": false,
+   "secs": 45.16212887503207
+  },
+  {
+   "shard": 97,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3517,
+   "max": -3006,
+   "sorted": true,
+   "secs": 42.291266415966675
+  },
+  {
+   "shard": 98,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5513,
+   "max": -3006,
+   "sorted": false,
+   "secs": 44.258993791998364
+  },
+  {
+   "shard": 99,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4070,
+   "max": -1901,
+   "sorted": true,
+   "secs": 46.298101374995895
+  },
+  {
+   "shard": 100,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2840,
+   "max": -1889,
+   "sorted": false,
+   "secs": 45.03301241702866
+  },
+  {
+   "shard": 101,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3684,
+   "max": -2832,
+   "sorted": false,
+   "secs": 46.25256312498823
+  },
+  {
+   "shard": 102,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3275,
+   "max": -3079,
+   "sorted": false,
+   "secs": 44.48447012505494
+  },
+  {
+   "shard": 103,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3272,
+   "max": -2450,
+   "sorted": true,
+   "secs": 44.65619670902379
+  },
+  {
+   "shard": 104,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3674,
+   "max": -2446,
+   "sorted": false,
+   "secs": 44.3304322080221
+  },
+  {
+   "shard": 105,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3666,
+   "max": -3085,
+   "sorted": false,
+   "secs": 44.47093195805792
+  },
+  {
+   "shard": 106,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3267,
+   "max": -2440,
+   "sorted": true,
+   "secs": 43.7766612500418
+  },
+  {
+   "shard": 107,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2440,
+   "max": -1994,
+   "sorted": true,
+   "secs": 42.85898937494494
+  },
+  {
+   "shard": 108,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3531,
+   "max": -1988,
+   "sorted": false,
+   "secs": 43.74910599994473
+  },
+  {
+   "shard": 109,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5416,
+   "max": -3000,
+   "sorted": false,
+   "secs": 41.588570457999595
+  },
+  {
+   "shard": 110,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5385,
+   "max": -4083,
+   "sorted": true,
+   "secs": 46.39471470809076
+  },
+  {
+   "shard": 111,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4083,
+   "max": -1867,
+   "sorted": true,
+   "secs": 41.57796591706574
+  },
+  {
+   "shard": 112,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3693,
+   "max": -1863,
+   "sorted": false,
+   "secs": 43.50810533296317
+  },
+  {
+   "shard": 113,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3692,
+   "max": -3252,
+   "sorted": true,
+   "secs": 43.61519729194697
+  },
+  {
+   "shard": 114,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3252,
+   "max": -3100,
+   "sorted": true,
+   "secs": 42.976028083008714
+  },
+  {
+   "shard": 115,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3100,
+   "max": -2034,
+   "sorted": true,
+   "secs": 42.665898374980316
+  },
+  {
+   "shard": 116,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3546,
+   "max": -2033,
+   "sorted": false,
+   "secs": 44.65631191700231
+  },
+  {
+   "shard": 117,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4057,
+   "max": -3539,
+   "sorted": false,
+   "secs": 43.5749026669655
+  },
+  {
+   "shard": 118,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5604,
+   "max": -4039,
+   "sorted": false,
+   "secs": 42.69585020793602
+  },
+  {
+   "shard": 119,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5533,
+   "max": -1834,
+   "sorted": true,
+   "secs": 47.99149866600055
+  },
+  {
+   "shard": 120,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3000,
+   "max": -1808,
+   "sorted": false,
+   "secs": 42.64679599995725
+  },
+  {
+   "shard": 121,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3539,
+   "max": -2993,
+   "sorted": false,
+   "secs": 44.22374241694342
+  },
+  {
+   "shard": 122,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4039,
+   "max": -3531,
+   "sorted": false,
+   "secs": 30.964198249974288
+  },
+  {
+   "shard": 123,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5691,
+   "max": -2853,
+   "sorted": false,
+   "secs": 35.086837959010154
+  },
+  {
+   "shard": 124,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2853,
+   "max": -1851,
+   "sorted": true,
+   "secs": 43.37365212501027
+  },
+  {
+   "shard": 125,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3703,
+   "max": -1836,
+   "sorted": false,
+   "secs": 43.261121749994345
+  },
+  {
+   "shard": 126,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3696,
+   "max": -3255,
+   "sorted": true,
+   "secs": 45.1323462909786
+  },
+  {
+   "shard": 127,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3255,
+   "max": -2027,
+   "sorted": true,
+   "secs": 47.36766687501222
+  },
+  {
+   "shard": 128,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2434,
+   "max": -2011,
+   "sorted": false,
+   "secs": 43.81251629209146
+  },
+  {
+   "shard": 129,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2427,
+   "max": -2259,
+   "sorted": true,
+   "secs": 45.84951137506869
+  },
+  {
+   "shard": 130,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3817,
+   "max": -2256,
+   "sorted": false,
+   "secs": 43.84044212498702
+  },
+  {
+   "shard": 131,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3816,
+   "max": -3388,
+   "sorted": true,
+   "secs": 42.211972458986565
+  },
+  {
+   "shard": 132,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3388,
+   "max": -2767,
+   "sorted": true,
+   "secs": 44.6814519589534
+  },
+  {
+   "shard": 133,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2767,
+   "max": -1419,
+   "sorted": true,
+   "secs": 46.75850595801603
+  },
+  {
+   "shard": 134,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4487,
+   "max": -1416,
+   "sorted": false,
+   "secs": 46.583541375002824
+  },
+  {
+   "shard": 135,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4477,
+   "max": -2760,
+   "sorted": true,
+   "secs": 42.429177707992494
+  },
+  {
+   "shard": 136,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2760,
+   "max": -1463,
+   "sorted": true,
+   "secs": 44.345583542017266
+  },
+  {
+   "shard": 137,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4541,
+   "max": -1453,
+   "sorted": false,
+   "secs": 44.32780329103116
+  },
+  {
+   "shard": 138,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2564,
+   "max": -2240,
+   "sorted": false,
+   "secs": 49.07570433290675
+  },
+  {
+   "shard": 139,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3829,
+   "max": -2554,
+   "sorted": false,
+   "secs": 46.13114549999591
+  },
+  {
+   "shard": 140,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3822,
+   "max": -3392,
+   "sorted": true,
+   "secs": 45.90675666695461
+  },
+  {
+   "shard": 141,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3392,
+   "max": -1556,
+   "sorted": true,
+   "secs": 46.24774195801001
+  },
+  {
+   "shard": 142,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2748,
+   "max": -1525,
+   "sorted": false,
+   "secs": 45.57650870794896
+  },
+  {
+   "shard": 143,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4439,
+   "max": -2740,
+   "sorted": false,
+   "secs": 45.43481537490152
+  },
+  {
+   "shard": 144,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4410,
+   "max": -3878,
+   "sorted": true,
+   "secs": 42.29627199994866
+  },
+  {
+   "shard": 145,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3878,
+   "max": -2220,
+   "sorted": true,
+   "secs": 42.35018945799675
+  },
+  {
+   "shard": 146,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3806,
+   "max": -2207,
+   "sorted": false,
+   "secs": 45.5074509580154
+  },
+  {
+   "shard": 147,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3800,
+   "max": -3211,
+   "sorted": true,
+   "secs": 43.2450649170205
+  },
+  {
+   "shard": 148,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3211,
+   "max": -2239,
+   "sorted": true,
+   "secs": 44.944265124970116
+  },
+  {
+   "shard": 149,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2239,
+   "max": -35,
+   "sorted": true,
+   "secs": 41.155632541980594
+  },
+  {
+   "shard": 150,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3795,
+   "max": 14329,
+   "sorted": false,
+   "secs": 44.839843708090484
+  },
+  {
+   "shard": 151,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3786,
+   "max": -3216,
+   "sorted": false,
+   "secs": 43.73306795791723
+  },
+  {
+   "shard": 152,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3404,
+   "max": -1512,
+   "sorted": true,
+   "secs": 44.964740750030614
+  },
+  {
+   "shard": 153,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2756,
+   "max": -1490,
+   "sorted": false,
+   "secs": 44.270779833896086
+  },
+  {
+   "shard": 154,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3903,
+   "max": -2748,
+   "sorted": false,
+   "secs": 43.150722999940626
+  },
+  {
+   "shard": 155,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3891,
+   "max": -1408,
+   "sorted": true,
+   "secs": 42.95381354098208
+  },
+  {
+   "shard": 156,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2904,
+   "max": -1377,
+   "sorted": false,
+   "secs": 42.760631125071086
+  },
+  {
+   "shard": 157,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2901,
+   "max": -2276,
+   "sorted": true,
+   "secs": 42.5437683329219
+  },
+  {
+   "shard": 158,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3384,
+   "max": -2272,
+   "sorted": false,
+   "secs": 46.95289366610814
+  },
+  {
+   "shard": 159,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3383,
+   "max": -3187,
+   "sorted": true,
+   "secs": 42.04879558295943
+  },
+  {
+   "shard": 160,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3852,
+   "max": -3183,
+   "sorted": false,
+   "secs": 48.945835583028384
+  },
+  {
+   "shard": 161,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3845,
+   "max": -2289,
+   "sorted": true,
+   "secs": 41.927698958083056
+  },
+  {
+   "shard": 162,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3377,
+   "max": -2287,
+   "sorted": false,
+   "secs": 42.00348858302459
+  },
+  {
+   "shard": 163,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3376,
+   "max": -3193,
+   "sorted": true,
+   "secs": 40.021738999988884
+  },
+  {
+   "shard": 164,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3840,
+   "max": -3189,
+   "sorted": false,
+   "secs": 45.308952208957635
+  },
+  {
+   "shard": 165,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3832,
+   "max": -2716,
+   "sorted": true,
+   "secs": 45.37856341700535
+  },
+  {
+   "shard": 166,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2897,
+   "max": -1336,
+   "sorted": false,
+   "secs": 42.59295941598248
+  },
+  {
+   "shard": 167,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3412,
+   "max": -2890,
+   "sorted": false,
+   "secs": 43.68137616699096
+  },
+  {
+   "shard": 168,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3408,
+   "max": -2585,
+   "sorted": true,
+   "secs": 42.91571816604119
+  },
+  {
+   "shard": 169,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3209,
+   "max": -2316,
+   "sorted": false,
+   "secs": 45.69093824992888
+  },
+  {
+   "shard": 170,
+   "n": 6377495,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3363,
+   "max": -3202,
+   "sorted": false,
+   "secs": 43.58069245808292
+  },
+  {
+   "shard": 171,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3865,
+   "max": -3356,
+   "sorted": false,
+   "secs": 43.794983125058934
+  },
+  {
+   "shard": 172,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3857,
+   "max": -1254,
+   "sorted": true,
+   "secs": 42.098780625034124
+  },
+  {
+   "shard": 173,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3426,
+   "max": -1249,
+   "sorted": false,
+   "secs": 44.544044250040315
+  },
+  {
+   "shard": 174,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3425,
+   "max": -1318,
+   "sorted": true,
+   "secs": 48.31098991702311
+  },
+  {
+   "shard": 175,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2732,
+   "max": -1294,
+   "sorted": false,
+   "secs": 43.27614362502936
+  },
+  {
+   "shard": 176,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3419,
+   "max": -2724,
+   "sorted": false,
+   "secs": 43.9693405830767
+  },
+  {
+   "shard": 177,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3412,
+   "max": -2600,
+   "sorted": true,
+   "secs": 44.00886104197707
+  },
+  {
+   "shard": 178,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2600,
+   "max": -2309,
+   "sorted": true,
+   "secs": 44.91888158302754
+  },
+  {
+   "shard": 179,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3202,
+   "max": -2302,
+   "sorted": false,
+   "secs": 44.12042187503539
+  },
+  {
+   "shard": 180,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3462,
+   "max": -3196,
+   "sorted": false,
+   "secs": 44.14668929204345
+  },
+  {
+   "shard": 181,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3462,
+   "max": -2957,
+   "sorted": true,
+   "secs": 43.98985925002489
+  },
+  {
+   "shard": 182,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4673,
+   "max": -2952,
+   "sorted": false,
+   "secs": 46.859357792069204
+  },
+  {
+   "shard": 183,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4626,
+   "max": -3931,
+   "sorted": true,
+   "secs": 32.95154062495567
+  },
+  {
+   "shard": 184,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3931,
+   "max": -3136,
+   "sorted": true,
+   "secs": 44.79345995897893
+  },
+  {
+   "shard": 185,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3329,
+   "max": -3131,
+   "sorted": false,
+   "secs": 43.73902704101056
+  },
+  {
+   "shard": 186,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3325,
+   "max": -2388,
+   "sorted": true,
+   "secs": 46.5740977920359
+  },
+  {
+   "shard": 187,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3752,
+   "max": -677,
+   "sorted": false,
+   "secs": 43.452626625075936
+  },
+  {
+   "shard": 188,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3752,
+   "max": -3142,
+   "sorted": true,
+   "secs": 45.362259166897275
+  },
+  {
+   "shard": 189,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3322,
+   "max": -3137,
+   "sorted": false,
+   "secs": 42.32315887499135
+  },
+  {
+   "shard": 190,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3318,
+   "max": -2675,
+   "sorted": true,
+   "secs": 43.41100979200564
+  },
+  {
+   "shard": 191,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2675,
+   "max": -880,
+   "sorted": true,
+   "secs": 45.72684262495022
+  },
+  {
+   "shard": 192,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3470,
+   "max": -797,
+   "sorted": false,
+   "secs": 42.013162791961804
+  },
+  {
+   "shard": 193,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3467,
+   "max": -2948,
+   "sorted": true,
+   "secs": 43.68005733296741
+  },
+  {
+   "shard": 194,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4602,
+   "max": -2945,
+   "sorted": false,
+   "secs": 43.64028212497942
+  },
+  {
+   "shard": 195,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4544,
+   "max": -3771,
+   "sorted": true,
+   "secs": 44.42496741598006
+  },
+  {
+   "shard": 196,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3771,
+   "max": -3305,
+   "sorted": true,
+   "secs": 45.69465616706293
+  },
+  {
+   "shard": 197,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3305,
+   "max": -3152,
+   "sorted": true,
+   "secs": 48.56291633390356
+  },
+  {
+   "shard": 198,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3152,
+   "max": -670,
+   "sorted": true,
+   "secs": 46.05653454095591
+  },
+  {
+   "shard": 199,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2939,
+   "max": -510,
+   "sorted": false,
+   "secs": 45.20533633301966
+  },
+  {
+   "shard": 200,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3485,
+   "max": -2932,
+   "sorted": false,
+   "secs": 39.97301354201045
+  },
+  {
+   "shard": 201,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3930,
+   "max": -3477,
+   "sorted": false,
+   "secs": 43.41163908294402
+  },
+  {
+   "shard": 202,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4756,
+   "max": -2944,
+   "sorted": false,
+   "secs": 46.951659583020955
+  },
+  {
+   "shard": 203,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3477,
+   "max": -2939,
+   "sorted": false,
+   "secs": 44.86020829202607
+  },
+  {
+   "shard": 204,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3917,
+   "max": -3470,
+   "sorted": false,
+   "secs": 43.38208512496203
+  },
+  {
+   "shard": 205,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4852,
+   "max": -3903,
+   "sorted": false,
+   "secs": 45.398557125008665
+  },
+  {
+   "shard": 206,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4758,
+   "max": -3313,
+   "sorted": true,
+   "secs": 45.80169816699345
+  },
+  {
+   "shard": 207,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3313,
+   "max": -3147,
+   "sorted": true,
+   "secs": 44.38485912501346
+  },
+  {
+   "shard": 208,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3147,
+   "max": -2412,
+   "sorted": true,
+   "secs": 43.07033520902041
+  },
+  {
+   "shard": 209,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2674,
+   "max": -493,
+   "sorted": false,
+   "secs": 41.18901166599244
+  },
+  {
+   "shard": 210,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3183,
+   "max": -218,
+   "sorted": false,
+   "secs": 42.26451479108073
+  },
+  {
+   "shard": 211,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3335,
+   "max": -3176,
+   "sorted": false,
+   "secs": 43.924878541962244
+  },
+  {
+   "shard": 212,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3732,
+   "max": -3329,
+   "sorted": false,
+   "secs": 45.563725291984156
+  },
+  {
+   "shard": 213,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3723,
+   "max": -969,
+   "sorted": false,
+   "secs": 42.59329220792279
+  },
+  {
+   "shard": 214,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2628,
+   "max": -2378,
+   "sorted": true,
+   "secs": 44.27806329203304
+  },
+  {
+   "shard": 215,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5198,
+   "max": -2371,
+   "sorted": false,
+   "secs": 45.58479787502438
+  },
+  {
+   "shard": 216,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5111,
+   "max": -3455,
+   "sorted": true,
+   "secs": 44.90274575003423
+  },
+  {
+   "shard": 217,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3455,
+   "max": -2909,
+   "sorted": true,
+   "secs": 42.311070290976204
+  },
+  {
+   "shard": 218,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2909,
+   "max": -2703,
+   "sorted": true,
+   "secs": 40.08174275001511
+  },
+  {
+   "shard": 219,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5311,
+   "max": -2699,
+   "sorted": false,
+   "secs": 42.75692883390002
+  },
+  {
+   "shard": 220,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5217,
+   "max": -3447,
+   "sorted": true,
+   "secs": 43.556943875038996
+  },
+  {
+   "shard": 221,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3447,
+   "max": -2915,
+   "sorted": true,
+   "secs": 43.524187957984395
+  },
+  {
+   "shard": 222,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2915,
+   "max": -1116,
+   "sorted": true,
+   "secs": 44.400160834076814
+  },
+  {
+   "shard": 223,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2699,
+   "max": -1097,
+   "sorted": false,
+   "secs": 44.682709124987014
+  },
+  {
+   "shard": 224,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3342,
+   "max": -2691,
+   "sorted": false,
+   "secs": 40.19269462500233
+  },
+  {
+   "shard": 225,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3742,
+   "max": -3335,
+   "sorted": false,
+   "secs": 43.515125834033825
+  },
+  {
+   "shard": 226,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3737,
+   "max": -910,
+   "sorted": true,
+   "secs": 42.387277208967134
+  },
+  {
+   "shard": 227,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2639,
+   "max": -891,
+   "sorted": false,
+   "secs": 44.30630579206627
+  },
+  {
+   "shard": 228,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4005,
+   "max": -2358,
+   "sorted": false,
+   "secs": 41.2360565419076
+  },
+  {
+   "shard": 229,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5079,
+   "max": -3989,
+   "sorted": false,
+   "secs": 47.09520058403723
+  },
+  {
+   "shard": 230,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -5009,
+   "max": -2926,
+   "sorted": true,
+   "secs": 43.02653154206928
+  },
+  {
+   "shard": 231,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3433,
+   "max": -1243,
+   "sorted": false,
+   "secs": 49.25912616599817
+  },
+  {
+   "shard": 232,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3356,
+   "max": -1202,
+   "sorted": false,
+   "secs": 46.49342491698917
+  },
+  {
+   "shard": 233,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3353,
+   "max": -3159,
+   "sorted": true,
+   "secs": 42.16466920892708
+  },
+  {
+   "shard": 234,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3722,
+   "max": -3157,
+   "sorted": false,
+   "secs": 43.64766524999868
+  },
+  {
+   "shard": 235,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3713,
+   "max": -1037,
+   "sorted": false,
+   "secs": 44.05250229197554
+  },
+  {
+   "shard": 236,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2657,
+   "max": -2331,
+   "sorted": false,
+   "secs": 43.587981458054855
+  },
+  {
+   "shard": 237,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3349,
+   "max": -2648,
+   "sorted": false,
+   "secs": 43.791624667006545
+  },
+  {
+   "shard": 238,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3712,
+   "max": -3163,
+   "sorted": false,
+   "secs": 41.758602916961536
+  },
+  {
+   "shard": 239,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3712,
+   "max": -2353,
+   "sorted": true,
+   "secs": 43.76571745797992
+  },
+  {
+   "shard": 240,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2648,
+   "max": -2344,
+   "sorted": false,
+   "secs": 39.1673769580666
+  },
+  {
+   "shard": 241,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4022,
+   "max": -2639,
+   "sorted": false,
+   "secs": 39.06608466699254
+  },
+  {
+   "shard": 242,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -4961,
+   "max": -2924,
+   "sorted": false,
+   "secs": 38.414508374989964
+  },
+  {
+   "shard": 243,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3440,
+   "max": -2918,
+   "sorted": false,
+   "secs": 32.47294837492518
+  },
+  {
+   "shard": 244,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -3437,
+   "max": -2685,
+   "sorted": true,
+   "secs": 33.87714312504977
+  },
+  {
+   "shard": 245,
+   "n": 6377494,
+   "n_row_groups": 6378,
+   "cached": false,
+   "min": -2685,
+   "max": -1152,
+   "sorted": true,
+   "secs": 20.83122029097285
+  }
+ ]
+}
