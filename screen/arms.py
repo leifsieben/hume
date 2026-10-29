@@ -33,6 +33,29 @@ for _c in (_HERE.parent / "bench", _HERE.parent / "verification", Path("/opt/ds"
     if _c.is_dir() and str(_c) not in sys.path:
         sys.path.append(str(_c))
 
+N_TREES = 1000
+#: The early-stopping CAP, raised from bench_downstream's 300 on 2026-10-29.
+#:
+#: WHY, measured: at 300 the cap bound on EVERY arm and EVERY replicate -- all 30 models came
+#: back with best_iteration == 299, so the number of trees was decided by the ceiling and not by
+#: the validation curve. Early stopping was configured, reported, and never once fired, which
+#: means the scaffold-disjoint validation set was doing nothing for the purpose it was built for.
+#:
+#: The validation curve for hume_r4 replicate 0, over all 185,024 validation molecules:
+#:     25 trees 7.5435 | 100 6.6978 | 200 6.3842 | 275 6.2936 | 300 6.2683
+#: Decelerating hard -- the last 25 trees are worth +0.025 where the first 25 were worth +0.47 --
+#: but still falling, so 300 was leaving real fit on the table.
+#:
+#: 300 WAS DEFENSIBLE AND IS NOT WHAT WE CHOSE. Every arm shared the cap, so the comparison was
+#: fair, and Hall et al. say "default parameters", where XGBoost's own default is 100 -- their
+#: models would have been cap-limited too. The call (2026-10-29) was to let early stopping
+#: actually decide per arm, which is what the paper's stated protocol describes, and to pay a
+#: phase 1 re-run for it. If 1000 also binds on every arm, that is a finding to report rather
+#: than a number to raise again.
+#:
+#: Prediction cost scales with trees: 2.5 us/mol measured at 300 becomes ~8 us/mol at 1000,
+#: still a small fraction of featurization for every arm, so phase 2's budget is unaffected.
+
 W_FIXED = 10.0
 #: The `feature_weights` multiplier, FIXED A PRIORI -- no inner CV, no per-arm search.
 #:
@@ -218,13 +241,14 @@ def make_head(arm: str, n_cols: int, seed: int):
       1. `feature_weights` is the fixed W_FIXED vector, not a tuned one (see W_FIXED).
       2. Early stopping is enabled against the frozen scaffold-disjoint validation set. Hall et
          al. use "early stopping based on validation RMSE loss, with a patience of 5 epochs";
-         n_estimators=300 becomes a cap rather than a fixed count. The figures had no validation
+         n_estimators becomes a cap rather than a fixed count. The figures had no validation
          set to stop on -- they were cross-validated -- so this is the screen reading across to
          the paper's protocol, applied identically to every arm.
+      3. The cap is N_TREES, raised from the 300 bench_downstream uses. See N_TREES.
     """
     import bench_downstream as BD
     m = BD.make_head("regression", seed, feature_weights(arm, n_cols))
-    m.set_params(early_stopping_rounds=5, eval_metric="rmse")
+    m.set_params(n_estimators=N_TREES, early_stopping_rounds=5, eval_metric="rmse")
     return m
 
 

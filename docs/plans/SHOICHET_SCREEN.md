@@ -56,7 +56,7 @@ $388. The compute axis is unaffected: it is measured per molecule and reported a
    > `screen/freeze_split.py` implements the correct direction; the frozen spec records
    > `train_frac_from_top = 0.8`.
 4. **One head, and nothing in it is tuned.** The `bench_downstream` XGBoost
-   (`n_estimators=300`, `max_depth=6`, `colsample_bynode=0.3`, `tree_method=hist`), identical for
+   (`n_estimators=1000`, `max_depth=6`, `colsample_bynode=0.3`, `tree_method=hist`), identical for
    every arm. `feature_weights` is **fixed a priori at w = 10**, with no inner CV and no per-arm
    or per-dataset selection, for every arm carrying a fingerprint/descriptor boundary — which
    means HUME at both radii *and* the ECFP4+RDKit baseline. It is structurally inert for the

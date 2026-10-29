@@ -10,9 +10,11 @@ copies and kill the box at the worst possible moment -- after an hour of featuri
 64 GB instance; a 32 GB one does not fit the HUME arms.
 
 EARLY STOPPING IS THE PAPER'S, APPLIED IDENTICALLY TO EVERY ARM. Hall et al.: "early stopping
-based on validation RMSE loss, with a patience of 5 epochs". n_estimators=300 is a cap, not a
-count, and the chosen iteration is recorded per replicate so a reader can see whether an arm ran
-out of budget rather than converging.
+based on validation RMSE loss, with a patience of 5 epochs". arms.N_TREES is a cap, not a count,
+and the chosen iteration is recorded per replicate so a reader can see whether an arm ran out of
+budget rather than converging. That record is what raised the cap: at 300 every arm and every
+replicate came back at best_iteration 299, so the ceiling was choosing the model rather than the
+validation curve. See arms.N_TREES.
 """
 from __future__ import annotations
 
