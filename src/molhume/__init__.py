@@ -267,7 +267,7 @@ def featurize_blocks(smiles: Iterable[str], batch_size: int = 4096, reader: str 
 # SMILES -> ECFP + every column that has C++, in one place
 # ------------------------------------------------------------------------------------------
 
-def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: int = 3,
+def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: int = 4,
                             threads: int = 0, fingerprint: bool = True,
                             fp_size: int = 2048, optional=None, families=None, select=None,
                             errors_out=None):
@@ -359,7 +359,7 @@ def featurize_all_from_mols(mols: Sequence, batch_size: int = 4096, fp_radius: i
     return fp, X, ALL_COLUMNS
 
 
-def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int = 3,
+def featurize_all(smiles: Iterable[str], batch_size: int = 4096, fp_radius: int = 4,
                   fp_size: int = 2048, optional=None, threads: int = 0,
                   fingerprint: bool = True, families=None, select=None):
     """`featurize_all_from_mols` from SMILES. Unparseable input raises; see `featurize_blocks`."""
@@ -753,7 +753,7 @@ def _removed_kwarg(removed):
 
 
 def featurize(smiles: Iterable, *, columns="default", standardize=_UNSET, threads: int = 0,
-              fingerprint: bool = True, fp_radius: int = 3, fp_size: int = 2048,
+              fingerprint: bool = True, fp_radius: int = 4, fp_size: int = 2048,
               on_error: str = "nan", dtype=np.float64, batch_size: int = 4096,
               **removed) -> np.ndarray:
     """SMILES -> one ``(n_molecules, n_features)`` array. The entry point.

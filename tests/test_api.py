@@ -221,7 +221,7 @@ def test_fingerprint_is_on_by_default_and_the_bits_go_last():
 
 
 @pytest.mark.parametrize("size", [512, 2048])
-@pytest.mark.parametrize("radius", [2, 3])
+@pytest.mark.parametrize("radius", [2, 3, 4])
 def test_fp_radius_and_size_reach_the_fingerprint(size, radius):
     from rdkit import Chem
     from rdkit.Chem import rdFingerprintGenerator as rfg

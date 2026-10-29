@@ -134,7 +134,7 @@ Passing `"none"` explicitly is silent; omitting it warns.
 | `standardize` | `"none"`, warns if unset | what molecule the numbers describe |
 | `threads` | `0` | descriptor-block workers; `0` is one per hardware thread. Pass `1` when the caller is already parallel; it costs about 3x |
 | `fingerprint` | `True` | append `fp_size` ECFP bit columns after the descriptors, so descriptor indices do not shift when the flag changes. Off saves about 30 us/molecule that cannot be threaded |
-| `fp_radius` | `3` | ECFP radius |
+| `fp_radius` | `4` | ECFP radius. ECFP8 in diameter naming. Was `3` before 1.1.0 |
 | `fp_size` | `2048` | ECFP bits |
 | `on_error` | `"nan"` | a molecule that cannot be parsed **or cannot be featurized**: `"nan"` keeps the row and fills it, preserving alignment with the input; `"raise"` names the molecule and the reason; `"skip"` drops the row. Every molecule is isolated, so one failure never costs another its row |
 | `dtype` | `float64` | `float32` halves memory and is what the boosting libraries convert to internally |

@@ -58,28 +58,48 @@ how a representation silently becomes two different objects.
 | `standardize` | **none — REQUIRED** | section 3 |
 | `descriptors` | `"exact"` | section 4 |
 | `hume_blocks` | `True` | the five blocks are ~44 µs/mol of the ~195 µs C++ total; cheap enough that off-by-default would be a false economy |
-| `radius` | `3` | section 2.1 |
-| `bits` | `2048` | at r=3, folding to 2048 loses **2.3%** of distinct features to collisions (66.3 distinct/molecule, 64.7 on-bits). r=2 loses 1.8%. Widening buys 2% of features for 2× the memory |
+| `radius` | `4` | section 2.1 |
+| `bits` | `2048` | at r=4, folding to 2048 loses **1.85%** of distinct environments to collisions; 4096 bits would cut that to 0.71% for 2× the memory, against a loss that is already the smaller of the two (section 2.1) |
 | `counts` | `False` (binary) | **OPEN** — section 2.2 |
 | `dtype` | `"float32"` | what every downstream consumer already uses (`bench.npz` is float32; our own modules return float32). float64 doubles memory for precision nothing reads |
 | `on_error` | `"nan"` | a billion-molecule run must not die on one bad SMILES, and must not silently shorten its output either — `"skip"` desynchronises the caller's row indexing unless they are careful |
 | `n_jobs` | `-1` | |
 | `spec` | `"v1"` | section 5 |
 
-### 2.1 Why radius 3
+### 2.1 Why radius 4
 
-Measured, not inherited:
+A folded Morgan fingerprint loses information in exactly two ways, and both are measured in
+`paper/radius_choice.tex` over 20,000 molecules: **truncation**, the fraction of the WL-1 colour
+partition still unresolved after r rounds, and **collision**, the fraction of distinct
+environments that share a bit after folding.
 
-* **Sensitivity** (`figures/build/fig_a.csv`, matched molecular pairs): r=3 responds more strongly
-  than r=2 on **6 of 10** chemistry-edit modes, median ratio **1.129**. Largest gains are
-  topological — ring contraction 1.53×, halogen swap 1.23×, regioisomer 1.20×, scaffold hop 1.16×
-  — which is what a wider radius should see. It loses slightly on protonation (0.93) and E/Z
-  flip (0.95).
-* **Both notation controls stay at exactly 0.000.** The extra radius buys chemistry without
-  buying notation artefacts, which is the failure that would have disqualified it.
-* **Cost is 1.28×**: 26.25 µs/mol against 20.57, i.e. **+5.68 µs** — about 2% of the pipeline.
-  Measured back-to-back and alternating on a contended machine, so the ratio is trustworthy and
-  the absolutes are not.
+| r | truncation | WL-stable | collision @ 2048 |
+|---:|---:|---:|---:|
+| 2 | 7.75% | 52.9% | 1.34% |
+| 3 | 3.23% | 80.0% | 1.61% |
+| **4** | **1.63%** | **90.6%** | **1.85%** |
+| 5 | 0.87% | 95.6% | 2.02% |
+
+The two run in opposite directions, which is what makes the radius a trade-off rather than a
+convention — and **r = 4 is where they cross.** At r=3 truncation is still 2.0× the collision
+loss, so the representation is leaving resolution on the table that 2,048 bits can still afford;
+at r=4 the two are within 0.22 points (0.88×), and from r=5 on collision is the dominant loss
+while 95.6% of molecules are already fully refined, so the extra radius buys distinctions most
+molecules do not have with bits that are no longer spare. The crossover is a stopping rule that
+does not need a threshold chosen by hand.
+
+**It costs 1.17×**: 19.35 µs/mol against 16.59 at r=3, i.e. **+2.76 µs** — under 2% of the
+pipeline. Measured alternating back-to-back on a contended machine, so the ratio is trustworthy
+and the absolutes are not; the same method reproduces the 1.28× for r=2 → r=3 quoted below.
+
+**This is a representational argument, and downstream it costs a little.** Paired over 101
+(column set x dataset) cells with every non-HUME arm held bit-identical, r=4 is *worse* than r=3
+by a median of **+0.00253** error units, worse on **68 of 101**, 95% CI [+0.00139, +0.00394],
+Wilcoxon p = 0.0003. That is 2.6% of the spread across ten arms on a typical dataset but about
+45% of a typical gap between neighbouring arms, so it is small and it is real, not noise. r=4 is
+preferred because it carries more of the WL-1 colouring for the same 2,048 bits; it does not
+predict better, and the trade is stated rather than hidden. See the 1.1.0 entry in
+`CHANGELOG.md`.
 
 **Why r=2 became the standard, and why that reasoning does not apply here.** ECFP4 means
 *diameter* 4, i.e. radius 2 (Rogers & Hahn, 2010). It became the default on **similarity-search**
