@@ -114,13 +114,19 @@ N_AMPC = 1_468_863_655
 
 #: ARMS THAT ARE MEASURED BUT NOT DRAWN, each with the reason, because a silently dropped arm
 #: and a missing one look identical. Everything here still reaches the CSV.
-EXCLUDE = {"hume_r2": "radius ablation, not an arm of the comparison"}
+#:
+#: EMPTY ON PURPOSE. hume_r2 was in here as "the radius ablation", and that was a judgement made
+#: against invented numbers. The radius is a live question -- 1.1.0 moves the default to r=4 and
+#: `paper/radius_choice.tex` still argues r=3 -- so how r=2 behaves on a billion-molecule screen
+#: is a result to look at, not an ablation to tuck into a CSV. Put an arm back in here only once
+#: its real numbers say it adds nothing.
+EXCLUDE: dict[str, str] = {}
 
 #: THE TWO PANELS: one metric, two test populations. Sharing the y-axis is the point -- see the
 #: module docstring.
 PANELS = (
-    dict(key="recovery_0.01pct", title="all test molecules"),
-    dict(key="recovery_0.01pct_scaffold", title="scaffold-split from training"),
+    dict(key="recovery_0.01pct", title="All test molecules"),
+    dict(key="recovery_0.01pct_scaffold", title="Scaffold-split from training"),
 )
 YLABEL = "recovery of the true top 0.01%  (%, ↑ better)"
 
@@ -237,11 +243,15 @@ def main() -> None:
     # X-LIMITS ONCE, SHARED, AND DESCENDING. Descending limits are the inversion: cheap on the
     # right, expensive on the left, so best is the top-right corner. Both panels get the same
     # limits because cost is a property of the featurization, not of the test population.
-    x_cheap = float(xs.min()) / 1.5
-    x_dear = float(xs.max()) * 1.5
-    for i, lb in enumerate(lower):
-        if lb:                                   # the arrow reaches 2x its own point
-            x_dear = max(x_dear, float(xs[i]) * 2.6)
+    #
+    # LINEAR, AND ANCHORED AT ZERO (Leif). A log axis spreads the cheap arms out, but it also
+    # flatters them: it makes a 20x cost difference look like a short step, which is the
+    # opposite of what this plate is for. On a linear axis anchored at zero, the distance from
+    # the right edge IS the cost, and an arm that costs twenty times another sits twenty times
+    # further out. The crowding that produces at the cheap end is not a drawing fault -- it is
+    # the finding, and it is why the labels are placed rather than left to fall where they may.
+    x_cheap = 0.0
+    x_dear = float(xs.max()) * 1.12
     # ONE Y-RANGE FOR BOTH PANELS, computed before either is drawn. The axes are shared, so the
     # last set_ylim would otherwise win for both and crop the other panel's points off the plate
     # -- and a shared range is what makes the left-to-right drop readable as a distance.
@@ -251,12 +261,15 @@ def main() -> None:
     y_bot, y_top = min(vals), max(vals)
     y_pad = 0.10 * (y_top - y_bot) if y_top > y_bot else max(abs(y_top), 1.0) * 0.1
 
-    # The two cheapest arms sit against the right frame, so their names go to the LEFT of them.
-    cut = float(np.sort(xs)[1]) if xs.size > 2 else float(xs.max())
-    on_left = [float(x) <= cut for x in xs]
+    # WHICH SIDE EACH NAME GOES ON, decided by where the marker sits in the panel rather than
+    # by how cheap the arm is. A name hangs roughly half an inch off its point, so a marker in
+    # the right fifth of the panel has no room on its right -- the frame is there. By rank, the
+    # third-cheapest arm kept its name on the right and pushed it straight through the frame.
+    span = x_dear - x_cheap
+    on_left = [(x_dear - float(x)) / span > 0.78 for x in xs]
 
     fig = plt.figure(figsize=(STYLE["col2"], 3.05))
-    gs = fig.add_gridspec(1, len(PANELS), wspace=0.09, left=0.085, right=0.99,
+    gs = fig.add_gridspec(1, len(PANELS), wspace=0.26, left=0.105, right=0.995,
                           top=0.87, bottom=0.175)
     tags = "abcdefgh"
     ax0, frontiers = None, {}
@@ -318,29 +331,43 @@ def main() -> None:
             if lower[i]:
                 # "AT LEAST THIS EXPENSIVE", so the arrow points toward higher cost -- which on
                 # this inverted axis is leftward on the page.
-                ax.annotate("", xy=(xs[i] * 2.0, ys[i]), xytext=(xs[i] * 1.12, ys[i]),
-                            arrowprops=dict(arrowstyle="-|>", lw=STYLE["lw_thin"],
-                                            color=STYLE["ink"], shrinkA=0, shrinkB=0), zorder=4)
+                # Drawn with a DISPLAY-space offset, not a multiple of the cost, so it is the
+                # same length whatever the axis scale is doing. The head sits to the page-left
+                # of the marker, which on this inverted axis means "further out, toward more
+                # expensive". Tail at the marker, head 22 pt out.
+                ax.annotate("", xy=(xs[i], ys[i]), xytext=(-22, 0),
+                            textcoords="offset points",
+                            arrowprops=dict(arrowstyle="<|-", lw=STYLE["lw_thin"],
+                                            color=STYLE["ink"], shrinkA=0, shrinkB=4), zorder=4)
 
-        ax.set_xscale("log")
         ax.set_xlim(x_dear, x_cheap)                 # descending = inverted = cheap on the right
         ax.set_ylim(y_bot - y_pad, y_top + y_pad)
         _label_points(ax, xs, ys, keys, on_left)
         ax.grid(axis="both")
-        if p_i == 0:
-            ax.set_ylabel(YLABEL, fontsize=FS["label"])
-        else:
-            # Shared axis: the ticks are the same numbers as the left panel's, and repeating
-            # them is what makes a shared axis look like two independent ones.
-            ax.tick_params(labelleft=False)
+        # LABELLED AND TICKED ON BOTH PANELS (Leif), even though the scale is shared. The two
+        # panels are read as a pair and compared across the gutter, so a reader's eye arrives at
+        # the right-hand panel with no axis beside it and has to travel back across the plate to
+        # find out what the height means. Repeating the axis costs a little width and removes
+        # that trip. The scale itself stays shared -- that is what makes the drop measurable.
+        ax.set_ylabel(YLABEL, fontsize=FS["label"])
+        ax.tick_params(labelleft=True)
         title(ax, p["title"], pad=4)
-        ax.text(-0.05 if p_i else -0.17, 1.04, tags[p_i], transform=ax.transAxes,
+        ax.text(-0.17, 1.04, tags[p_i], transform=ax.transAxes,
                 fontsize=FS["panel_tag"], fontweight="bold", va="bottom", ha="right")
 
     # ONE x-label for the row, carrying the direction. The arrow is not decoration: an axis whose
     # numbers decrease to the right is read wrong without it.
-    fig.supxlabel(f"featurization + scoring cost ({box}) — µs / molecule, log"
-                  f"      cheaper →", fontsize=FS["label"], y=0.045)
+    # ONE x-label for the row: the unit, and the direction. Nothing else (Leif).
+    #
+    # The box type came off the axis for the reason figure C took it off its own -- the instance
+    # is an implementation detail of how the number was produced and belongs in the caption
+    # text, not on the plate. It is not lost: the loader REFUSES an axis that mixes hardware,
+    # which enforces what the label merely advertised, and the box is printed on every render
+    # and written into every row of the CSV.
+    #
+    # The arrow is not decoration. An axis whose numbers decrease to the right is read backwards
+    # without it.
+    fig.supxlabel("µs / molecule     cheaper →", fontsize=FS["label"], y=0.045)
     save(fig, STEM)
     plt.close(fig)
 
