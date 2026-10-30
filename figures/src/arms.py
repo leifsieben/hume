@@ -216,6 +216,24 @@ ARMS = {
     # THE ABLATION ARM. HUME with the columns wired after the deduplication masked out -- same
     # block, same model, same folds, so the gap between it and HUME_full is what they are worth.
     "hume_no_new": dict(label="HUME_no_new", family="hume", color=SHADES["hume"][4]),
+    # THE TWO ARMS OF THE LSD AmpC VIRTUAL SCREEN (figure E). Same column set as `hume`
+    # above -- the "full" block, 1,269 columns -- at the two fingerprint radii the screen
+    # contrasts, so the RADIUS is the only variable between them and the label has to carry it.
+    # Same reasoning that made Morgan r=3 and ECFP4/ECFP8 spell their radius out: the plate's
+    # argument is about radius, and a reader who cannot see it reads the pair as one arm drawn
+    # twice. `screen/arms.py` passes it explicitly (`_hume_block(..., fp_radius=N)`), so these
+    # keys mean a measured radius rather than whatever the installed package defaults to.
+    #
+    # SHADES [0] AND [2], NOT [0] AND [1]. The two sit adjacent on every panel of figure E and
+    # the file's own rule is that adjacency sets the shade step, not ARM_ORDER -- #0B5C4A beside
+    # #1F7A5E is two dark blue-greens a step apart, which is the hazard the Morgan r=3 note
+    # describes. r=4 takes the darkest step because it is what 1.1.0 ships as the default.
+    #
+    # These shades are also HUME_full's and HUME_small's in figures C and D. That is the
+    # module's standing convention (hume_core shares [1] with hume_622) and it is safe here for
+    # the stated reason: no figure draws the widths and the screen arms together.
+    "hume_r4": dict(label="HUME r=4", family="hume", color=SHADES["hume"][0]),
+    "hume_r2": dict(label="HUME r=2", family="hume", color=SHADES["hume"][2]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
     # string. Gray, like every other control in the set.
@@ -337,6 +355,7 @@ ARMS = {
 ARM_ORDER = ["ecfp", "r3cfp", "r4cfp", "ecfp_all_desc", "ecfp_rdkit_desc", "ecfp_mordred_desc",
              "desc_rdkit", "desc_mordred", "desc",
              "hume", "hume_622", "hume_408", "hume_256", "hume_no_new",
+             "hume_r4", "hume_r2",
              "hume_core", "hume_core_predict", "hume_core_custom", "hume_core_custom_predict",
              "hume_predict_ridge", "hume_predict_gnn", "hume_1024", "hume_counts",
              # GRAPH BEFORE STRING (Leif 2026-08-27: "all ECFP on the very left, then all
@@ -371,6 +390,7 @@ SHORT_LABEL = {
     "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
     "hume": "HUME_full", "hume_622": "HUME_default", "hume_408": "HUME_small",
     "hume_256": "HUME_minimal", "hume_no_new": "HUME_no_new",
+    "hume_r4": "HUME r=4", "hume_r2": "HUME r=2",
     "minimol": "MiniMol",
     "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",
