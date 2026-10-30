@@ -37,11 +37,28 @@ HUME r=2 IS NOT DRAWN (see EXCLUDE). It is the radius ablation, not an arm of th
 and six points on a scatter with no legend is where the labels start fighting. Its numbers are
 in the CSV beside the figure, so nothing is lost -- only the plate is quieter.
 
-MINIMOL'S X IS A LOWER BOUND, NOT A MEASUREMENT. Its throughput is not flat in N
-(`docs/plans/SHOICHET_SCREEN.md`: 2.10x over the measured range, where every other arm is within
-1.07x), so its true cost lies somewhere further left. An arm whose cost entry carries
-`"lower_bound": true` is drawn with an arrow pointing that way and must be described so in the
-caption. A plain marker would put a number on the axis the measurement does not support.
+EVERY ARM'S X IS ONE MEASURED NUMBER, AND NONE OF THEM IS A BOUND. An earlier version of this
+plate drew MiniMol with an arrow meaning "at least this expensive", on the plan's statement that
+its throughput is not flat in N. The number behind that is real -- MiniMol's cost per molecule
+moves 2.10x across the measured decades where every other arm moves under 1.08x -- but the
+direction was read backwards. From results/scale/c7i.4xlarge_cpu.json:
+
+    n = 10,000      3,243.9 us/mol
+    n = 100,000     1,730.8 us/mol
+    n = 1,000,000   1,544.7 us/mol
+
+It gets CHEAPER per molecule as N grows, because a fixed startup cost -- model load into a
+separate interpreter -- amortizes. The last two points fit 20.7 s of overhead plus a marginal
+1,524 us/mol, so the 1,544.7 measured at a million molecules is 1.4% above the asymptote and is
+an UPPER bound on the cost at a hundred million, not a lower one. An arrow pointing toward more
+expensive was the wrong way round, and a plate with no legend cannot carry a symbol that needs a
+paragraph. One measured number per arm, taken at the largest N measured.
+
+Note this also means figure D's `is_flat()` gate drops MiniMol for a reason that is not the one
+the gate is checking for. The gate asks whether us/mol moves across decades, in order to license
+extrapolating to 1e9; an arm whose cost is still FALLING and converging extrapolates more
+safely than a flat one, not less. That is figure D's business, not this plate's, but it should
+not be left unexamined.
 
 THE WHISKER IS THE OBSERVED RANGE OVER FIVE REPLICATES, AND IT IS NOT A CONFIDENCE INTERVAL.
 Figure C draws a percentile-bootstrap CI over datasets; there is one dataset here and five
@@ -73,7 +90,13 @@ and fusing them would let one invent the other.
 
   2. `results/figures/figE/cost.json`, the measured cost axis, in figure C's shape:
 
-        {<arm>: {"us_per_mol": float, "measured_on": str, "lower_bound": bool (optional)}}
+        {<arm>: {"us_per_mol": float, "measured_on": str}}
+
+     Once phase 2 has run, build this from its own manifests ({arm}_preds_*.json, which carry
+     us_per_mol per shard) rather than from the projected RATES table in
+     scripts/launch_screen2.sh. Phase 2 measures every arm over the same 100,000,000 molecules
+     on the same box type, which is a better cost axis than any benchmark: it is the cost of
+     the very run the y-axis reports.
 
      `measured_on` is required and the loader REFUSES an axis that mixes hardware:
      microseconds per molecule on a 16-vCPU CPU box and on a GPU box are not the same quantity,
@@ -154,7 +177,7 @@ def load() -> tuple[dict, dict]:
         raise SystemExit(
             f"figure E: no measured cost axis at {cost}.\n"
             f"  Cost is the x-axis, so an arm without one cannot be placed. The file is\n"
-            f"  {{<arm>: {{\"us_per_mol\": float, \"measured_on\": str, \"lower_bound\": bool}}}};\n"
+            f"  {{<arm>: {{\"us_per_mol\": float, \"measured_on\": str}}}};\n"
             f"  see this file's docstring. Every value must be measured on one machine, not\n"
             f"  quoted from a model's own paper.")
     d = json.loads(perf.read_text())
@@ -237,7 +260,6 @@ def main() -> None:
     d, cost = load()
     keys = A.order([a for a in d["arms"] if a not in EXCLUDE])
     xs = np.array([float(cost[a]["us_per_mol"]) for a in keys])
-    lower = [bool(cost[a].get("lower_bound", False)) for a in keys]
     box = cost[keys[0]]["measured_on"]
 
     # X-LIMITS ONCE, SHARED, AND DESCENDING. Descending limits are the inversion: cheap on the
@@ -328,17 +350,6 @@ def main() -> None:
                         fmt="o", ms=STYLE["marker_size"], color=face, ecolor=STYLE["ink"],
                         elinewidth=STYLE["lw_thin"], capsize=STYLE["cap_size"], zorder=5,
                         markeredgecolor=STYLE["ink"], markeredgewidth=0.7)
-            if lower[i]:
-                # "AT LEAST THIS EXPENSIVE", so the arrow points toward higher cost -- which on
-                # this inverted axis is leftward on the page.
-                # Drawn with a DISPLAY-space offset, not a multiple of the cost, so it is the
-                # same length whatever the axis scale is doing. The head sits to the page-left
-                # of the marker, which on this inverted axis means "further out, toward more
-                # expensive". Tail at the marker, head 22 pt out.
-                ax.annotate("", xy=(xs[i], ys[i]), xytext=(-22, 0),
-                            textcoords="offset points",
-                            arrowprops=dict(arrowstyle="<|-", lw=STYLE["lw_thin"],
-                                            color=STYLE["ink"], shrinkA=0, shrinkB=4), zorder=4)
 
         ax.set_xlim(x_dear, x_cheap)                 # descending = inverted = cheap on the right
         ax.set_ylim(y_bot - y_pad, y_top + y_pad)
@@ -378,7 +389,7 @@ def main() -> None:
     build.mkdir(parents=True, exist_ok=True)
     with open(build / f"{STEM}.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["arm", "drawn", "us_per_mol", "cost_measured_on", "cost_is_lower_bound",
+        w.writerow(["arm", "drawn", "us_per_mol", "cost_measured_on",
                     "box_hours_full_ampc_library"]
                    + [f"{p['key']}_{f}" for p in PANELS
                       for f in ("mean", "sd", "min", "max", "on_frontier")]
@@ -387,7 +398,7 @@ def main() -> None:
             c = cost.get(a, {})
             us = float(c["us_per_mol"]) if "us_per_mol" in c else float("nan")
             row = [a, int(a not in EXCLUDE), f"{us:.2f}", c.get("measured_on", ""),
-                   int(bool(c.get("lower_bound", False))), f"{us * N_AMPC / 1e6 / 3600:.1f}"]
+                   f"{us * N_AMPC / 1e6 / 3600:.1f}"]
             for p in PANELS:
                 m = d["arms"][a].get("summary", {}).get(p["key"])
                 row += ([f"{m['mean']:.6f}", f"{m.get('sd', float('nan')):.6f}",
