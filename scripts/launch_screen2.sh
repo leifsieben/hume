@@ -75,13 +75,28 @@ Run scripts/stage_screen.sh before launching." >&2; exit 1; }
 fi
 
 # --- the plan, printed before anything is spent -----------------------------------------------
+# SHARD RANGE OVERRIDE, resolved here rather than at the launch loop so that DRY=1 describes the
+# job that would actually run. It defaults to the whole test set, which is what a first launch
+# wants. It exists because a relaunch usually does not: on 2026-10-30 the fleet hit the 256-vCPU
+# quota partway through chemeleon, leaving shards [188,246) unscored, and with no range the only
+# way to finish them was to re-score the 188 already in S3. Box counts scale with the span, so a
+# partial range still lands near TARGET_H per box instead of inheriting the full run's count.
+LO_SHARD="${LO_SHARD:-0}"
+HI_SHARD="${HI_SHARD:-$N_SHARDS}"
+SPAN=$(( HI_SHARD - LO_SHARD ))
+[ "$SPAN" -gt 0 ] || { echo "FATAL: empty shard range [$LO_SHARD,$HI_SHARD)" >&2; exit 1; }
+[ "$HI_SHARD" -le "$N_SHARDS" ] || { echo "FATAL: HI_SHARD $HI_SHARD > $N_SHARDS shards" >&2; exit 1; }
+[ "$LO_SHARD" -ge 0 ] || { echo "FATAL: negative LO_SHARD $LO_SHARD" >&2; exit 1; }
+[ "$SPAN" -eq "$N_SHARDS" ] || \
+  echo "shard range [$LO_SHARD,$HI_SHARD) -- $SPAN of $N_SHARDS shards"
 TOTAL_BOX_H=0; TOTAL_BOXES=0
 echo
 printf '%-18s %9s %10s %7s %9s\n' arm us/mol box-hours boxes h/box
 for ARM in $ARMS; do
   R=$(rate_of "$ARM")
   [ -n "$R" ] || { echo "FATAL: no measured rate for arm '$ARM'" >&2; exit 1; }
-  BH=$(awk -v r="$R" 'BEGIN{printf "%.2f", r*100000000/1e6/3600}')
+  BH=$(awk -v r="$R" -v f="$SPAN" -v n="$N_SHARDS" \
+       'BEGIN{printf "%.2f", r*100000000/1e6/3600*f/n}')
   NB="${BOXES:-$(awk -v b="$BH" -v t="$TARGET_H" 'BEGIN{n=int(b/t); if(b/t>n)n++; if(n<1)n=1; if(n>40)n=40; print n}')}"
   HPB=$(awk -v b="$BH" -v n="$NB" 'BEGIN{printf "%.1f", b/n}')
   printf '%-18s %9s %10s %7s %9s\n' "$ARM" "$R" "$BH" "$NB" "$HPB"
@@ -135,10 +150,11 @@ launch_one () {        # $1=arm $2=lo $3=hi
 echo
 for ARM in $ARMS; do
   R=$(rate_of "$ARM")
-  BH=$(awk -v r="$R" 'BEGIN{printf "%.4f", r*100000000/1e6/3600}')
+  BH=$(awk -v r="$R" -v f="$SPAN" -v n="$N_SHARDS" \
+       'BEGIN{printf "%.4f", r*100000000/1e6/3600*f/n}')
   NB="${BOXES:-$(awk -v b="$BH" -v t="$TARGET_H" 'BEGIN{n=int(b/t); if(b/t>n)n++; if(n<1)n=1; if(n>40)n=40; print n}')}"
   for ((b = 0; b < NB; b++)); do
-    L=$(( b * N_SHARDS / NB )); H=$(( (b + 1) * N_SHARDS / NB ))
+    L=$(( LO_SHARD + b * SPAN / NB )); H=$(( LO_SHARD + (b + 1) * SPAN / NB ))
     [ "$L" -lt "$H" ] || continue
     launch_one "$ARM" "$L" "$H" || exit 1
   done
