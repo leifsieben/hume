@@ -120,7 +120,14 @@ launch_one () {        # $1=arm $2=lo $3=hi
   # RunInstances refuse an earlier launch in this project.
   [ "$B" -le 16384 ] || { echo "FATAL: user-data $B base64 bytes > 16384" >&2; rm -f "$UD"; return 1; }
   # MARKET OUTERMOST: every AZ is tried on spot before any on-demand is considered.
-  for MARKET in spot ondemand; do
+  #
+  # MARKETS OVERRIDES THAT ORDER, AND EXISTS BECAUSE SPOT CAN LOSE A RACE. On 2026-10-30 this
+  # region reclaimed c7i/m7i 4xlarge spot faster than the fleet could be relaunched -- 20
+  # reclaims in under two hours, with minimol stuck at 16 of 246 shards across three launches.
+  # Spot is right for the bulk of a run and wrong for its tail, when what is left is small, the
+  # deadline is close, and another reclaim costs more than the instance does. MARKETS="ondemand"
+  # skips spot entirely; the default is unchanged.
+  for MARKET in ${MARKETS:-spot ondemand}; do
     for T in $TYPES; do
       for S in $SUBNETS; do
         EXTRA=()
