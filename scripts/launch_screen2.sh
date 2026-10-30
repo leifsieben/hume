@@ -142,7 +142,14 @@ launch_one () {        # $1=arm $2=lo $3=hi
           --query 'Instances[0].InstanceId' --output text 2>&1)
         case "$OUT" in
           i-*) printf '  %s  %-17s shards [%3d,%3d)  %-14s %s\n' "$OUT" "$ARM" "$LO" "$HI" "$T" "$MARKET"
-               echo "$OUT $ARM $LO $HI $MARKET" >> .screen2_instances
+               # THE INSTANCE TYPE IS RECORDED HERE AND NOWHERE ELSE, which is why this
+               # line carries it. Phase 2's cost axis is us/molecule on a named box, but the
+               # type lives only in EC2, and `describe-instances` drops a terminated instance
+               # after about an hour -- so by the time phase 3 builds the axis, the hardware
+               # every number came from is unrecoverable. It was, on 2026-10-30: the fleet ran
+               # a c7i/c6i/m7i/m6i mix and `measured_on` had to be written as "mixed" because
+               # nothing on disk could say which box scored which shard.
+               echo "$OUT $ARM $LO $HI $MARKET $T" >> .screen2_instances
                rm -f "$UD"; return 0 ;;
           *InsufficientInstanceCapacity*|*Unsupported*) ;;
           *) echo "  $ARM $T/$S/$MARKET refused: $OUT" ;;

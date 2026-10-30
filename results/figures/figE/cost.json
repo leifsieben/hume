@@ -1,0 +1,44 @@
+{
+ "chemberta_mtr": {
+  "us_per_mol": 371.55,
+  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "n_shards_timed": 132,
+  "spread_max_over_min": 1.135,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+ },
+ "chemeleon": {
+  "us_per_mol": 2694.49,
+  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "n_shards_timed": 225,
+  "spread_max_over_min": 1.414,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+ },
+ "ecfp_rdkit_desc": {
+  "us_per_mol": 733.05,
+  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "n_shards_timed": 48,
+  "spread_max_over_min": 1.179,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+ },
+ "hume_r2": {
+  "us_per_mol": 152.7,
+  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "n_shards_timed": 246,
+  "spread_max_over_min": 1.358,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+ },
+ "hume_r4": {
+  "us_per_mol": 152.55,
+  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "n_shards_timed": 246,
+  "spread_max_over_min": 1.158,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+ },
+ "minimol": {
+  "us_per_mol": 1855.13,
+  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "n_shards_timed": 170,
+  "spread_max_over_min": 1.313,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+ }
+}
