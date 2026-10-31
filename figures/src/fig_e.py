@@ -123,7 +123,7 @@ import arms as A                                                      # noqa: E4
 # on the frontier. fig_c computes it and does not currently draw it, so this is the only place
 # it reaches a reader; whether fig_c should draw it too is a separate question.
 from fig_c import pareto                                              # noqa: E402
-from style import FS, STYLE, check_font, mark_empty, save, title      # noqa: E402
+from style import FS, STYLE, check_font, save, title                  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 PERF = ROOT / "results" / "screen_ampc.json"
@@ -290,30 +290,32 @@ def main() -> None:
     span = x_dear - x_cheap
     on_left = [(x_dear - float(x)) / span > 0.78 for x in xs]
 
+    # WHICH PANELS HAVE DATA, decided before the layout exists. A panel whose metric no arm
+    # reports is dropped from the grid rather than drawn as an empty cell: with only two panels
+    # an empty one is half the plate, and a reader's eye spends as long on the hole as on the
+    # data. Figure C keeps and marks its empty cells because it has four and the grid shape
+    # itself carries meaning; this plate has no such grid to preserve. What was dropped is said
+    # on the console, because a silently missing panel and a metric nobody computed look alike.
+    panels = [pp for pp in PANELS
+              if any(pp["key"] in d["arms"][a].get("summary", {}) for a in keys)]
+    for pp in PANELS:
+        if pp not in panels:
+            print(f"  panel {pp['key']!r} NOT DRAWN: no arm reports it")
+    if not panels:
+        raise SystemExit("figure E: no arm reports any plotted metric.")
+
     fig = plt.figure(figsize=(STYLE["col2"], 3.05))
-    gs = fig.add_gridspec(1, len(PANELS), wspace=0.26, left=0.105, right=0.995,
+    gs = fig.add_gridspec(1, len(panels), wspace=0.26,
+                          left=0.105 if len(panels) > 1 else 0.075,
+                          right=0.995 if len(panels) > 1 else 0.96,
                           top=0.87, bottom=0.175)
     tags = "abcdefgh"
     ax0, frontiers = None, {}
-    for p_i, p in enumerate(PANELS):
+    for p_i, p in enumerate(panels):
         # sharey, because the left-to-right drop IS the measurement the pair reports.
         ax = fig.add_subplot(gs[0, p_i], sharey=ax0)
         ax0 = ax0 or ax
         have = [a for a in keys if p["key"] in d["arms"][a].get("summary", {})]
-        if not have:
-            # Loud skip, with the reason written into the cell -- the same handling figure C
-            # gives a task that has not been run. A blank framed panel and a panel whose arms
-            # all scored zero look identical on paper.
-            print(f"  SKIPPING panel {p['key']!r}: no arm reports it")
-            mark_empty(ax, f"{p['title']}: not measured yet")
-            ax.text(0.5, 0.5, f"{p['title']}\n(not measured yet)", transform=ax.transAxes,
-                    ha="center", va="center", fontsize=FS["annot"], color=STYLE["mute"],
-                    style="italic")
-            ax.set_xticks([]); ax.set_yticks([])
-            for sp in ax.spines.values():
-                sp.set_visible(False)
-            title(ax, p["title"], pad=4)
-            continue
         if len(have) != len(keys):
             raise SystemExit(
                 f"figure E: {p['key']!r} exists for {have} but not for "
@@ -329,7 +331,12 @@ def main() -> None:
         # better, so the curve is flat and then steps. Computed on costs and recoveries, not on
         # screen positions, so the axis inversion cannot change which arms are on it.
         front = pareto(list(xs), list(ys))
-        if len(front) > 1:
+        # A SINGLE FRONTIER POINT IS A REAL OUTCOME, NOT AN EMPTY ONE. If one arm is both the
+        # cheapest and the best it dominates everything, the staircase has one tread, and the
+        # frontier is the horizontal line through it -- at any budget above that arm's cost,
+        # nothing measured here does better. The guard was `> 1`, which drew nothing in exactly
+        # the case the plate most needs to show, and the AmpC screen landed in it.
+        if front:
             # EXTENDED LEFTWARD ONLY, to the expensive edge of the panel. That segment states
             # something the measurements support -- above the best arm's cost, nothing measured
             # here does better -- and it turns a two-point frontier from a stub into the
@@ -363,8 +370,11 @@ def main() -> None:
         ax.set_ylabel(YLABEL, fontsize=FS["label"])
         ax.tick_params(labelleft=True)
         title(ax, p["title"], pad=4)
-        ax.text(-0.17, 1.04, tags[p_i], transform=ax.transAxes,
-                fontsize=FS["panel_tag"], fontweight="bold", va="bottom", ha="right")
+        # NO PANEL TAG ON A ONE-PANEL PLATE. The letter exists so a caption can say "(b)";
+        # with a single panel there is nothing to disambiguate and it reads as a stray glyph.
+        if len(panels) > 1:
+            ax.text(-0.17, 1.04, tags[p_i], transform=ax.transAxes,
+                    fontsize=FS["panel_tag"], fontweight="bold", va="bottom", ha="right")
 
     # ONE x-label for the row, carrying the direction. The arrow is not decoration: an axis whose
     # numbers decrease to the right is read wrong without it.
