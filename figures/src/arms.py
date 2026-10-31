@@ -167,16 +167,21 @@ SHADES = {
 # reads a CSV or a results file has to know this happened.
 ARMS = {
     # ---- classical featurizations (amber) ---------------------------------------------------
+    # EVERY ECFP ARM STATES ITS RADIUS (Leif 2026-10-31, "use ECFP4+RDKit to be extra clear").
+    # The bare arm said "ECFP4" while the three composites said only "ECFP", although all four
+    # are built on the SAME radius-2 (diameter-4) Morgan fingerprint. Figures B and C draw the
+    # bare arm beside a composite, so a reader had no way to see that the fingerprint is held
+    # fixed and only the descriptor block changes -- which is the entire point of that group.
     "ecfp": dict(label="ECFP4", family="anchor", color=SHADES["anchor"][0]),
     "r3cfp": dict(label="Morgan r=3", family="anchor", color=SHADES["anchor"][1]),
     # r=4 extends the radius series. It sits between r=2 and r=3 in the amber family rather than
     # taking a new color: the three are one variable, and Figure A puts them adjacent in every
     # panel, so they must read as a series and not as three unrelated arms.
     "r4cfp": dict(label="ECFP8", family="anchor", color=SHADES["anchor"][5]),
-    "ecfp_all_desc": dict(label="ECFP + all desc", family="anchor",
+    "ecfp_all_desc": dict(label="ECFP4 + all desc", family="anchor",
                           color=SHADES["anchor"][2]),
-    "ecfp_rdkit_desc": dict(label="ECFP + RDKit", family="anchor", color=SHADES["anchor"][3]),
-    "ecfp_mordred_desc": dict(label="ECFP + Mordred", family="anchor",
+    "ecfp_rdkit_desc": dict(label="ECFP4 + RDKit", family="anchor", color=SHADES["anchor"][3]),
+    "ecfp_mordred_desc": dict(label="ECFP4 + Mordred", family="anchor",
                               color=SHADES["anchor"][4]),
     # Its OWN family -- no fingerprint in this arm. See the note above FAMILY_COLORS.
     "desc": dict(label="RDKit + Mordred", family="desc", color=SHADES["desc"][0]),
@@ -232,7 +237,15 @@ ARMS = {
     # These shades are also HUME_full's and HUME_small's in figures C and D. That is the
     # module's standing convention (hume_core shares [1] with hume_622) and it is safe here for
     # the stated reason: no figure draws the widths and the screen arms together.
-    "hume_r4": dict(label="HUME r=4", family="hume", color=SHADES["hume"][0]),
+    #
+    # r=4 IS LABELLED PLAIN "HUME", WITH NO RADIUS (Leif 2026-10-31). 1.1.0 ships r=4 as the
+    # default, so on the screen plate the radius is no longer a qualifier a reader needs -- it is
+    # just what HUME is. r=2 keeps its radius because it only ever appears as the ablation.
+    # THE HAZARD THIS CREATES: `hume` (figures B/C/D) displays as "HUME_full" and `hume_r4` now
+    # displays as "HUME", which are two different arms with near-identical names. They are never
+    # drawn together today -- `hume_r4` exists only for the screen -- and they must not be: see
+    # the HUME_full note above, which this is the mirror image of.
+    "hume_r4": dict(label="HUME", family="hume", color=SHADES["hume"][0]),
     "hume_r2": dict(label="HUME r=2", family="hume", color=SHADES["hume"][2]),
     # NOT A REPRESENTATION -- a difficulty floor. Character 1- and 2-gram counts of the SMILES,
     # no chemistry at all, so whatever it scores on an edit is free to any model that reads the
@@ -386,11 +399,11 @@ SHORT_LABEL = {
     # retained, no fingerprint. It is the same descriptor block as `ecfp_all_desc` minus the
     # ECFP, so the two are named consistently rather than one saying "descriptors" and the other
     # "all desc" for the identical set.
-    "desc": "RDKit + Mordred", "ecfp_rdkit_desc": "ECFP + RDKit",
-    "ecfp_mordred_desc": "ECFP + Mordred", "ecfp_all_desc": "ECFP + all desc",
+    "desc": "RDKit + Mordred", "ecfp_rdkit_desc": "ECFP4 + RDKit",
+    "ecfp_mordred_desc": "ECFP4 + Mordred", "ecfp_all_desc": "ECFP4 + all desc",
     "hume": "HUME_full", "hume_622": "HUME_default", "hume_408": "HUME_small",
     "hume_256": "HUME_minimal", "hume_no_new": "HUME_no_new",
-    "hume_r4": "HUME r=4", "hume_r2": "HUME r=2",
+    "hume_r4": "HUME", "hume_r2": "HUME r=2",      # see the ARMS entry on the dropped radius
     "minimol": "MiniMol",
     "chemeleon": "CheMeleon", "chemprop": "Chemprop",
     "chemberta_mtr": "ChemBERTa", "chemberta_mlm": "ChemBERTa", "molformer": "MoLFormer",

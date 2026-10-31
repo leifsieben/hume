@@ -1,72 +1,38 @@
-"""Fig A — can a model TELL TWO MOLECULES APART after one defined chemical change?
+"""Figure A — does one defined chemical change move the representation the SAME WAY every time?
 
-ONE script, ONE figure: figures/fig_a.pdf (panels a–n), plus figures/build/fig_a.csv as the
-durable numeric record.
+    .venv/bin/python research/figa_consistency.py   # measures -> results/figures/figA/consistency.json
+    .venv/bin/python figures/src/fig_a.py           # draws
 
-    python3 research/figa_resolution.py          # measures; writes results/figures/figA/resolution.json
-    python3 -m figures.fig_a            # draws
+THIS PLATE BECAME FIGURE A ON 2026-10-31 (Leif), taking the name from the XGBoost-AUC plate,
+which is now fig_a_old.py. It was written as the companion to that one -- identical layout,
+identical arms, identical ordering, one axis changed -- so the two can still be laid side by
+side and read as a single comparison. Nothing about either measurement changed in the rename,
+only the output stems.
 
-THE AXIS IS HELD-OUT AUC, NOT A DISTANCE (Leif 2026-08-28). Every bar is a supervised question
-asked of the representation itself: label the pre-edit molecule 0 and the post-edit molecule 1,
-fit XGBoost on 80% of the pairs, and score ROC-AUC on the 20% it never saw. 1.0 means the edit
-leaves a signature the model can find and generalise; 0.5 means it does not.
+WHY THE DIRECTION AXIS LEADS. The metric is the fraction of pairs whose difference vector agrees
+in DIRECTION with the mean of all the others: 0.5 for random directions in any dimension, and it
+needs no background corpus, no threshold and no estimator. The AUC plate answers "can a
+supervised head find the edit", which is a question about the head as much as the
+representation; this one answers "does the edit mean the same thing twice", which is the
+property a downstream model actually consumes. See research/figa_consistency.py for the metric
+and for what it gives up against the AUC.
 
-WHY THIS REPLACED THE DISTANCE RATIO. The old axis was |dx|/sigma relative to swapping in a
-different compound of matched mass, and it had two defects that no amount of tuning removes.
-(i) It rewards MAGNITUDE, and magnitude is not resolution: a model can move a long way in a
-direction that is different for every pair, which is unusable downstream and scored well. (ii)
-For a continuous embedding the "different compound" denominator IS a random background pair, so
-any background-calibrated threshold drives the reference cell to ~0 by construction. AUC has no
-free parameter, is scale-free, and asks the question a tree ensemble actually asks: is there a
-coordinate, or a combination, that separates A from A' CONSISTENTLY.
+TWO DIFFERENCES FROM fig_a_old.py, both deliberate.
 
-THE AXIS STARTS AT 0.5 BECAUSE 0.5 IS THE NULL. Below-chance is noise around it, not a
-direction, so cells at or under 0.5 are drawn at the floor and labeled. The null is NOT shaded
-(Leif 2026-08-28) -- a band across every panel reads as a confidence interval on the bars, which
-it is not.
+1. `protonate` (the proton moved between two basic nitrogens) is replaced by `protonate_neutral`
+   (the neutral base against its conjugate acid). That pair was avoided on the AUC plate because
+   every arm AND the character-level control scored 1.000 there -- `+` is a literal character in
+   SMILES, so the panel saturated and could not rank. Under a direction axis saturation is no
+   longer the failure mode, and the question becomes the one that matters for binding.
 
-*** THREE DIFFERENT THINGS LOOK LIKE "NO BAR", AND THE CAPTION MUST SEPARATE THEM. ***
-(raised by the CLIMB figure session, 2026-08-28, and it is the most likely misreading here)
-  1. NO CONSISTENT SIGNATURE. A class-A panel at 0.5: the edit does move the embedding, but not
-     in a direction that generalises to a held-out pair. This is the failure the figure is for.
-  2. CANNOT POSSIBLY DIFFER. The two vectors are bitwise identical, so there is nothing to
-     learn -- Morgan invariants do not carry isotope, so ECFP4 is identical on 969 of 1,000
-     13-C pairs. Marked with a triple bar on the plate; it is a fact about the representation,
-     not a score it earned.
-  3. THE QUESTION IS ILL-POSED. In the two notation controls the "edit" is not a chemical change
-     at all, so "is this the A or the B of its pair" has no answer that transfers. 0.5 is the
-     CORRECT result there and a HIGH bar is the failure. Tinted, for that reason.
-*** TWO PANELS ARE FREE TO A MODEL THAT READS THE STRING, AND THE CAPTION MUST SAY WHICH. ***
-`isotope_13c` scores 1.000 for the `notation` control -- a character n-gram counter with no
-chemistry at all -- because an isotope IS a token in SMILES and no rewriting removes it. [12C]
-against [13C] was measured, and so was moving the 13C between an aromatic and an sp3 carbon;
-both still read 1.000. That panel is therefore a test OF THE GRAPH AND DESCRIPTOR ARMS, which
-cannot see a character: Morgan is degenerate on every pair, HUME reads 0.62 through exact mass,
-and a CLM's high score there is evidence of tokenisation, not of chemistry.
+2. The whiskers are a percentile bootstrap over PAIRS, not a spread over split seeds: there is no
+   split and no seed, so there is nothing to average over. `n_seeds` is therefore not checked.
 
-`protonate` had the same defect and was FIXED rather than caveated, by applying the same
-move-don't-create rule: both members are now cations of the same formula differing only in which
-basic nitrogen carries the proton. 969 of 1,000 pairs have an identical character multiset and
-the notation floor falls from 1.000 to 0.918. Every arm used to score exactly 1.000 there, which
-is the mirror of the "nobody clears chance" failure -- a panel where everybody saturates ranks
-nothing.
-
-Measured on our own set, the same holds for a matched-mass substitution: the molecules are as
-different as two molecules get (mean Tanimoto ~0.1) and every arm still scores ~0.50, because
-which of two unrelated compounds is called "A" is arbitrary. That is reported in the printed
-summary and the CSV as the empirical null, and it is deliberately NOT a panel -- it measures the
-metric, not a representation (Leif 2026-08-28: "drop it and replace it with another change we
-could measure"), and CH2 homologation took its cell.
-
-ERROR BARS ARE OVER FIVE SPLIT SEEDS, and they earn their place: CLIMB measured 0.833 +/- 0.020
-across seeds on one cell, so a single split was worth about +/-0.04 -- wider than several gaps
-this figure is asked to support.
-
-SPLITS ARE BY CONNECTED COMPONENT, NOT BY PAIR. 32 molecules in our set appear in more than one
-pair; a plain 80/20 over pairs can then put a molecule in train and in test, and the leak RAISES
-AUC, so the failure mode looks like a better result. research/figa_resolution.py groups pairs under
-"shares a molecule" and assigns whole components, with an assertion that the two sides are
-disjoint. Largest component is 2 pairs (0.2%) in every mode, so the split stays clean.
+READ THE NULL PANELS FIRST. The language models score ~1.0 on `null_enumerate` and
+`null_kekulize` -- a consistent direction for a change that is chemically nothing -- while every
+graph-based arm is pinned at 0.5 because its difference vector is exactly zero. Any average taken
+across all fourteen panels hands the string readers a free quarter of a point. The chemical
+panels are the comparison; the null panels are the reason to distrust a summary statistic.
 """
 from __future__ import annotations
 
@@ -90,11 +56,11 @@ from style import (FS, STYLE, TINT_CONTROL, check_font,                      # n
 check_font()
 ROOT = Path(__file__).resolve().parents[2]
 FIGA = ROOT / "results" / "figures" / "figA"
-RES = FIGA / "resolution.json"
+RES = FIGA / "consistency.json"
 INK = STYLE["ink"]
 
 #: Scored but NOT DRAWN (Leif 2026-08-29). Every one is still measured, still in
-#: resolution.json and still in figures/build/fig_a.csv -- they are dropped from the PLATE only.
+#: consistency.json and still in figures/build/fig_a.csv -- dropped from the PLATE only.
 #:   notation       a difficulty floor, not a representation; it belongs in the audit table
 #:   chemberta_mlm  the MLM/MTR pair is a pretraining ablation for the text, not for this plate
 NOT_DRAWN = {"notation", "chemberta_mlm"}
@@ -122,7 +88,7 @@ MODES = [
     ("stereo_flip",    "A", "Inverted\nstereocentre"),
     ("ez_flip",        "A", "Flipped E/Z\ndouble bond"),
     ("isotope_13c",    "A", "$^{12}$C→$^{13}$C,\ngraph unchanged"),
-    ("protonate",      "A", "Proton moved to\nanother amine"),
+    ("protonate_neutral", "A", "Neutral base vs\nconjugate acid"),
     ("halogen_swap",   "A", "Halogen\nswapped"),
     ("saturate",       "A", "C=C reduced\nto C–C"),
     ("null_enumerate", "B", "Re-written\nSMILES"),
@@ -143,16 +109,19 @@ NULL_MODE = "matched_mw"
 
 
 def load():
-    """-> (armlist, {arm: {mode: cell}}) from resolution.json.
+    """-> (armlist, {arm: {mode: cell}}) from consistency.json.
 
-    Nothing is recomputed here. The AUCs come from research/figa_resolution.py, which owns the split, the
-    leak assertion and the seeds; a figure that re-derived them could disagree with the record.
+    Nothing is recomputed here. The consistencies come from research/figa_consistency.py, which
+    owns the standardisation, the leave-one-out and the bootstrap; a figure that re-derived them
+    could disagree with the record. (These two sentences named figa_resolution.py and "the AUCs"
+    until 2026-10-31 -- left over from this file's life as the companion plate, and pointing a
+    reader at the scorer that writes the OTHER json.)
     """
     if not RES.exists():
-        raise SystemExit(f"fig_a: {RES} does not exist. Run `python3 research/figa_resolution.py` first --\n"
+        raise SystemExit(f"fig_a: {RES} does not exist. Run `python3 research/figa_consistency.py` first --\n"
                          f"       it embeds nothing, it only scores whatever .npz files are in\n"
                          f"       {FIGA / 'embeddings'}.")
-    raw = json.load(open(RES))
+    raw = json.load(open(RES))["arms"]
     known = {m for m, _, _ in MODES} | {NULL_MODE}
     for arm, cells in raw.items():
         missing = [m for m, _, _ in MODES if m not in cells]
@@ -161,11 +130,9 @@ def load():
         for m, c in cells.items():
             if m not in known:
                 continue
-            if c["n_seeds"] < 2:
-                raise SystemExit(
-                    f"fig_a: {arm}/{m} was scored on {c['n_seeds']} split seed(s). The error bars "
-                    f"on this plate ARE the seed spread, and one seed cannot produce one. "
-                    f"Re-run research/figa_resolution.py (N_SEEDS is 5).")
+            if "consistency" not in c:
+                raise SystemExit(f"fig_a: {arm}/{m} has no `consistency` key; it was "
+                                 f"written by an older scorer. Re-run research/figa_consistency.py.")
     return A.order([a for a in raw if a not in NOT_DRAWN]), raw
 
 
@@ -174,8 +141,9 @@ def _panel(ax, armlist, cells, mode, klass, title):
     if TINT[klass]:
         ax.set_facecolor(TINT[klass])
     x = np.arange(len(armlist))
-    mu = np.array([cells[a].get(mode, {}).get("mean", np.nan) for a in armlist])
-    sd = np.array([cells[a].get(mode, {}).get("sd", np.nan) for a in armlist])
+    mu = np.array([cells[a].get(mode, {}).get("consistency", np.nan) for a in armlist])
+    lo_b = np.array([cells[a].get(mode, {}).get("ci_lo", np.nan) for a in armlist])
+    hi_b = np.array([cells[a].get(mode, {}).get("ci_hi", np.nan) for a in armlist])
     dg = np.array([cells[a].get(mode, {}).get("degenerate_frac", np.nan) for a in armlist])
 
     # Drawn from the null upward. A bar whose base is 0 would put nine tenths of its ink below
@@ -186,9 +154,15 @@ def _panel(ax, armlist, cells, mode, klass, title):
     for xi, a in zip(x, armlist):                 # hatch marks PREDICTED, never a second hue
         if A.hatch(a):
             ax.patches[xi].set_hatch(A.hatch(a))
-    lo = np.clip(shown - sd, NULL, YTOP)
-    hi = np.clip(shown + sd, NULL, YTOP)
-    ax.errorbar(x, shown, yerr=np.vstack([shown - lo, hi - shown]), fmt="none", ecolor=INK,
+    lo = np.clip(np.where(np.isfinite(lo_b), lo_b, shown), NULL, YTOP)
+    hi = np.clip(np.where(np.isfinite(hi_b), hi_b, shown), NULL, YTOP)
+    # CLIPPING THE BAR CAN INVERT THE WHISKER. `shown` is clipped into [NULL, YMAX] while the
+    # bootstrap bounds are clipped into [NULL, YTOP], so a cell below the null floor (hume on
+    # null_kekulize is 0.333) ends up with an interval that does not bracket its own drawn value.
+    # Clamping at zero keeps the bar honest -- the cell is at the floor and its whisker has
+    # nowhere to go -- rather than asking matplotlib to draw a negative length.
+    err = np.vstack([np.maximum(shown - lo, 0.0), np.maximum(hi - shown, 0.0)])
+    ax.errorbar(x, shown, yerr=err, fmt="none", ecolor=INK,
                 elinewidth=0.55, capsize=1.3, capthick=0.55, zorder=4)
 
     # A CELL AT THE FLOOR IS LABELLED, and the two reasons a cell can sit there are labeled
@@ -232,7 +206,7 @@ def main():
         ax.text(0.0, 1.30, tags[i], transform=ax.transAxes, fontsize=FS["panel_tag"],
                 fontweight="bold", va="bottom", ha="left", color=INK)
         if i % NCOL == 0:
-            ax.set_ylabel("held-out AUC:\nA vs A′", fontsize=FS["annot"])
+            ax.set_ylabel("direction agreement:\nA vs A′", fontsize=FS["annot"])
 
     lax = fig.add_axes([0.062, 0.005, 0.933, 0.135])
     lax.axis("off")
@@ -251,16 +225,19 @@ def main():
 
     with open(ROOT / "figures" / "build" / "fig_a.csv", "w", newline="") as fh:
         w = csv.writer(fh)
-        w.writerow(["arm", "label", "mode", "klass", "auc_mean", "auc_sd", "auc_min", "auc_max",
-                    "n_pairs", "n_seeds", "degenerate_pairs", "degenerate_frac"])
+        w.writerow(["arm", "label", "mode", "klass", "consistency", "ci_lo", "ci_hi",
+                    "median_cos_z", "median_cos_raw", "n_pairs", "degenerate_pairs",
+                    "degenerate_frac"])
         for a in armlist:
             for mode, klass in [(m, k) for m, k, _ in MODES] + [(NULL_MODE, "NULL")]:
                 c = cells[a].get(mode)
                 if not c:
                     continue
-                w.writerow([a, A.label(a), mode, klass, f"{c['mean']:.4f}", f"{c['sd']:.4f}",
-                            f"{c['min']:.4f}", f"{c['max']:.4f}", c["n_pairs"], c["n_seeds"],
-                            c["degenerate_pairs"], f"{c['degenerate_frac']:.3f}"])
+                w.writerow([a, A.label(a), mode, klass, f"{c['consistency']:.4f}",
+                            f"{c['ci_lo']:.4f}", f"{c['ci_hi']:.4f}",
+                            f"{c['median_cos_z']:.4f}", f"{c['median_cos_raw']:.4f}",
+                            c["n_pairs"], c["degenerate_pairs"],
+                            f"{c['degenerate_frac']:.3f}"])
     print("  wrote  figures/build/fig_a.csv")
 
     print("\n   " + "mode".ljust(17) + "".join(f"{A.label(a)[:15]:>17s}" for a in armlist))
@@ -268,9 +245,10 @@ def main():
         row = f"   {mode:<17}"
         for a in armlist:
             c = cells[a].get(mode)
-            row += (f"{c['mean']:>11.3f}±{c['sd']:.3f}" if c else f"{'—':>17}")
+            row += (f"{c['consistency']:>17.3f}" if c else f"{'—':>17}")
         print(row + ("   <- the METRIC's null, not a panel" if klass == "NULL" else ""))
-    print("\n   Held-out ROC-AUC over 5 component splits, mean ± sd. 0.500 = chance.")
+    print("\n   Leave-one-out direction agreement, percentile bootstrap over pairs.")
+    print("   0.500 = random directions in any dimension: an analytic null, not measured.")
     print("   A bar at the floor means the arm did not resolve the edit. Whether that is because")
     print("   the two vectors are BITWISE IDENTICAL or because the change has no consistent")
     print("   direction is in fig_a.csv as degenerate_pairs, not on the plate.")
@@ -279,13 +257,17 @@ def main():
 
     # THE NULL IS AN ASSERTION, NOT A FOOTNOTE. If a matched-mass substitution -- two unrelated
     # compounds -- ever scores well above chance, the split leaked and every bar above is inflated.
-    bad = {a: cells[a][NULL_MODE]["mean"] for a in armlist
-           if NULL_MODE in cells[a] and cells[a][NULL_MODE]["mean"] > 0.60}
+    # "mean" IS NOT A KEY OF THESE CELLS -- it was copied from the AUC plate, whose cells have
+    # one. The condition was right and the message was right, but building `bad` would have
+    # raised KeyError instead of reporting, so the one assertion guarding against a silently
+    # inflated plate could not actually fire its own error. Caught on the 2026-10-31 rename.
+    bad = {a: round(cells[a][NULL_MODE]["consistency"], 4) for a in armlist
+           if NULL_MODE in cells[a] and cells[a][NULL_MODE]["consistency"] > 0.60}
     assert not bad, (
-        f"fig_a: the matched-mass null is above 0.60 for {bad}. Two unrelated molecules carry no "
-        f"consistent A/B signature, so this can only be a leak between the train and test halves "
-        f"of the split. Do not publish the plate; re-check split_components() in "
-        f"research/figa_resolution.py.")
+        f"fig_a: the matched-mass null is above 0.60 for {bad}. Two unrelated molecules have no "
+        f"shared direction between them, so a high value here means the standardisation or the "
+        f"leave-one-out is leaking the answer, and every bar above it is inflated. Do not "
+        f"publish the plate; re-check research/figa_consistency.py.")
 
 
 if __name__ == "__main__":

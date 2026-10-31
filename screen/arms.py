@@ -85,6 +85,21 @@ SPEC = {
     "hume_r4":          dict(fp_block=("tail", 2048), env="main", radius=4),
     "hume_r2":          dict(fp_block=("tail", 2048), env="main", radius=2),
     "ecfp_rdkit_desc":  dict(fp_block=("head", 2048), env="main", radius=2),
+    # THE FINGERPRINT ALONE, AT THE SAME RADIUS AS ecfp_rdkit_desc (Leif 2026-10-31). The screen
+    # had no fingerprint-only control, so every gap it measured against ECFP4+RDKit confounded
+    # the 217 RDKit descriptors with the fingerprint underneath them. This arm is exactly
+    # ecfp_rdkit_desc with the descriptor block removed, which is what makes the pair readable.
+    #
+    # fp_block IS None, NOT ("head", 2048). feature_weights exists to tilt column sampling
+    # toward fingerprint bits and away from descriptors; with no descriptors there is no
+    # boundary to tilt across. Setting ("head", 2048) on a 2048-column matrix would hand every
+    # column the same W_FIXED, which XGBoost reads as a uniform rescale -- identical to all-ones
+    # and merely harder to reason about. `radius` is still recorded: it is what the arm IS.
+    #
+    # NOTE the radius notations in play. This is radius 2 = ECFP4, matching the fingerprint
+    # inside ecfp_rdkit_desc. HUME's internal fingerprint is radius 4, so a HUME-vs-ECFP4 gap
+    # still mixes radius with descriptors; only the ECFP4-vs-ECFP4+RDKit pair is clean.
+    "ecfp":             dict(fp_block=None,           env="main", radius=2),
     "chemberta_mtr":    dict(fp_block=None,           env="main", radius=None),
     "chemeleon":        dict(fp_block=None,           env="main", radius=None),
     "minimol":          dict(fp_block=None,           env="mini", radius=None),
@@ -129,6 +144,8 @@ def column_name(arm: str, j: int) -> str:
     column index can be resolved to the descriptor that produced it. The learned embeddings have
     no names and say so rather than inventing one.
     """
+    if arm == "ecfp":
+        return f"ECFP4 bit {j}"
     if arm != "ecfp_rdkit_desc":
         return f"column {j}"
     if j < 2048:
@@ -210,6 +227,12 @@ def featurize(arm: str, smis: list[str]) -> np.ndarray:
         # Fingerprint FIRST, then the 217 RDKit descriptors -- the ("head", 2048) convention.
         X = np.hstack([BD.f_ecfp(smis, radius=2), BD.f_rdkit_desc(smis)]).astype(np.float32)
         return sanitize(arm, X)
+    if arm == "ecfp":
+        # The SAME call ecfp_rdkit_desc makes for its first 2048 columns, radius passed
+        # explicitly from SPEC rather than left to f_ecfp's default -- that default was
+        # radius=3 for one commit (see bench_downstream.f_ecfp) and the only symptom was two
+        # arms that were quietly no longer comparable.
+        return sanitize(arm, BD.f_ecfp(smis, radius=SPEC[arm]["radius"]).astype(np.float32))
     if arm == "minimol":
         return sanitize(arm, BD.f_minimol(smis).astype(np.float32))
     import embed_pairs as EP
@@ -293,7 +316,7 @@ WORKERS_CAP = {"minimol": 4}
 #: whole separate interpreter that reloads its weights, while `f_ecfp`/`f_rdkit_desc` have no
 #: setup at all and want small slabs for even load balancing. Slabs too small for a model-loading
 #: arm would spend the parallelism on reloading weights.
-SLAB = {"ecfp_rdkit_desc": 2_000, "hume_r4": 5_000, "hume_r2": 5_000,
+SLAB = {"ecfp_rdkit_desc": 2_000, "ecfp": 2_000, "hume_r4": 5_000, "hume_r2": 5_000,
         "chemberta_mtr": 25_000, "chemeleon": 25_000, "minimol": 25_000}
 
 _POOL: dict = {}

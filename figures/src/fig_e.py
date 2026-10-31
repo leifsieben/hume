@@ -33,9 +33,36 @@ so the honest number is the scaffold-split one and the pair is what shows the si
 A shared y-axis makes the drop from left to right a vertical distance the eye can measure
 directly, rather than two panels a reader has to subtract by reading tick labels.
 
-HUME r=2 IS NOT DRAWN (see EXCLUDE). It is the radius ablation, not an arm of the comparison,
-and six points on a scatter with no legend is where the labels start fighting. Its numbers are
-in the CSV beside the figure, so nothing is lost -- only the plate is quieter.
+THE Y-LABEL IS THE SAME SENTENCE ON BOTH PANELS AND DOES NOT MEAN THE SAME SET OF MOLECULES.
+"The true top 0.01%" is the top 0.01% OF THAT PANEL'S OWN POPULATION: 9,964 molecules out of
+100,000,000 on the left, and the top 0.01% of the scaffold-split subset on the right -- a
+smaller set, and not a subset of the first, because re-ranking a different population moves the
+cut. Both panels therefore report the same QUESTION ("of the molecules worth finding, how many
+did you find") against different answers to "which molecules were worth finding", which is the
+only way the two can be compared at all: recovering the full test set's top 0.01% from a subset
+that contains only some of them would be bounded above by that fraction and would measure the
+filter, not the model. The paper's caption must say this; the plate cannot.
+
+HUME r=2 IS NOT DRAWN, AND THE REASON IS NOW A MEASUREMENT RATHER THAN A PREFERENCE. An earlier
+version excluded it as "the radius ablation", which was a judgement made before the screen ran;
+it was then put back in, on the grounds that how r=2 behaves on a billion molecules is a result
+and not an ablation. The real numbers settle it. Over all 100,000,000 test molecules:
+
+    HUME r=4    19.07% recovery [18.69, 19.78 over 5 replicates]    152.55 us/mol
+    HUME r=2    18.65% recovery [18.09, 18.99 over 5 replicates]    152.70 us/mol
+
+The two cost the SAME to 0.1%, and the 0.42-point gap in recovery is smaller than either arm's
+own replicate range (1.09 and 0.90 points). The plate's axes therefore cannot separate them: they
+land as two markers one marker-width apart whose names have to be nudged off their own points,
+and a reader would be invited to read a difference the replicates do not support. Drawing only
+r=4 is not hiding the ablation -- both arms' means, sds and ranges are in the CSV beside the
+figure, which is where a difference this size belongs. `paper/radius_choice.tex`, which argues
+r=3, needs to be reconciled with this; that is the paper's business, not the plate's.
+
+THE ARM IS LABELLED PLAIN "HUME", WITH NO RADIUS (Leif). r=4 is what 1.1.0 ships, so on this
+plate the radius is not a qualifier a reader needs. See `figures/src/arms.py` on the name
+collision that creates with the `hume` arm of figures B/C/D, and why they must never share a
+panel.
 
 EVERY ARM'S X IS ONE MEASURED NUMBER, AND NONE OF THEM IS A BOUND. An earlier version of this
 plate drew MiniMol with an arrow meaning "at least this expensive", on the plan's statement that
@@ -83,10 +110,23 @@ and fusing them would let one invent the other.
          "arms": {<arm>: {"summary": {<metric>: {"mean","sd","min","max"}, ...}}}}
 
      Panel (a) reads `recovery_0.01pct`; panel (b) reads `recovery_0.01pct_scaffold`, the same
-     metric over test molecules whose Bemis-Murcko scaffold appears in NO training set. As of
-     this writing aggregate.py computes only the first and declines the second in its docstring;
-     panel (b) therefore marks itself not-yet-measured rather than failing the whole render, in
-     the same way figure C handles a task that has not been run.
+     metric over test molecules whose Bemis-Murcko scaffold appears in NO training set of ANY
+     replicate -- the union, not each replicate's own, which is Leif's call of 2026-10-31. The
+     five replicates' scaffold sets turn out to overlap far less than the molecule-level 13%
+     suggests (about 404,000 scaffolds each, 1,235,646 in the union, only 59,532 common to all
+     five), so the two readings differ by roughly 3x in how much of the test set they remove.
+     The union buys ONE FIXED TEST POPULATION: every arm and every replicate is scored on the
+     same molecules, so the whisker in panel (b) is model variance exactly as it is in panel (a)
+     and the left-to-right drop is a comparison rather than two differently-shaped samples. The
+     cost of that choice is stated plainly: each model is scored on molecules ~3x more novel
+     than its own training set required, so panel (b) is pessimistic in a way no single model's
+     training justifies. It is a floor on generalisation, not an estimate of it.
+
+     The scaffold hashes come from `screen/test_scaffolds.py`, and the train-side hashes are the
+     ones frozen in `trainval.npz` by `screen/collect_trainval.py` -- the same blake2b call, not
+     a second one written out again. A panel whose metric no arm reports is DROPPED from the
+     layout rather than drawn empty, which is how this plate rendered as a single panel for as
+     long as the metric did not exist.
 
   2. `results/figures/figE/cost.json`, the measured cost axis, in figure C's shape:
 
@@ -138,24 +178,48 @@ N_AMPC = 1_468_863_655
 #: ARMS THAT ARE MEASURED BUT NOT DRAWN, each with the reason, because a silently dropped arm
 #: and a missing one look identical. Everything here still reaches the CSV.
 #:
-#: EMPTY ON PURPOSE. hume_r2 was in here as "the radius ablation", and that was a judgement made
-#: against invented numbers. The radius is a live question -- 1.1.0 moves the default to r=4 and
-#: `paper/radius_choice.tex` still argues r=3 -- so how r=2 behaves on a billion-molecule screen
-#: is a result to look at, not an ablation to tuck into a CSV. Put an arm back in here only once
-#: its real numbers say it adds nothing.
-EXCLUDE: dict[str, str] = {}
+#: hume_r2 IS HERE ON THE STRENGTH OF ITS OWN MEASURED NUMBERS, not on a prior judgement -- it
+#: was excluded, then drawn, and is now excluded again because the real screen separates the two
+#: radii by less than the replicates separate each arm from itself. See the module docstring for
+#: the four numbers. Both arms reach the CSV.
+EXCLUDE: dict[str, str] = {
+    "hume_r2": "costs the same as r=4 (152.70 vs 152.55 us/mol) and differs by 0.42 recovery "
+               "points against replicate ranges of 1.09 and 0.90 -- the plate cannot separate "
+               "them, so only the shipped default is drawn",
+}
 
 #: THE TWO PANELS: one metric, two test populations. Sharing the y-axis is the point -- see the
 #: module docstring.
+#: PANELS ARE WHAT IS DRAWN. CSV_METRICS IS WHAT IS RECORDED, and it is deliberately larger:
+#: the house rule is that no number may exist only inside a figure, so a metric dropped from the
+#: plate still reaches figures/build/fig_e.csv. Dropping a panel must cost a reader nothing but
+#: the picture.
 PANELS = (
-    dict(key="recovery_0.01pct", title="All test molecules"),
-    dict(key="recovery_0.01pct_scaffold", title="Scaffold-split from training"),
+    dict(key="recovery_0.01pct", title="Top 0.01% of the library",
+         ylabel="recovery of the true top 0.01%  (%, ↑ better)"),
+    # TOP 1% IS MEASURED AND NOT DRAWN (Leif 2026-10-31, "just give me the left half"). It is a
+    # real result and a tempting panel -- the ranking FLIPS with depth, ECFP4+RDKit taking the
+    # lead at 29.14% against HUME's 28.11%, and the frontier becomes a two-point staircase
+    # rather than one dominating point. It is in the CSV in full. Re-enable by moving this entry
+    # back into PANELS; the layout, the shared y-range and the per-panel axes all still handle
+    # two, and style.save() will want `left` re-measured for the two-panel width.
+    # dict(key="recovery_1pct", title="Top 1% of the library",
+    #      ylabel="recovery of the true top 1%  (%, ↑ better)"),
 )
-YLABEL = "recovery of the true top 0.01%  (%, ↑ better)"
+
+#: Every metric that reaches the CSV, drawn or not. Panels first, then the rest.
+CSV_METRICS = ("recovery_0.01pct", "recovery_1pct", "recovery_0.01pct_scaffold",
+               "recovery_1pct_scaffold", "log_auc_0.01pct", "pearson", "rmse_over_sd")
 
 #: Minimum vertical separation between two point labels, as a fraction of the panel's y-range.
 #: A 7 pt label in a panel about 150 pt tall needs ~0.06 to clear its neighbor.
 LABEL_GAP = 0.065
+
+#: How close below the frontier line a marker may sit, in multiples of the label's own text
+#: height, before its name is hung underneath the marker instead of beside it. In text heights
+#: rather than a fraction of the y-range because what is being avoided is the name touching the
+#: line, which is a typographic distance and does not scale with the data.
+FRONTIER_CLEAR = 2.5
 
 
 def load() -> tuple[dict, dict]:
@@ -213,36 +277,118 @@ def load() -> tuple[dict, dict]:
     return d, c
 
 
-def _label_points(ax, xs, ys, keys, on_left):
-    """Name every point beside itself, nudged apart where two would overlap.
+def _label_points(ax, xs, ys, keys, front_xy=()):
+    """Name every point beside itself, clear of its neighbours AND of the frontier.
 
     The plate has no legend, so this IS the key, and it has to survive data the script has never
-    seen. The rule is deterministic: offset to the chosen side, then, walking up one side at a
-    time, push any label within LABEL_GAP of the one below it up to exactly LABEL_GAP. A label
-    that had to move gets a leader line back to its own point, because a name attached to the
-    wrong marker is the one error this plate cannot recover from.
+    seen. Three things can collide, and earlier versions handled each one wrongly in turn:
+
+    1. ANOTHER LABEL. Tested on BOTH axes. The first version compared only recoveries, so
+       CheMeleon (18.04%) and ECFP4+RDKit (17.86%) counted as colliding although they sit
+       1,961 us/mol apart -- more than half the panel -- and CheMeleon was shoved onto the
+       frontier line with a leader so short it read as a stray hyphen. Each label now has a real
+       interval in data units and two collide only if their intervals OVERLAP and their heights
+       are within LABEL_GAP. Intervals, not centre distances: both labels on a side run the same
+       way from their markers, so two names 580 units apart may not overlap at all.
+
+    2. THE FRONTIER'S HORIZONTAL TREADS. Sampled at the x where the text actually sits, not at
+       the marker, and the label is pushed AWAY -- down when the tread is above, up when it is
+       below. Both directions are needed: dropping every crowded label is right for a runner-up
+       under the line and exactly wrong for ECFP4+RDKit in panel (b), whose own step passes just
+       below its name. Frontier points are NOT exempt, which is the case first missed: every
+       point on the staircase has a tread running from it toward the expensive side, and the
+       expensive side is page-LEFT here, so HUME -- the cheapest arm, the one the plate is
+       about -- had the line through its own label in both panels.
+
+    3. THE VERTICAL RAY. A horizontal label cannot lie ALONG a vertical line, which is why the
+       first version returned "no frontier here" for that region -- but it can lie ACROSS one,
+       and ECFP4+RDKit's name ran straight through the ray in panel (a). Nudging up or down
+       cannot help, because the ray spans the panel; the label has to change sides.
+
+    WHICH SIDE A NAME GOES ON IS MEASURED, NOT GUESSED. It used to be "the marker is in the right
+    fifth of the panel", a proxy for "there is no room on the right" that knows nothing about how
+    long the name is. A name now goes on the right only if it FITS between its marker and the
+    cheap edge, and flips to the left if it would cross the vertical ray.
     """
     y0, y1 = ax.get_ylim()
     span = y1 - y0
-    # PLAIN bools, not numpy's: `np.True_ is True` is False, and an identity test against a
-    # numpy bool once selected nothing at all, rendering the whole plate with no labels.
-    left = [bool(v) for v in on_left]
-    moved = []
+    x_dear, x_cheap = ax.get_xlim()                  # descending: the axis is inverted
+    fig = ax.figure
+    # Data units per typographic point, from the transform as it currently stands. Taken after
+    # set_xlim/set_ylim -- before them it would describe the default 0-1 axes and every width
+    # here would be wrong by the axis scale.
+    inv = ax.transData.inverted().transform
+    px = fig.dpi / 72.0
+    ox, oy = inv((0.0, 0.0))
+    dx_pt = abs(inv((px, 0.0))[0] - ox)
+    dy_pt = abs(inv((0.0, px))[1] - oy)
+    gap = 8.0 * dx_pt                                # marker-to-text gap, in data units
+    # 0.52 em per character is a serviceable average for this font at label sizes; it only has
+    # to be right to within a character or two to tell "same place" from "half a panel away".
+    tw = [0.52 * FS["annot"] * len(A.short_label(k)) * dx_pt for k in keys]
+    text_h = FS["annot"] * dy_pt
+
+    ray_x = front_xy[0][0] if front_xy else None     # the vertical ray's cost
+    ray_top = front_xy[0][1] if front_xy else None
+
+    def interval(i, side):
+        """-> (lo, hi) in data units spanned by label i's text. side True = page-LEFT.
+
+        Page-left is INCREASING cost, because the axis is inverted. Getting this backwards is
+        the kind of error that places every name correctly on a normal axis and nowhere near
+        its point here.
+        """
+        return ((xs[i] + gap, xs[i] + gap + tw[i]) if side
+                else (xs[i] - gap - tw[i], xs[i] - gap))
+
+    def crosses_ray(i, side):
+        if ray_x is None or ys[i] > ray_top:
+            return False
+        lo, hi = interval(i, side)
+        return lo <= ray_x <= hi
+
+    # SIDE: right if the name fits before the cheap edge and clears the ray, else left.
+    left = []
+    for i in range(len(xs)):
+        fits_right = (xs[i] - gap - tw[i]) >= x_cheap and not crosses_ray(i, False)
+        left.append(not fits_right)
+
+    def frontier_at(x):
+        """-> the staircase's tread height at cost `x`, or None where there is no tread."""
+        if not front_xy or x < front_xy[0][0]:
+            return None
+        return next(fy for fx, fy in reversed(front_xy) if fx <= x)
+
+    moved, dodged = [], []
     for side in (True, False):
         idx = sorted((i for i in range(len(xs)) if left[i] == side), key=lambda i: ys[i])
-        at = None
+        placed = []                                  # (lo, hi, y) already on this side
         for i in idx:
-            y = ys[i] if at is None else max(ys[i], at + LABEL_GAP * span)
-            at = y
+            lo, hi = interval(i, side)
+            y = ys[i]
+            for plo, phi, py in placed:
+                if lo <= phi and plo <= hi and y - py < LABEL_GAP * span:
+                    y = py + LABEL_GAP * span
+            placed.append((lo, hi, y))
             shifted = abs(y - ys[i]) > 0.3 * LABEL_GAP * span
             if shifted:
                 moved.append((keys[i], (y - ys[i]) / span))
+            fy = frontier_at(0.5 * (lo + hi))
+            dodge = 0                                # -1 push down, +1 push up
+            if not shifted and fy is not None and abs(fy - y) < FRONTIER_CLEAR * text_h:
+                # A tread at or above the label pushes it down; only one clearly below lifts it.
+                # Equality goes DOWN: that is a label sitting ON its own tread, and the open
+                # space is underneath it.
+                dodge = -1 if (fy - y) >= -0.25 * text_h else +1
+                dodged.append(f"{keys[i]} {'down' if dodge < 0 else 'up'}")
             ax.annotate(A.short_label(keys[i]), (xs[i], y),
                         # Offsets are in DISPLAY points, so they mean left and right on the page
                         # whatever the data axis is doing -- which matters here, because the
                         # cost axis is inverted.
-                        xytext=(-8 if side else 8, 0), textcoords="offset points",
-                        ha="right" if side else "left", va="center",
+                        xytext=(-8 if side else 8, -4 if dodge < 0 else (4 if dodge else 0)),
+                        textcoords="offset points",
+                        ha="right" if side else "left",
+                        va={-1: "top", 0: "center", 1: "bottom"}[dodge],
                         fontsize=FS["annot"], color=STYLE["ink"],
                         # A WHITE HALO, NOT AN OPAQUE BOX: the frontier and the gridlines pass
                         # behind these names, and a box would punch rectangles out of both.
@@ -253,6 +399,8 @@ def _label_points(ax, xs, ys, keys, on_left):
     if moved:
         print("  labels nudged to clear a neighbor (fraction of the y-range, leader drawn): "
               + ", ".join(f"{k} {dy:+.2f}" for k, dy in moved))
+    if dodged:
+        print(f"  labels moved off the frontier: {', '.join(dodged)}")
 
 
 def main() -> None:
@@ -283,13 +431,6 @@ def main() -> None:
     y_bot, y_top = min(vals), max(vals)
     y_pad = 0.10 * (y_top - y_bot) if y_top > y_bot else max(abs(y_top), 1.0) * 0.1
 
-    # WHICH SIDE EACH NAME GOES ON, decided by where the marker sits in the panel rather than
-    # by how cheap the arm is. A name hangs roughly half an inch off its point, so a marker in
-    # the right fifth of the panel has no room on its right -- the frame is there. By rank, the
-    # third-cheapest arm kept its name on the right and pushed it straight through the frame.
-    span = x_dear - x_cheap
-    on_left = [(x_dear - float(x)) / span > 0.78 for x in xs]
-
     # WHICH PANELS HAVE DATA, decided before the layout exists. A panel whose metric no arm
     # reports is dropped from the grid rather than drawn as an empty cell: with only two panels
     # an empty one is half the plate, and a reader's eye spends as long on the hole as on the
@@ -304,11 +445,32 @@ def main() -> None:
     if not panels:
         raise SystemExit("figure E: no arm reports any plotted metric.")
 
-    fig = plt.figure(figsize=(STYLE["col2"], 3.05))
+    # THE TWO-PANEL PLATE LANDS AT EXACTLY THE PAGE TEXT BLOCK (Leif). `figsize` is col2 = the
+    # 6.69in text block, but savefig(bbox_inches="tight") crops the canvas to its content, so the
+    # width actually written is whatever is left after the slack margins go -- 6.647in at the
+    # previous left=0.105, and the set as a whole spans 6.48 to 6.89. `left` is therefore tuned,
+    # not guessed: 0.090 is the value at which the cropped PDF measures 6.692in, within 0.02% of
+    # the text block, so \includegraphics[width=\textwidth] scales it by 1.000 and the point
+    # sizes set in style.FS are the point sizes that print. Re-measure it if the y-label, the
+    # tick format or the panel count changes -- style.save() prints the width on every render and
+    # warns past 5%, which is the check this number has to keep satisfying.
+    # WIDTH FOLLOWS THE PANEL COUNT. Two panels fill the text block; ONE panel is authored at
+    # col1, the single-column width, because that is how a lone Pareto plate is set -- in a
+    # wrapfig beside the text (Leif 2026-10-31) rather than stretched across the page. A
+    # one-panel plate at col2 would be a very wide, very short box with five points adrift in
+    # it, and would print its 7 pt labels at 7 pt only if nothing scaled it on the way in.
+    solo = len(panels) == 1
+    width = STYLE["col1"] if solo else STYLE["col2"]
+    fig = plt.figure(figsize=(width, 2.95 if solo else 3.05))
+    # `left` is MEASURED, not guessed, for each layout: savefig(bbox_inches="tight") crops to
+    # content, so the width written is whatever survives the slack margins. These two values are
+    # the ones at which the cropped PDF lands within 0.1% of its declared width. Re-measure if
+    # the y-label, the tick format or the panel count changes -- style.save() prints the width
+    # on every render and warns past 5%, which is the check these numbers have to keep passing.
     gs = fig.add_gridspec(1, len(panels), wspace=0.26,
-                          left=0.105 if len(panels) > 1 else 0.075,
-                          right=0.995 if len(panels) > 1 else 0.96,
-                          top=0.87, bottom=0.175)
+                          left=0.124 if solo else 0.090,
+                          right=0.975 if solo else 0.995,
+                          top=0.88 if solo else 0.87, bottom=0.165)
     tags = "abcdefgh"
     ax0, frontiers = None, {}
     for p_i, p in enumerate(panels):
@@ -326,25 +488,35 @@ def main() -> None:
         los = np.array([d["arms"][a]["summary"][p["key"]]["min"] * 100.0 for a in keys])
         his = np.array([d["arms"][a]["summary"][p["key"]]["max"] * 100.0 for a in keys])
 
-        # THE FRONTIER, under the points so no marker is cut by it. `where="post"` is the honest
-        # shape: at any budget you can have the best arm at or below that cost and nothing
-        # better, so the curve is flat and then steps. Computed on costs and recoveries, not on
-        # screen positions, so the axis inversion cannot change which arms are on it.
+        # THE FRONTIER, under the points so no marker is cut by it. Computed on costs and
+        # recoveries, not on screen positions, so the axis inversion cannot change which arms
+        # are on it. `pareto` returns indices in ascending cost, which for an upper-left frontier
+        # means ascending recovery too -- no point on it can be both dearer and worse.
         front = pareto(list(xs), list(ys))
-        # A SINGLE FRONTIER POINT IS A REAL OUTCOME, NOT AN EMPTY ONE. If one arm is both the
-        # cheapest and the best it dominates everything, the staircase has one tread, and the
-        # frontier is the horizontal line through it -- at any budget above that arm's cost,
-        # nothing measured here does better. The guard was `> 1`, which drew nothing in exactly
-        # the case the plate most needs to show, and the AmpC screen landed in it.
+        # DRAWN AS THE BOUNDARY OF THE DOMINATED REGION: ONE VERTICAL RAY AND ONE HORIZONTAL RAY
+        # (Leif). Earlier this was the staircase alone, which with a single frontier point is a
+        # lone horizontal line -- and a lone line reads as a threshold or a baseline, not as a
+        # frontier. Closing the corner with the vertical ray is what makes it legible: the two
+        # rays fence off the quadrant of points that are BOTH dearer and worse than the frontier,
+        # and every dominated arm sits inside that fence. Each ray is a claim the measurements
+        # support, and only that claim:
+        #
+        #   horizontal, running LEFT (dearer) from the dearest frontier point, at its recovery
+        #       -- at any budget above that arm's cost, nothing measured here does better.
+        #   vertical, running DOWN from the cheapest frontier point, at its cost
+        #       -- it bounds the fenced quadrant on the cheap side. It is NOT extended rightward
+        #          past that cost, which would claim a recovery at a price nothing was run at.
+        #
+        # A SINGLE FRONTIER POINT IS A REAL OUTCOME, NOT AN EMPTY ONE: one arm both cheapest and
+        # best dominates everything and the staircase has one tread. The guard was `len > 1`,
+        # which drew nothing in exactly the case the plate most needs to show, and the AmpC
+        # screen landed in it.
         if front:
-            # EXTENDED LEFTWARD ONLY, to the expensive edge of the panel. That segment states
-            # something the measurements support -- above the best arm's cost, nothing measured
-            # here does better -- and it turns a two-point frontier from a stub into the
-            # boundary it is. It is NOT extended rightward: that would claim a recovery at a
-            # cost cheaper than anything on the plate was run at.
-            fx = list(xs[front]) + [x_dear]
-            fy = list(ys[front]) + [ys[front[-1]]]
-            ax.step(fx, fy, where="post", ls=(0, (4, 2)),
+            # The leading repeated x is the vertical ray: with `where="post"` the first segment
+            # is a zero-length horizontal, and the rise after it is the ray itself.
+            fx = [xs[front[0]]] + list(xs[front]) + [x_dear]
+            fy = [y_bot - y_pad] + list(ys[front]) + [ys[front[-1]]]
+            ax.step(fx, fy, where="post", ls=(0, (1, 2)),
                     lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=2)
         frontiers[p["key"]] = {keys[i] for i in front}
 
@@ -360,15 +532,21 @@ def main() -> None:
 
         ax.set_xlim(x_dear, x_cheap)                 # descending = inverted = cheap on the right
         ax.set_ylim(y_bot - y_pad, y_top + y_pad)
-        _label_points(ax, xs, ys, keys, on_left)
+        _label_points(ax, xs, ys, keys,
+                      front_xy=[(float(xs[i]), float(ys[i])) for i in front])
         ax.grid(axis="both")
         # LABELLED AND TICKED ON BOTH PANELS (Leif), even though the scale is shared. The two
         # panels are read as a pair and compared across the gutter, so a reader's eye arrives at
         # the right-hand panel with no axis beside it and has to travel back across the plate to
         # find out what the height means. Repeating the axis costs a little width and removes
         # that trip. The scale itself stays shared -- that is what makes the drop measurable.
-        ax.set_ylabel(YLABEL, fontsize=FS["label"])
+        ax.set_ylabel(p["ylabel"], fontsize=FS["label"])
         ax.tick_params(labelleft=True)
+        # THE X-AXIS IS LABELLED ON BOTH PANELS (Leif), for the reason the y-axis is: the pair
+        # is read across the gutter, and an axis a reader has to look elsewhere to identify is
+        # one they will read wrong -- especially this one, whose numbers DECREASE to the right.
+        # The arrow is not decoration; it is what stops the inversion being misread.
+        ax.set_xlabel("µs / molecule     cheaper →", fontsize=FS["label"], labelpad=2)
         title(ax, p["title"], pad=4)
         # NO PANEL TAG ON A ONE-PANEL PLATE. The letter exists so a caption can say "(b)";
         # with a single panel there is nothing to disambiguate and it reads as a stray glyph.
@@ -376,20 +554,14 @@ def main() -> None:
             ax.text(-0.17, 1.04, tags[p_i], transform=ax.transAxes,
                     fontsize=FS["panel_tag"], fontweight="bold", va="bottom", ha="right")
 
-    # ONE x-label for the row, carrying the direction. The arrow is not decoration: an axis whose
-    # numbers decrease to the right is read wrong without it.
-    # ONE x-label for the row: the unit, and the direction. Nothing else (Leif).
+    # NO figure-level x-label: each panel now carries its own (see the draw loop).
     #
-    # The box type came off the axis for the reason figure C took it off its own -- the instance
-    # is an implementation detail of how the number was produced and belongs in the caption
-    # text, not on the plate. It is not lost: the loader REFUSES an axis that mixes hardware,
-    # which enforces what the label merely advertised, and the box is printed on every render
-    # and written into every row of the CSV.
-    #
-    # The arrow is not decoration. An axis whose numbers decrease to the right is read backwards
-    # without it.
-    fig.supxlabel("µs / molecule     cheaper →", fontsize=FS["label"], y=0.045)
-    save(fig, STEM)
+    # The box type is deliberately NOT on the axis, for the reason figure C took it off its own:
+    # the instance is an implementation detail of how the number was produced and belongs in the
+    # caption text, not on the plate. It is not lost -- the loader REFUSES an axis that mixes
+    # hardware, which enforces what a label would merely have advertised, and the box is printed
+    # on every render and written into every row of the CSV.
+    save(fig, STEM, target_in=width)
     plt.close(fig)
 
     # THE NUMBERS THE PLATE CANNOT CARRY: the arms it does not draw, the per-replicate spread
@@ -401,7 +573,7 @@ def main() -> None:
         w = csv.writer(fh)
         w.writerow(["arm", "drawn", "us_per_mol", "cost_measured_on",
                     "box_hours_full_ampc_library"]
-                   + [f"{p['key']}_{f}" for p in PANELS
+                   + [f"{k}_{f}" for k in CSV_METRICS
                       for f in ("mean", "sd", "min", "max", "on_frontier")]
                    + ["n_test_scored", "replicates", "true_top_0.01pct"])
         for a in A.order(list(d["arms"])):
@@ -409,11 +581,14 @@ def main() -> None:
             us = float(c["us_per_mol"]) if "us_per_mol" in c else float("nan")
             row = [a, int(a not in EXCLUDE), f"{us:.2f}", c.get("measured_on", ""),
                    f"{us * N_AMPC / 1e6 / 3600:.1f}"]
-            for p in PANELS:
-                m = d["arms"][a].get("summary", {}).get(p["key"])
+            for k in CSV_METRICS:
+                m = d["arms"][a].get("summary", {}).get(k)
+                # `on_frontier` is blank, not 0, for a metric that was never drawn: a frontier is
+                # a property of a panel, and writing 0 would assert "measured, and not on it".
                 row += ([f"{m['mean']:.6f}", f"{m.get('sd', float('nan')):.6f}",
                          f"{m['min']:.6f}", f"{m['max']:.6f}",
-                         int(a in frontiers.get(p["key"], ()))] if m else ["", "", "", "", ""])
+                         (int(a in frontiers[k]) if k in frontiers else "")]
+                        if m else ["", "", "", "", ""])
             row += [d["n_test_scored"], d["replicates"], d["true_top_0.01pct"]]
             w.writerow(row)
     print(f"  wrote  figures/build/{STEM}.csv")

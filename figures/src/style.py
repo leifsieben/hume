@@ -199,7 +199,7 @@ def _pdf_width_in(path):
     return (float(m.group(3)) - float(m.group(1))) / 72 if m else None
 
 
-def save(fig, name, formats=("png", "pdf"), subdir=None, wide=False):
+def save(fig, name, formats=("png", "pdf"), subdir=None, wide=False, target_in=None):
     """Save to figures/<name>.<ext>. Returns the PNG path.
 
     savefig uses bbox_inches="tight", so the width actually written is NOT the figsize width: it
@@ -233,9 +233,19 @@ def save(fig, name, formats=("png", "pdf"), subdir=None, wide=False):
         if wide:
             print(f"  (wide figure: {w:.2f}in -- set landscape/full-bleed on purpose, "
                   f"not scaled to the {A4_TEXT:.2f}in text block)")
-        elif w is not None and abs(w - A4_TEXT) / A4_TEXT > 0.05:
-            print(f"  WARNING  {name}: rendered {w:.2f}in vs page width {A4_TEXT:.2f}in "
-                  f"({(w / A4_TEXT - 1) * 100:+.0f}%) -- fonts will not match the rest of the set")
+        elif w is not None:
+            # `target_in` IS FOR A FIGURE THAT IS MEANT TO BE NARROW, such as one set in a
+            # wrapfig or a single column. The check is not relaxed for it -- it is re-aimed. A
+            # plate authored at col1 and included at \textwidth would have its 7 pt labels
+            # printed at 14 pt, which is the same failure this check exists to catch, just in
+            # the other direction. State the width the figure is to be INCLUDED at; the rule is
+            # unchanged, namely that the number written must equal the number it is set at, so
+            # \includegraphics scales by 1.000 and the point sizes in FS are what print.
+            tgt = A4_TEXT if target_in is None else float(target_in)
+            if abs(w - tgt) / tgt > 0.05:
+                how = "page width" if target_in is None else f"its declared width"
+                print(f"  WARNING  {name}: rendered {w:.2f}in vs {how} {tgt:.2f}in "
+                      f"({(w / tgt - 1) * 100:+.0f}%) -- fonts will not match the rest of the set")
     return out / f"{name}.png"
 
 
