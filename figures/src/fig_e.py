@@ -4,7 +4,7 @@
 
 THE ARGUMENT. Figures C and D measure representations on small supervised benchmarks, where a
 40x cost difference costs the reader nothing because every arm finishes in seconds. A docking
-campaign is where that difference becomes the experiment: AmpC is 1,468,863,655 molecules, so
+campaign is where that difference becomes the experiment: AmpC is 1,568,863,695 molecules, so
 the question is not "which representation is most accurate" but "given a compute budget, which
 one recovers the most top-scoring molecules". This plate is that trade, with both axes measured.
 
@@ -173,7 +173,29 @@ STEM = "fig_e"
 #: AmpC's full library size, for the box-hours column in the CSV. The screen measures a uniform
 #: 100M sample of it and the cost axis is per molecule, so this is a multiplication rather than
 #: another measurement.
-N_AMPC = 1_468_863_655
+#:
+#: THREE DIFFERENT NUMBERS ARE IN CIRCULATION FOR THIS LIBRARY AND ONLY ONE OF THEM IS THE SET
+#: WE SAMPLED (sorted out 2026-10-31, while citing the dataset):
+#:
+#:     1,568,863,695   the `docking_results` config's own row count -- HuggingFace's
+#:                     num_examples, and screen/fetch_scores.py's EXPECT_ROWS, which the fetch
+#:                     checks the realised count against. THIS ONE.
+#:     1,568,323,216   Hall et al., Table 1, "compounds with docking scores" for AmpC.
+#:                     540,479 fewer, unexplained.
+#:     1,468,863,655   Hall et al., in the Chemprop section of the same paper. Differs from the
+#:                     row count by exactly 100,000,040 and looks like a transcription slip.
+#:
+#: This constant held the third until today, taken from the paper rather than from the data,
+#: which understated every box-hours figure in the CSV by 6.4%. The right number here is the
+#: row count of the file the 100M test set was actually drawn from, because that is what the
+#: extrapolation claims: our measured us/molecule, times the library we sampled. Quoting a
+#: paper's figure for the size of a set we did not take from the paper would be a worse kind of
+#: wrong than being 540,479 adrift from Table 1.
+#:
+#: It is the `docking_results` config ONLY: the dataset-server size endpoint reports
+#: 1,569,365,216 for the whole repo, which adds invitro_results (1,521) and poses_top500k
+#: (500,000), two configs this benchmark never reads.
+N_AMPC = 1_568_863_695
 
 #: ARMS THAT ARE MEASURED BUT NOT DRAWN, each with the reason, because a silently dropped arm
 #: and a missing one look identical. Everything here still reaches the CSV.

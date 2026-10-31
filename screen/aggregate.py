@@ -195,31 +195,53 @@ def main() -> int:
     ap.add_argument("--scaffold", action="store_true",
                     help="second pass: compute ONLY the *_scaffold metrics and merge them into "
                          "an existing --out, leaving the unfiltered numbers untouched")
+    ap.add_argument("--merge-arms", nargs="+", default=None, metavar="ARM",
+                    help="score only these arms and merge them into an existing --out, leaving "
+                         "every other arm's numbers untouched. The parse mask is still unioned "
+                         "over EVERY arm with predictions, not just these.")
     a = ap.parse_args()
 
-    want = a.arms or [x for x in A.ALL_ARMS
-                      if (a.preds / f"{x}_shard_{a.lo:05d}.npz").exists()]
-    if not want:
+    # TWO ARM LISTS, AND CONFLATING THEM IS A CORRECTNESS BUG. `have` is every arm with
+    # predictions on disk and is what the parse masks are unioned over, because the house rule
+    # is that no arm is scored on a molecule another arm could not featurize -- a rule about the
+    # EXPERIMENT, not about which arms this invocation happens to be scoring. `want` is what
+    # gets metrics. They were the same variable until --merge-arms existed, which meant
+    # `--arms hume_r4` silently scored it against a one-arm mask and produced numbers that
+    # looked like the published ones and were computed on a different molecule set.
+    have = [x for x in A.ALL_ARMS
+            if (a.preds / f"{x}_shard_{a.lo:05d}.npz").exists()]
+    if not have:
         sys.exit(f"no prediction files found in {a.preds}")
-    say(f"arms: {' '.join(want)}")
+    want = a.merge_arms or a.arms or have
+    unknown = sorted(set(want) - set(have))
+    if unknown:
+        sys.exit(f"no predictions in {a.preds} for {unknown}. Present: {have}. Phase 2 has not "
+                 f"run for those arms, or ran into a different --preds directory.")
+    say(f"scoring: {' '.join(want)}")
+    if set(want) != set(have):
+        say(f"parse mask unioned over all {len(have)}: {' '.join(have)}")
 
     # THE CHEAP MERGE GUARDS RUN FIRST, before a line of data is read. The remaining one needs
     # the scored count and therefore the parse masks, so it cannot come up here -- but pointing
     # --scaffold at the wrong file, or at none, must not cost half an hour of loading to find out.
+    merging = a.scaffold or bool(a.merge_arms)
     prior = None
-    if a.scaffold:
+    if merging:
+        flag = "--scaffold" if a.scaffold else "--merge-arms"
         if not a.out.exists():
-            sys.exit(f"--scaffold merges into an existing {a.out}, and it does not exist. Run "
-                     f"the unfiltered pass first (without --scaffold).")
+            sys.exit(f"{flag} merges into an existing {a.out}, and it does not exist. Run the "
+                     f"full pass first (without {flag}).")
         prior = json.loads(a.out.read_text())
         if int(prior.get("replicates", -1)) != a.replicates:
             sys.exit(f"{a.out} has {prior.get('replicates')} replicates, this pass has "
                      f"{a.replicates}. Refusing to merge.")
-        absent = sorted(set(want) - set(prior.get("arms", {})))
-        if absent:
-            sys.exit(f"{a.out} has no unfiltered numbers for {absent}, so the scaffold metrics "
-                     f"would be the only ones those arms carry and figure E would place them on "
-                     f"a frontier the other arms are missing from. Re-run the unfiltered pass.")
+        if a.scaffold:
+            absent = sorted(set(want) - set(prior.get("arms", {})))
+            if absent:
+                sys.exit(f"{a.out} has no unfiltered numbers for {absent}, so the scaffold "
+                         f"metrics would be the only ones those arms carry and figure E would "
+                         f"place them on a frontier the other arms are missing from. Run the "
+                         f"unfiltered pass for them first.")
 
     t0 = time.perf_counter()
     y, counts = load_labels(a.smiles_dir, a.lo, a.hi)
@@ -229,10 +251,10 @@ def main() -> int:
 
     # Union the parse masks first, so every arm is scored on exactly the same molecules.
     masks, keep = {}, np.ones(y.size, dtype=bool)
-    for arm in want:
+    for arm in have:
         masks[arm] = load_ok(a.preds, arm, a.lo, a.hi, counts)
         keep &= masks[arm]
-    disagree = {arm: int((masks[arm] != keep).sum()) for arm in want
+    disagree = {arm: int((masks[arm] != keep).sum()) for arm in have
                 if int((masks[arm] != keep).sum())}
     say(f"\nparseable in every arm: {int(keep.sum()):,} of {keep.size:,} "
         f"(dropped {int((~keep).sum()):,})")
@@ -288,22 +310,42 @@ def main() -> int:
             f"sd {ys.std():.2f}  (unfiltered mean was {yk.mean():.2f})")
         del ys
 
-    if a.scaffold:
-        # MERGE, NOT OVERWRITE: the unfiltered numbers are published and must not move. This is
-        # the last of the guards -- a file measured on a DIFFERENT TEST SET would otherwise merge
-        # silently into one object whose two halves describe two experiments. The other guards
-        # ran before any data was read.
+    if merging:
+        # MERGE, NOT OVERWRITE: the numbers already in the file are published and must not move.
+        # This is the last of the guards -- a file measured on a DIFFERENT TEST SET would
+        # otherwise merge silently into one object whose halves describe two experiments. The
+        # other guards ran before any data was read.
+        #
+        # THIS CHECK IS WHAT MAKES ADDING AN ARM SAFE AT ALL. The parse mask is unioned over
+        # every arm, so a new arm that failed to featurize even one molecule would shrink `keep`
+        # and invalidate every number already in the file. Rather than silently rescoring
+        # everything or silently not, the pass stops and says so.
         out = prior
         if int(out.get("n_test_scored", -1)) != int(yk.size):
-            sys.exit(f"{a.out} reports {out.get('n_test_scored'):,} scored test molecules but "
-                     f"this pass finds {yk.size:,}. The two halves of the merged file would "
-                     f"describe different test sets. Refusing to merge.")
+            sys.exit(
+                f"{a.out} reports {out.get('n_test_scored'):,} scored test molecules but this "
+                f"pass finds {yk.size:,}. "
+                + (f"Adding {want} changed the union of the parse masks, so every arm already "
+                   f"in the file was scored on a different molecule set and none of those "
+                   f"numbers is comparable to the new one. Re-run the FULL pass (no "
+                   f"--merge-arms) so all arms share one mask."
+                   if a.merge_arms else
+                   "The two halves of the merged file would describe different test sets.")
+                + " Refusing to merge.")
+    if a.scaffold:
         out["scaffold_mask"] = ("union over all replicates: a test molecule is scaffold-split "
                                 "only if its Bemis-Murcko scaffold is in NO training set")
         out["train_scaffolds_union"] = n_union
         out["n_test_scaffold_split"] = int(sub.sum())
         out["true_top_0.01pct_scaffold"] = k_true_s
-    else:
+    if not merging:
+        # THE `else` HERE USED TO HANG OFF `if a.scaffold`, WHICH SILENTLY EMPTIED THE FILE.
+        # When --merge-arms was added, `out = prior` moved up into `if merging:` but this branch
+        # stayed bound to the scaffold test -- so a --merge-arms run assigned the prior and then
+        # immediately replaced it with a fresh object holding one arm. The pass reported success,
+        # wrote a well-formed file, and deleted six arms and an hour of scaffold metrics. It is
+        # `not merging` because the condition that decides whether to START FROM A BLANK FILE is
+        # exactly the condition that decides whether this is a merge, and nothing else.
         out = {"dataset": "IrwinLab/LSD_AmpC_Liu_2025", "config": "docking_results",
                "n_test": int(y.size), "n_test_scored": int(yk.size),
                "true_top_0.01pct": k_true, "replicates": a.replicates,
@@ -328,7 +370,10 @@ def main() -> int:
             v = np.array([q[key] for q in per], dtype=float)
             agg[key] = {"mean": float(v.mean()), "sd": float(v.std(ddof=1)),
                         "min": float(v.min()), "max": float(v.max())}
-        if a.scaffold:
+        # UPDATE AN ARM THAT IS ALREADY THERE, INSERT ONE THAT IS NOT. Replacing wholesale
+        # would be right for --scaffold only by accident and wrong for --merge-arms: re-scoring
+        # an existing arm would silently discard the *_scaffold metrics it already carries.
+        if merging and arm in out["arms"]:
             for r, e in enumerate(per):
                 out["arms"][arm]["per_replicate"][r].update(e)
             out["arms"][arm]["summary"].update(agg)
@@ -337,6 +382,16 @@ def main() -> int:
         say(f"  {arm:<17} MEAN recovery@0.01%{sfx} {agg[head]['mean']:.4f} "
             f"[{agg[head]['min']:.4f}, {agg[head]['max']:.4f}]\n")
 
+    # A MERGE MAY ONLY ADD ARMS. Asserted rather than trusted, because the failure mode is a
+    # well-formed file that reports success and is missing most of the experiment -- which is
+    # exactly what the branch bug above produced, and nothing downstream would have noticed
+    # until a figure came up short of points.
+    if merging:
+        lost = sorted(set(prior.get("arms", {})) - set(out["arms"]))
+        if lost:
+            sys.exit(f"refusing to write {a.out}: the merge would drop {lost}. A merge adds "
+                     f"arms and never removes them; this is a bug in aggregate.py, not in the "
+                     f"data. The file on disk has NOT been modified.")
     a.out.parent.mkdir(parents=True, exist_ok=True)
     a.out.write_text(json.dumps(out, indent=1))
     say(f"-> {a.out}" + ("  (merged; unfiltered numbers untouched)" if a.scaffold else ""))

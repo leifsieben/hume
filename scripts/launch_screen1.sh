@@ -17,7 +17,7 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 BUCKET=hume-bench-use1-075120018132
 PROFILE=HumeBenchEC2
 GID=sg-082c5d5ebeb465414
-ARMS="${ARMS:?set ARMS to one or more of: hume_r4 hume_r2 ecfp_rdkit_desc chemberta_mtr chemeleon minimol}"
+ARMS="${ARMS:?set ARMS to one or more of: hume_r4 hume_r2 ecfp_rdkit_desc ecfp chemberta_mtr chemeleon minimol}"
 TYPES="${TYPES:-m7i.4xlarge r7i.4xlarge m6i.4xlarge}"
 
 AMI=$(aws ssm get-parameters --names /aws/service/canonical/ubuntu/server/22.04/stable/current/amd64/hvm/ebs-gp2/ami-id \

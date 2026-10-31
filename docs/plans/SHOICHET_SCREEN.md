@@ -11,7 +11,7 @@ per molecule (x, log) against recovery of the true top 0.1% inside each model's 
 ## Source
 
 Hall, Tummino, Tang, Mailhot, Castanon, Irwin & Shoichet, *J. Chem. Inf. Model.* 2025, 65,
-4458–4467; data at lsd.docking.org. **AmpC**, 1,468,863,655 molecules with DOCK3.7/3.8 scores —
+4458–4467; data at lsd.docking.org. **AmpC**, 1,568,863,695 molecules with DOCK3.7/3.8 scores —
 the largest single-target set and the one that paper characterises most fully.
 
 ## Arms (5)

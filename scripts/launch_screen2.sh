@@ -40,6 +40,7 @@ DRY="${DRY:-}"
 #   hume_r4               144.5            582      2.23x measured         261
 #   hume_r2               144.5            492      2.23x (as r4)          221
 #   ecfp_rdkit_desc       464.1           5956      8.29x measured         718
+#   ecfp                      -            ~135      NOT DISCOUNTED         135
 #   chemberta_mtr         340.4            534      4.53x measured         118
 #   chemeleon            2892.5           5304      UNMEASURED            5304
 #   minimol              1544.7         not run     UNMEASURED            1545
@@ -51,10 +52,23 @@ DRY="${DRY:-}"
 # minimol has no production rate at all (it never got past dependency install), so it keeps the
 # four-worker benchmark figure, which is the configuration it will actually run in.
 #
+# ecfp HAS NO PHASE 1 SERIAL FIGURE OF ITS OWN, so its rate is derived and then deliberately
+# left UNDISCOUNTED, the same choice this file already makes for chemeleon and minimol. The
+# derivation: f_ecfp(radius=2) and f_rdkit_desc measure 75.4 and 3,259.7 us/mol single-core on
+# the laptop, so ecfp_rdkit_desc is 3,335 serial there against 5,956 on a box -- the box runs
+# this path 1.79x slower. ECFP4 alone is therefore about 75.4 * 1.79 = 135 us/mol serial.
+# Applying ecfp_rdkit_desc's measured 8.29x would give ~16, and the true number is probably
+# nearer that, because the two arms share the f_ecfp code path exactly. It is not discounted
+# because the projection for ecfp_rdkit_desc tracked its total (718 projected, 733 measured)
+# only because featurization DOMINATES that arm; strip the descriptors and prediction with five
+# XGBoost models is the larger term, which this formula does not model at all. Over-provisioning
+# costs a box that finishes early. Under-provisioning the one arm that might take the frontier
+# costs a relaunch.
+#
 # Speedups measured on 12 cores; the boxes have 16, so these are conservative.
-RATES="hume_r4:261 hume_r2:221 ecfp_rdkit_desc:718 chemberta_mtr:118 chemeleon:5304 minimol:1545"
+RATES="hume_r4:261 hume_r2:221 ecfp_rdkit_desc:718 ecfp:135 chemberta_mtr:118 chemeleon:5304 minimol:1545"
 ARMS="${ARMS:?set ARMS to a space-separated list, or \"all\"}"
-[ "$ARMS" = "all" ] && ARMS="hume_r4 hume_r2 ecfp_rdkit_desc chemberta_mtr chemeleon minimol"
+[ "$ARMS" = "all" ] && ARMS="hume_r4 hume_r2 ecfp_rdkit_desc ecfp chemberta_mtr chemeleon minimol"
 
 rate_of () { for kv in $RATES; do case "$kv" in "$1":*) echo "${kv#*:}"; return;; esac; done; echo ""; }
 

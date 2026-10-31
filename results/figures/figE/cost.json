@@ -1,44 +1,58 @@
 {
  "chemberta_mtr": {
   "us_per_mol": 371.55,
-  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "measured_on": "4xlarge, 16 vCPU (x86)",
   "n_shards_timed": 132,
   "spread_max_over_min": 1.135,
-  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size.",
+  "instance_types": "c7i/c6i/m7i/m6i 4xlarge; per-arm composition not recorded (the launcher only began logging instance type on 2026-10-30, and terminated instances age out of describe-instances)"
  },
  "chemeleon": {
   "us_per_mol": 2694.49,
-  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "measured_on": "4xlarge, 16 vCPU (x86)",
   "n_shards_timed": 225,
   "spread_max_over_min": 1.414,
-  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size.",
+  "instance_types": "c7i/c6i/m7i/m6i 4xlarge; per-arm composition not recorded (the launcher only began logging instance type on 2026-10-30, and terminated instances age out of describe-instances)"
  },
  "ecfp_rdkit_desc": {
   "us_per_mol": 733.05,
-  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "measured_on": "4xlarge, 16 vCPU (x86)",
   "n_shards_timed": 48,
   "spread_max_over_min": 1.179,
-  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size.",
+  "instance_types": "c7i/c6i/m7i/m6i 4xlarge; per-arm composition not recorded (the launcher only began logging instance type on 2026-10-30, and terminated instances age out of describe-instances)"
  },
  "hume_r2": {
   "us_per_mol": 152.7,
-  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "measured_on": "4xlarge, 16 vCPU (x86)",
   "n_shards_timed": 246,
   "spread_max_over_min": 1.358,
-  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size.",
+  "instance_types": "c7i/c6i/m7i/m6i 4xlarge; per-arm composition not recorded (the launcher only began logging instance type on 2026-10-30, and terminated instances age out of describe-instances)"
  },
  "hume_r4": {
   "us_per_mol": 152.55,
-  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "measured_on": "4xlarge, 16 vCPU (x86)",
   "n_shards_timed": 246,
   "spread_max_over_min": 1.158,
-  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size.",
+  "instance_types": "c7i/c6i/m7i/m6i 4xlarge; per-arm composition not recorded (the launcher only began logging instance type on 2026-10-30, and terminated instances age out of describe-instances)"
  },
  "minimol": {
   "us_per_mol": 1855.13,
-  "measured_on": "4xlarge, 16 vCPU (c7i/c6i/m7i/m6i mix)",
+  "measured_on": "4xlarge, 16 vCPU (x86)",
   "n_shards_timed": 170,
   "spread_max_over_min": 1.313,
-  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. Timings come only from boxes that finished their whole range, since a manifest is written at the end of a range -- spot-reclaimed boxes left their predictions but not their timings, so shard coverage here is below 246 for most arms."
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size.",
+  "instance_types": "c7i/c6i/m7i/m6i 4xlarge; per-arm composition not recorded (the launcher only began logging instance type on 2026-10-30, and terminated instances age out of describe-instances)"
+ },
+ "ecfp": {
+  "us_per_mol": 53.29,
+  "measured_on": "4xlarge, 16 vCPU (x86)",
+  "instance_types": "c7i.4xlarge x4 (all four boxes; recorded at launch)",
+  "n_shards_timed": 246,
+  "spread_max_over_min": 1.435,
+  "note": "featurization + prediction with 5 replicate models, measured on the screen itself over the 100M test set. Weighted by shard size. CAVEAT: every box for this arm ran on c7i.4xlarge, the newest of the four types, while the other arms ran on an unrecorded blend that includes c6i and m6i. Its cost may therefore be flattered relative to theirs. The within-type shard spread here is 1.435, as large as the total spread recorded for most other arms, so the type effect is unlikely to dominate -- but it is not zero and is not measured."
  }
 }
