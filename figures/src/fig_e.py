@@ -217,7 +217,19 @@ EXCLUDE: dict[str, str] = {
 #: plate still reaches figures/build/fig_e.csv. Dropping a panel must cost a reader nothing but
 #: the picture.
 PANELS = (
-    dict(key="recovery_0.01pct", title="Top 0.01% of the library",
+    # "DOCKING HITS", NOT "INHIBITORS" (Leif 2026-10-31, correcting a first draft of the title).
+    # The screen ranks DOCK scores from the dataset's `docking_results` config, so the top 0.01%
+    # is the 9,964 best-SCORING molecules of 100,000,000 -- computational predictions. The
+    # dataset's 1,521 experimentally tested compounds live in a separate `invitro_results`
+    # config this screen never reads, and Liu et al. found 247 true inhibitors among the 1,293
+    # top-ranked molecules they assayed, so even at the very top of a docking list most
+    # molecules are not inhibitors. "Inhibitors" would have claimed HUME recovers 19.07% of
+    # AmpC's actual binders; it recovers 19.07% of the top docking hits.
+    #
+    # SENTENCE CASE, matching every other title in the set (fig_b/fig_c: "Physicochemical",
+    # "ADME & tox", "Classification", "Quantum energy"). AmpC keeps its capitals as a proper
+    # noun; "docking hits" does not.
+    dict(key="recovery_0.01pct", title="Recovery of top 0.01% AmpC docking hits",
          ylabel="recovery of the true top 0.01%  (%, ↑ better)"),
     # TOP 1% IS MEASURED AND NOT DRAWN (Leif 2026-10-31, "just give me the left half"). It is a
     # real result and a tempting panel -- the ranking FLIPS with depth, ECFP4+RDKit taking the
@@ -334,52 +346,73 @@ def _label_points(ax, xs, ys, keys, front_xy=()):
     """
     y0, y1 = ax.get_ylim()
     span = y1 - y0
-    x_dear, x_cheap = ax.get_xlim()                  # descending: the axis is inverted
+    x_lo, x_hi = ax.get_xlim()                       # ascending: faster to the right
     fig = ax.figure
+    fwd = ax.transData.transform
     # Data units per typographic point, from the transform as it currently stands. Taken after
     # set_xlim/set_ylim -- before them it would describe the default 0-1 axes and every width
     # here would be wrong by the axis scale.
     inv = ax.transData.inverted().transform
-    px = fig.dpi / 72.0
-    ox, oy = inv((0.0, 0.0))
-    dx_pt = abs(inv((px, 0.0))[0] - ox)
-    dy_pt = abs(inv((0.0, px))[1] - oy)
-    gap = 8.0 * dx_pt                                # marker-to-text gap, in data units
+    px = fig.dpi / 72.0                              # display pixels per typographic point
+    # HORIZONTAL GEOMETRY IS IN DISPLAY PIXELS, NOT DATA UNITS, so this function does not care
+    # whether the x-axis is linear or logarithmic. It used to convert one typographic point into
+    # a fixed number of data units and reuse that everywhere, which is true only on a linear
+    # axis: on a log axis a point is worth a few units near the slow edge and thousands near the
+    # fast one, so every width, gap and overlap test would have been evaluated at whatever scale
+    # happened to hold at the origin. Names at the slow end would have claimed far too much room
+    # and names at the fast end almost none. Y stays in data units -- that axis is linear, and
+    # LABEL_GAP and FRONTIER_CLEAR are expressed against the data range and the text height.
+    xd = [float(fwd((float(xs[i]), float(ys[i])))[0]) for i in range(len(xs))]
+    hi_d = float(fwd((x_hi, y0))[0])
+    dy_pt = abs(inv((0.0, px))[1] - inv((0.0, 0.0))[1])
+    gap = 8.0 * px                                   # marker-to-text gap, in display pixels
     # 0.52 em per character is a serviceable average for this font at label sizes; it only has
     # to be right to within a character or two to tell "same place" from "half a panel away".
-    tw = [0.52 * FS["annot"] * len(A.short_label(k)) * dx_pt for k in keys]
+    tw = [0.52 * FS["annot"] * len(A.short_label(k)) * px for k in keys]
     text_h = FS["annot"] * dy_pt
 
-    ray_x = front_xy[0][0] if front_xy else None     # the vertical ray's cost
-    ray_top = front_xy[0][1] if front_xy else None
+    ray_x = float(fwd((front_xy[-1][0], y0))[0]) if front_xy else None    # the ray descends at the FASTEST point
+    ray_top = front_xy[-1][1] if front_xy else None
 
     def interval(i, side):
-        """-> (lo, hi) in data units spanned by label i's text. side True = page-LEFT.
+        """-> (lo, hi) in DISPLAY PIXELS spanned by label i's text. side True = page-LEFT.
 
-        Page-left is INCREASING cost, because the axis is inverted. Getting this backwards is
-        the kind of error that places every name correctly on a normal axis and nowhere near
-        its point here.
+        Page-left is DECREASING throughput, the ordinary orientation. It was the opposite while
+        this plate drew an inverted cost axis, and the sign is exactly the kind of thing that
+        places every name correctly on one axis and nowhere near its point on the other.
         """
-        return ((xs[i] + gap, xs[i] + gap + tw[i]) if side
-                else (xs[i] - gap - tw[i], xs[i] - gap))
+        return ((xd[i] - gap - tw[i], xd[i] - gap) if side
+                else (xd[i] + gap, xd[i] + gap + tw[i]))
 
     def crosses_ray(i, side):
+        """Does label i, on `side`, lie ACROSS the frontier's vertical ray?
+
+        The ray descends at the FASTEST frontier point, which is the right-hand end of the
+        staircase now rather than the left-hand one. A label below its top and spanning its x
+        runs straight through it, and no vertical nudge can help, so the label changes sides.
+        """
         if ray_x is None or ys[i] > ray_top:
             return False
         lo, hi = interval(i, side)
         return lo <= ray_x <= hi
 
-    # SIDE: right if the name fits before the cheap edge and clears the ray, else left.
+    # SIDE: right if the name fits before the fast edge and clears the ray, else left.
     left = []
     for i in range(len(xs)):
-        fits_right = (xs[i] - gap - tw[i]) >= x_cheap and not crosses_ray(i, False)
+        fits_right = (xd[i] + gap + tw[i]) <= hi_d and not crosses_ray(i, False)
         left.append(not fits_right)
 
     def frontier_at(x):
-        """-> the staircase's tread height at cost `x`, or None where there is no tread."""
-        if not front_xy or x < front_xy[0][0]:
+        """-> the staircase's tread height at throughput `x`, or None past its fast end.
+
+        The staircase is the boundary of the dominated region, f(x) = max{y_i : x_i >= x} over
+        the frontier: the best recovery still available at or above this speed. It therefore
+        DESCENDS to the right, and is undefined beyond the fastest frontier point, where the
+        only thing drawn is the vertical ray.
+        """
+        if not front_xy or x > front_xy[-1][0]:
             return None
-        return next(fy for fx, fy in reversed(front_xy) if fx <= x)
+        return next(fy for fx, fy in front_xy if fx >= x)
 
     moved, dodged = [], []
     for side in (True, False):
@@ -395,13 +428,28 @@ def _label_points(ax, xs, ys, keys, front_xy=()):
             shifted = abs(y - ys[i]) > 0.3 * LABEL_GAP * span
             if shifted:
                 moved.append((keys[i], (y - ys[i]) / span))
-            fy = frontier_at(0.5 * (lo + hi))
+            # back to data units: the staircase is defined on throughput, not on pixels
+            fy = frontier_at(float(inv((0.5 * (lo + hi), 0.0))[0]))
             dodge = 0                                # -1 push down, +1 push up
-            if not shifted and fy is not None and abs(fy - y) < FRONTIER_CLEAR * text_h:
+            # THE DODGE APPLIES TO A NUDGED LABEL TOO. It used to be skipped whenever the label
+            # had already moved to clear a neighbour, on the theory that two corrections would
+            # fight. In practice the nudge is what PUSHES a label onto a tread -- CheMeleon,
+            # lifted clear of ECFP4+RDKit, landed exactly on the frontier line -- so the one
+            # case the guard excluded was the one that needed it most. A nudged label already
+            # carries a leader back to its marker, so a further 4 pt cannot orphan it.
+            if fy is not None and abs(fy - y) < FRONTIER_CLEAR * text_h:
                 # A tread at or above the label pushes it down; only one clearly below lifts it.
                 # Equality goes DOWN: that is a label sitting ON its own tread, and the open
                 # space is underneath it.
                 dodge = -1 if (fy - y) >= -0.25 * text_h else +1
+                # UNLESS THE LABEL WAS ALREADY NUDGED, in which case the dodge must not undo the
+                # nudge. A nudged label was lifted to clear the neighbour directly below it, so
+                # sending it back down puts it onto that neighbour's marker -- CheMeleon, raised
+                # off ECFP4+RDKit and then dropped onto it by a tread 0.03 points overhead. The
+                # two corrections were solving different problems in opposite directions; the
+                # nudge is the one with a reason to prefer a side, so it wins the tie.
+                if shifted:
+                    dodge = +1
                 dodged.append(f"{keys[i]} {'down' if dodge < 0 else 'up'}")
             ax.annotate(A.short_label(keys[i]), (xs[i], y),
                         # Offsets are in DISPLAY points, so they mean left and right on the page
@@ -429,21 +477,55 @@ def main() -> None:
     check_font()
     d, cost = load()
     keys = A.order([a for a in d["arms"] if a not in EXCLUDE])
-    xs = np.array([float(cost[a]["us_per_mol"]) for a in keys])
+    # THE MEASUREMENT IS MICROSECONDS PER MOLECULE; THE AXIS IS ITS RECIPROCAL (Leif
+    # 2026-10-31). `us` stays around because the Pareto frontier is defined on cost and must not
+    # be re-derived from screen positions, and because the CSV reports the measured quantity.
+    us = np.array([float(cost[a]["us_per_mol"]) for a in keys])
+    xs = 1e6 / us                                   # molecules per second
     box = cost[keys[0]]["measured_on"]
 
-    # X-LIMITS ONCE, SHARED, AND DESCENDING. Descending limits are the inversion: cheap on the
-    # right, expensive on the left, so best is the top-right corner. Both panels get the same
-    # limits because cost is a property of the featurization, not of the test population.
+    # X-LIMITS ONCE, SHARED, AND ASCENDING. THROUGHPUT NEEDS NO INVERSION, which is the whole
+    # reason for the change: more is better on both axes, so the best corner is top-right
+    # without the axis having to run backwards. Both panels get the same limits because
+    # throughput is a property of the featurization, not of the test population.
     #
-    # LINEAR, AND ANCHORED AT ZERO (Leif). A log axis spreads the cheap arms out, but it also
-    # flatters them: it makes a 20x cost difference look like a short step, which is the
-    # opposite of what this plate is for. On a linear axis anchored at zero, the distance from
-    # the right edge IS the cost, and an arm that costs twenty times another sits twenty times
-    # further out. The crowding that produces at the cheap end is not a drawing fault -- it is
-    # the finding, and it is why the labels are placed rather than left to fall where they may.
-    x_cheap = 0.0
-    x_dear = float(xs.max()) * 1.12
+    # THIS REVERSES A DECISION THIS FILE ARGUED FOR AT LENGTH, so the old reasoning is recorded
+    # rather than deleted. The plate used to show microseconds per molecule on an INVERTED axis,
+    # on the grounds that a reader lifts a number off the axis and multiplies it by a library
+    # size into a bill, and that throughput does not multiply that way. Both halves of that are
+    # still true. What outweighed them (Leif) is that an axis whose numbers decrease to the
+    # right is read wrong by default, and no arrow fully repairs it; molecules per second
+    # ascends left to right like every other axis in the paper, and "faster" needs no gloss.
+    # The cost in microseconds is still in figures/build/fig_e.csv, which is where a reader who
+    # wants to compute a bill should be looking anyway.
+    #
+    # WHAT THE RECIPROCAL COSTS, stated because it is not small and it is not a drawing fault.
+    # 1/x compresses the slow end: on a linear throughput axis anchored at zero, CheMeleon,
+    # MiniMol and ECFP4+RDKit land between 2.0% and 7.3% of the width and four of six arms sit
+    # in the left 15%. The cost axis crowded the CHEAP end instead. Neither ordering is wrong --
+    # they are the same six numbers -- but the eye reads spacing as importance, so this axis
+    # makes the fast arms look well separated and the slow ones interchangeable, where the cost
+    # axis did the opposite. The labels are placed rather than left to fall where they may,
+    # which is what keeps the crowded end legible.
+    #
+    # LOG, NOT LINEAR (Leif 2026-10-31). On a linear throughput axis anchored at zero the
+    # reciprocal piles the slow arms up: CheMeleon, MiniMol and ECFP4+RDKit landed between 2.0%
+    # and 7.3% of the width, four of six arms sat in the left 15%, and a third of the plate was
+    # empty between HUME and ECFP4. The eye reads spacing as importance, so that version made
+    # the fast arms look well separated and the slow ones interchangeable.
+    #
+    # The objection that retired a log COST axis does not transfer. There the complaint was
+    # that log makes a 20x cost difference look like a short step, and cost is the quantity a
+    # reader multiplies by a library size into a bill, so foreshortening it understates the
+    # thing the plate exists to show. On a throughput axis a reader is comparing ratios --
+    # "twice as fast", "fifty times as fast" -- and a log axis renders equal ratios as equal
+    # distances, which is the honest geometry for that question. The bill is still recoverable
+    # and is in figures/build/fig_e.csv in microseconds per molecule and in box-hours.
+    #
+    # Limits are padded by a constant FACTOR rather than a constant amount, because on a log
+    # axis that is what "a margin" means.
+    x_slow = float(xs.min()) / 1.45
+    x_fast = float(xs.max()) * 1.45
     # ONE Y-RANGE FOR BOTH PANELS, computed before either is drawn. The axes are shared, so the
     # last set_ylim would otherwise win for both and crop the other panel's points off the plate
     # -- and a shared range is what makes the left-to-right drop readable as a distance.
@@ -490,7 +572,7 @@ def main() -> None:
     # the y-label, the tick format or the panel count changes -- style.save() prints the width
     # on every render and warns past 5%, which is the check these numbers have to keep passing.
     gs = fig.add_gridspec(1, len(panels), wspace=0.26,
-                          left=0.124 if solo else 0.090,
+                          left=0.115 if solo else 0.090,
                           right=0.975 if solo else 0.995,
                           top=0.88 if solo else 0.87, bottom=0.165)
     tags = "abcdefgh"
@@ -510,35 +592,38 @@ def main() -> None:
         los = np.array([d["arms"][a]["summary"][p["key"]]["min"] * 100.0 for a in keys])
         his = np.array([d["arms"][a]["summary"][p["key"]]["max"] * 100.0 for a in keys])
 
-        # THE FRONTIER, under the points so no marker is cut by it. Computed on costs and
-        # recoveries, not on screen positions, so the axis inversion cannot change which arms
-        # are on it. `pareto` returns indices in ascending cost, which for an upper-left frontier
-        # means ascending recovery too -- no point on it can be both dearer and worse.
-        front = pareto(list(xs), list(ys))
-        # DRAWN AS THE BOUNDARY OF THE DOMINATED REGION: ONE VERTICAL RAY AND ONE HORIZONTAL RAY
-        # (Leif). Earlier this was the staircase alone, which with a single frontier point is a
-        # lone horizontal line -- and a lone line reads as a threshold or a baseline, not as a
-        # frontier. Closing the corner with the vertical ray is what makes it legible: the two
-        # rays fence off the quadrant of points that are BOTH dearer and worse than the frontier,
-        # and every dominated arm sits inside that fence. Each ray is a claim the measurements
-        # support, and only that claim:
+        # THE FRONTIER, under the points so no marker is cut by it. COMPUTED ON COST, NOT ON
+        # THE PLOTTED THROUGHPUT. "Dominated" means another arm is both cheaper and better, and
+        # that is a statement about the measurement; deriving it from whatever the axis happens
+        # to be showing is how a plate comes to disagree with its own CSV. Membership is of
+        # course identical under a monotone reciprocal -- which is exactly why it costs nothing
+        # to compute it on the honest quantity. `pareto` returns ascending cost, so reversing
+        # gives ascending THROUGHPUT, in which recovery necessarily descends: no point on the
+        # frontier can be both faster and better than another.
+        front = list(reversed(pareto(list(us), list(ys))))
+        # DRAWN AS THE BOUNDARY OF THE DOMINATED REGION, f(x) = max{y_i : x_i >= x} over the
+        # frontier -- the best recovery still available at or above this speed. It descends to
+        # the right, and every arm that is both slower and worse than some frontier point sits
+        # underneath it. Each segment is a claim the measurements support and only that:
         #
-        #   horizontal, running LEFT (dearer) from the dearest frontier point, at its recovery
-        #       -- at any budget above that arm's cost, nothing measured here does better.
-        #   vertical, running DOWN from the cheapest frontier point, at its cost
-        #       -- it bounds the fenced quadrant on the cheap side. It is NOT extended rightward
-        #          past that cost, which would claim a recovery at a price nothing was run at.
+        #   the treads say   at this throughput or less, nothing measured here beats this
+        #   the risers say   buying that extra recovery costs you this much speed
+        #   the final drop   at the fastest frontier point, and NOT extended further right,
+        #                    which would claim a recovery at a speed nothing was run at
         #
-        # A SINGLE FRONTIER POINT IS A REAL OUTCOME, NOT AN EMPTY ONE: one arm both cheapest and
-        # best dominates everything and the staircase has one tread. The guard was `len > 1`,
-        # which drew nothing in exactly the case the plate most needs to show, and the AmpC
-        # screen landed in it.
+        # A SINGLE FRONTIER POINT IS A REAL OUTCOME, NOT AN EMPTY ONE: one arm both fastest and
+        # best dominates everything and the staircase is one tread plus the closing drop. The
+        # guard was `len > 1`, which drew nothing in exactly the case the plate most needs to
+        # show, and the AmpC screen landed in it before the ECFP4 control was added.
         if front:
-            # The leading repeated x is the vertical ray: with `where="post"` the first segment
-            # is a zero-length horizontal, and the rise after it is the ray itself.
-            fx = [xs[front[0]]] + list(xs[front]) + [x_dear]
-            fy = [y_bot - y_pad] + list(ys[front]) + [ys[front[-1]]]
-            ax.step(fx, fy, where="post", ls=(0, (1, 2)),
+            fxs = [float(xs[i]) for i in front]
+            fys = [float(ys[i]) for i in front]
+            # where="post" holds each y until the next x, so the point list is (x of this step,
+            # y of the NEXT one): the horizontal runs at the better recovery and the drop
+            # happens AT the faster arm, which is what the boundary actually does.
+            px = [x_slow] + fxs[:-1] + [fxs[-1]]
+            py = [fys[0]] + fys[1:] + [y_bot - y_pad]
+            ax.step(px, py, where="post", ls=(0, (1, 2)),
                     lw=STYLE["lw_thin"], color=STYLE["ink"], zorder=2)
         frontiers[p["key"]] = {keys[i] for i in front}
 
@@ -552,11 +637,24 @@ def main() -> None:
                         elinewidth=STYLE["lw_thin"], capsize=STYLE["cap_size"], zorder=5,
                         markeredgecolor=STYLE["ink"], markeredgewidth=0.7)
 
-        ax.set_xlim(x_dear, x_cheap)                 # descending = inverted = cheap on the right
+        ax.set_xscale("log")
+        ax.set_xlim(x_slow, x_fast)                  # ascending: faster to the right, no inversion
         ax.set_ylim(y_bot - y_pad, y_top + y_pad)
         _label_points(ax, xs, ys, keys,
                       front_xy=[(float(xs[i]), float(ys[i])) for i in front])
         ax.grid(axis="both")
+        # PLAIN GRIDLINES AT ROUND THROUGHPUTS, NOT A LOG DECADE GRID (Leif: "normal lines not
+        # the log lines, it's too crowded"). A log axis defaults to labelling 10^3 and 10^4 and
+        # nothing between, which over the 1.7 decades here leaves a reader with two lines to
+        # place six points against; adding the 2..9 minor grid fixed that and made the panel
+        # busy. Explicit ticks at 500/1k/2k/5k/10k/20k give the same readability with six lines
+        # instead of eighteen, and read as ordinary round numbers rather than as powers.
+        # set_xticks on a log axis also disables the minor ticks it would otherwise draw.
+        ticks = [t for t in (200, 500, 1000, 2000, 5000, 10000, 20000)
+                 if x_slow <= t <= x_fast]
+        ax.set_xticks(ticks)
+        ax.set_xticklabels([f"{t//1000}k" if t >= 1000 else str(t) for t in ticks])
+        ax.tick_params(axis="x", which="minor", bottom=False)
         # LABELLED AND TICKED ON BOTH PANELS (Leif), even though the scale is shared. The two
         # panels are read as a pair and compared across the gutter, so a reader's eye arrives at
         # the right-hand panel with no axis beside it and has to travel back across the plate to
@@ -568,7 +666,7 @@ def main() -> None:
         # is read across the gutter, and an axis a reader has to look elsewhere to identify is
         # one they will read wrong -- especially this one, whose numbers DECREASE to the right.
         # The arrow is not decoration; it is what stops the inversion being misread.
-        ax.set_xlabel("µs / molecule     cheaper →", fontsize=FS["label"], labelpad=2)
+        ax.set_xlabel("molecules / second     faster →", fontsize=FS["label"], labelpad=2)
         title(ax, p["title"], pad=4)
         # NO PANEL TAG ON A ONE-PANEL PLATE. The letter exists so a caption can say "(b)";
         # with a single panel there is nothing to disambiguate and it reads as a stray glyph.
