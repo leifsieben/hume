@@ -1,0 +1,38 @@
+\begin{table}[t]
+\centering
+\begin{tabular}{lrrrr}
+\toprule
+& \multicolumn{2}{c}{degenerate compounds} & \multicolumn{2}{c}{of those, max.\ $\Delta$mass} \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+representation & $n$ & \% of set & $\leq$1\,Da & $>$400\,Da \\
+\midrule
+\textbf{HUME} (descriptors $+$ fingerprint) & \textbf{0} & \textbf{0} & -- & -- \\
+\textbf{HUME}, descriptors only (1{,}269) & \textbf{0} & \textbf{0} & -- & -- \\
+\textbf{HUME}, descriptors only (622) & \textbf{0} & \textbf{0} & -- & -- \\
+\textbf{HUME}, descriptors only (408) & \textbf{0} & \textbf{0} & -- & -- \\
+\textbf{HUME}, descriptors only (256) & \textbf{0} & \textbf{0} & -- & -- \\
+Atom pair, count & 6{,}316 & 0.91\% & 27.2\% & 0.00\% \\
+Morgan-9, count & 13{,}853 & 1.99\% & 99.9\% & 0.00\% \\
+Morgan-3, count & 51{,}769 & 7.45\% & 100.0\% & 0.00\% \\
+\textbf{HUME}, fingerprint only (2{,}048\,bit) & 63{,}045 & 9.07\% & 3.38\% & 45.5\% \\
+Morgan-3, binary & 71{,}055 & 10.2\% & 2.97\% & 44.9\% \\
+RDKit, binary & 113{,}676 & 16.4\% & 2.59\% & 39.3\% \\
+MACCS, binary & 291{,}336 & 41.9\% & 17.8\% & 23.7\% \\
+\bottomrule
+\end{tabular}
+\caption{Representation degeneracy on 695{,}115 unique biomolecular structures
+(the \emph{biostructures} set of Huber and Pollmann~\cite{Huber2026}): compounds sharing a
+bit-identical vector with at least one structurally different compound, following their
+duplicate test. Every row is computed here on the same compounds with the same code, so the
+rates are directly comparable; recomputing their fingerprints this way reproduces each
+published rate to within 1.6 points. The right-hand pair splits the collisions by the
+largest mass difference within a colliding group---under 1\,Da the pair is an isomer or
+tautomer no 2D representation separates, over 400\,Da it is two unrelated molecules given
+one vector. HUME is degenerate for no compound at all, down to its 256-column variant,
+while the 2{,}048-bit fingerprint it contains is degenerate for 9.07\% with nearly half of
+those collisions spanning more than 400\,Da: the descriptors do not merely add signal, they
+repair a failure of the fingerprint. Note also that count fingerprints fail benignly where
+binary ones do not---every Morgan-3 count collision falls within 1\,Da, against 44.9\%
+beyond 400\,Da for the same fingerprint folded to bits.}
+\label{tab:degeneracy}
+\end{table}

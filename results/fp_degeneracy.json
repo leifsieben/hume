@@ -1,0 +1,260 @@
+{
+ "dataset": "biostructures.csv",
+ "n_input": 695118,
+ "n_parsed": 695115,
+ "n_inchikey_dupes_dropped": 4,
+ "n_no_heavy_atom_dropped": 3,
+ "note": "counts are over the ClassyFire-annotated subset, NOT the 718,067 of the paper's Fig 2; see this script's docstring",
+ "bins_da": [
+  [
+   0,
+   1
+  ],
+  [
+   1,
+   10
+  ],
+  [
+   10,
+   50
+  ],
+  [
+   50,
+   100
+  ],
+  [
+   100,
+   200
+  ],
+  [
+   200,
+   300
+  ],
+  [
+   300,
+   400
+  ],
+  [
+   400,
+   null
+  ]
+ ],
+ "reps": {
+  "hume_full": {
+   "name": "hume_full",
+   "n_compounds": 695115,
+   "n_duplicated": 0,
+   "n_groups": 0,
+   "max_mass_diff": 0.0,
+   "hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.0
+  },
+  "hume_desc": {
+   "name": "hume_desc",
+   "n_compounds": 695115,
+   "n_duplicated": 0,
+   "n_groups": 0,
+   "max_mass_diff": 0.0,
+   "hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.0
+  },
+  "hume_fp_only": {
+   "name": "hume_fp_only",
+   "n_compounds": 695115,
+   "n_duplicated": 63045,
+   "n_groups": 6439,
+   "max_mass_diff": 1459.269000000003,
+   "hist": [
+    2131,
+    805,
+    4384,
+    6282,
+    11477,
+    2967,
+    6308,
+    28691
+   ],
+   "frac": 0.09069722276170131
+  },
+  "hume_desc_622": {
+   "name": "hume_desc_622",
+   "n_compounds": 695115,
+   "n_duplicated": 0,
+   "n_groups": 0,
+   "max_mass_diff": 0.0,
+   "hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.0
+  },
+  "hume_desc_408": {
+   "name": "hume_desc_408",
+   "n_compounds": 695115,
+   "n_duplicated": 0,
+   "n_groups": 0,
+   "max_mass_diff": 0.0,
+   "hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.0
+  },
+  "hume_desc_256": {
+   "name": "hume_desc_256",
+   "n_compounds": 695115,
+   "n_duplicated": 0,
+   "n_groups": 0,
+   "max_mass_diff": 0.0,
+   "hist": [
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.0
+  },
+  "morgan3_count": {
+   "name": "morgan3_count",
+   "n_compounds": 695115,
+   "n_duplicated": 51769,
+   "n_groups": 7696,
+   "max_mass_diff": 139.876,
+   "hist": [
+    51755,
+    2,
+    6,
+    2,
+    4,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.07447544650885106
+  },
+  "morgan3_binary": {
+   "name": "morgan3_binary",
+   "n_compounds": 695115,
+   "n_duplicated": 71055,
+   "n_groups": 7187,
+   "max_mass_diff": 1646.0450000000017,
+   "hist": [
+    2108,
+    466,
+    5231,
+    6873,
+    12530,
+    6564,
+    5378,
+    31905
+   ],
+   "frac": 0.10222049588916941
+  },
+  "morgan9_count": {
+   "name": "morgan9_count",
+   "n_compounds": 695115,
+   "n_duplicated": 13853,
+   "n_groups": 6349,
+   "max_mass_diff": 139.876,
+   "hist": [
+    13839,
+    2,
+    6,
+    2,
+    4,
+    0,
+    0,
+    0
+   ],
+   "frac": 0.019929076483747293
+  },
+  "rdkit_binary": {
+   "name": "rdkit_binary",
+   "n_compounds": 695115,
+   "n_duplicated": 113676,
+   "n_groups": 19775,
+   "max_mass_diff": 1653.408000000003,
+   "hist": [
+    2945,
+    4165,
+    21880,
+    9614,
+    15590,
+    10270,
+    4575,
+    44637
+   ],
+   "frac": 0.16353553009214303
+  },
+  "atompair_count": {
+   "name": "atompair_count",
+   "n_compounds": 695115,
+   "n_duplicated": 6316,
+   "n_groups": 3031,
+   "max_mass_diff": 246.422,
+   "hist": [
+    1718,
+    4433,
+    0,
+    0,
+    0,
+    165,
+    0,
+    0
+   ],
+   "frac": 0.009086266301259504
+  },
+  "maccs_binary": {
+   "name": "maccs_binary",
+   "n_compounds": 695115,
+   "n_duplicated": 291336,
+   "n_groups": 69835,
+   "max_mass_diff": 1759.5380000000016,
+   "hist": [
+    51955,
+    6712,
+    70627,
+    39957,
+    29802,
+    12277,
+    10899,
+    69107
+   ],
+   "frac": 0.41911913855980665
+  }
+ }
+}
